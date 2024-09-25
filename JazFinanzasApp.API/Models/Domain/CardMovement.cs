@@ -3,12 +3,10 @@ using System.ComponentModel.DataAnnotations;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    public class CardMovements : BaseEntity
+    public class CardMovement : BaseEntity
     {
         [Required]
-        [ForeignKey("DateMovement")]
-        public int DateMovementId { get; set; }
-        public Date DateMovement {  get; set; }
+        public DateTime DateMovement {  get; set; }
 
         public string Detail {  get; set; }
 
@@ -34,15 +32,9 @@ namespace JazFinanzasApp.API.Models.Domain
         public int Installments { get; set; }
 
         [Required]
-        [ForeignKey("FirstInstallmentId")]
-        public int FirstInstallmentId { get; set; }
-        public Date FirstInstallment {  get; set; }
+        public DateTime FirstInstallment {  get; set; }
 
-
-        [Required]
-        [ForeignKey("LastInstallmentId")]
-        public int LastInstallmentId { get; set; }
-        public Date LastInstallment { get; set; }
+        public DateTime LastInstallment { get; set; }
 
         [Required]
         public string Repeat {  get; set; }

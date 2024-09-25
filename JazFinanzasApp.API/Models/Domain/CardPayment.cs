@@ -1,20 +1,18 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    public class CardPay
+    [PrimaryKey(nameof(CardId), nameof(Date))]
+    public class CardPayment
     {
-        [Key]
         [Required]
         [ForeignKey("CardId")]
         public int CardId { get; set; }
         public Card Card { get; set; }
 
-        [Key]
         [Required]
-        [ForeignKey("DateId")]
-        public int DateId { get; set; }
-        public Date Date { get; set; }
+        public DateTime Date { get; set; }
     }
 }

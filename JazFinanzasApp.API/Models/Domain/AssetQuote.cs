@@ -1,8 +1,10 @@
 ﻿using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
+    [PrimaryKey(nameof(AssetId), nameof(Date), nameof(Type))]
     public class AssetQuote
     {
         [Key]
@@ -11,16 +13,13 @@ namespace JazFinanzasApp.API.Models.Domain
         public int AssetId { get; set; }
         public Asset Asset { get; set; }
 
-        [Key]
         [Required]
-        [ForeignKey("DateId")]
-        public int DateId { get; set; }
-        public Date Date { get; set; }
+        public DateTime Date { get; set; }
 
-        [Key]
         [Required]
         public string Type { get; set; }
         [Required]
+        [Column(TypeName = "decimal(18,10)")]
         public decimal Value { get; set; }
 
     }

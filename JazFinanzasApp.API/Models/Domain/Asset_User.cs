@@ -1,8 +1,11 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Identity.Client;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
+    [PrimaryKey(nameof(UserId), nameof(AssetId))]
     public class Asset_User
     {
         [Required]

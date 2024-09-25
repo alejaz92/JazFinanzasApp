@@ -1,33 +1,30 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
+    [PrimaryKey(nameof(Id), nameof(AccountId), nameof(AssetId))]
     public class Movement
     {
-        [Key]
         [Required]
         public int Id { get; set; }
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
-        [Key]
         [Required]
         [ForeignKey("AccountId")]
         public int AccountId { get; set; }
         public Account Account { get; set; }
 
-        [Key]
         [Required]
         [ForeignKey("AssetId")]
         public int AssetId { get; set; }
         public Asset Asset { get; set; }
 
         [Required]
-        [ForeignKey("DateId")]
-        public int DateId { get; set; }
-        public Date Date { get; set; }
+        public DateTime Date { get; set; }
 
         [Required]
         public string MovementType { get; set; }
@@ -40,8 +37,15 @@ namespace JazFinanzasApp.API.Models.Domain
         public string? Detail {  get; set; }
 
         [Required]
+        [Column(TypeName = "decimal(18,10)")]
         public decimal Amount { get; set; }
 
+        [Column(TypeName = "decimal(18,10)")]
         public decimal? QuotePrice { get; set; }
+
+        [Required]
+        [ForeignKey("UserId")]
+        public int UserId { get; set; }
+        public User User { get; set; }
     }
 }
