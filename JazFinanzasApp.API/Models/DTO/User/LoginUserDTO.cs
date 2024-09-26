@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace JazFinanzasApp.API.Models.DTO
+namespace JazFinanzasApp.API.Models.DTO.User
 {
     public class LoginUserDTO
     {

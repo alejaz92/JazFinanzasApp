@@ -2,7 +2,7 @@
 
 namespace JazFinanzasApp.API.Interfaces
 {
-    public interface IMovementClassRepository : IGenericRepository<MovementClass>
+    public interface IAccountRepository : IGenericRepository<Account>
     {
     }
 }

@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace JazFinanzasApp.API.Models.DTO
+namespace JazFinanzasApp.API.Models.DTO.User
 {
     public class RegisterUserDTO
     {
@@ -9,7 +9,7 @@ namespace JazFinanzasApp.API.Models.DTO
         public string Name { get; set; }
 
         [Required]
-        [StringLength (50)]
+        [StringLength(50)]
         public string LastName { get; set; }
 
         [Required]

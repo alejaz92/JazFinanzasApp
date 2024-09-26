@@ -1,4 +1,4 @@
-﻿using JazFinanzasApp.API.Models.DTO;
+﻿using JazFinanzasApp.API.Models.DTO.User;
 using Microsoft.AspNetCore.Identity;
 
 namespace JazFinanzasApp.API.Interfaces

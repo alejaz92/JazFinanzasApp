@@ -15,8 +15,8 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class MovementClassController : ControllerBase
     {
-        private readonly IGenericRepository<MovementClass> _movementClassRepository;
-        public MovementClassController(IGenericRepository<MovementClass> movementClassRepository)
+        private readonly IMovementClassRepository _movementClassRepository;
+        public MovementClassController(IMovementClassRepository movementClassRepository)
         {
             _movementClassRepository = movementClassRepository;
         }
@@ -36,7 +36,7 @@ namespace JazFinanzasApp.API.Controllers
 
             // convert to DTO
 
-            var movementClassesDTO = movementClasses.Select(mc => new MovementClassListDTO
+            var movementClassesDTO = movementClasses.Select(mc => new MovementClassDTO
             {
                 Description = mc.Description,
                 IncExp = mc.IncExp
@@ -46,7 +46,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpPost]
-        public async Task<IActionResult> CreateMovementClass(MovementClassListDTO movementClassDTO)
+        public async Task<IActionResult> CreateMovementClass(MovementClassDTO movementClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -55,6 +55,15 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             int userId = int.Parse(userIdClaim.Value);
+
+            var checkExists = await _movementClassRepository.FindAsync(mc => mc.Description == movementClassDTO.Description && 
+                mc.UserId == userId);
+            //lo siguiente no funciona, viene vacio y no entra
+
+            if (checkExists.Any())
+            {
+                return BadRequest("Movement Class already exists");
+            }
 
             var movementClass = new MovementClass
             {
@@ -90,7 +99,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            var movementClassDTO = new MovementClassListDTO
+            var movementClassDTO = new MovementClassDTO
             {
                 Description = movementClass.Description
             };
@@ -99,7 +108,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateMovementClass(int id, MovementClassListDTO movementClassDTO)
+        public async Task<IActionResult> UpdateMovementClass(int id, MovementClassDTO movementClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -128,7 +137,6 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(movementClassDTO);
         }
 
-        //finalmente el metodo delete
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteMovementClass(int id)
         {
@@ -156,28 +164,10 @@ namespace JazFinanzasApp.API.Controllers
             return Ok();
         }
 
-        // ahora quiero uno que reciba un nombre y devuelva true si el user ya tiene un movementClass con ese nombre
-        [HttpGet("exists/{description}")]
-        public async Task<IActionResult> GetMovementClass(string description ) {
-
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var movementClass = await _movementClassRepository.FindAsync(mc => mc.Description == description && mc.UserId == userId);
-            //lo siguiente no funciona, viene vacio y no entra
-
-            if (!movementClass.Any())  
-            {
-                return NotFound();
-            }
 
 
-            return Ok(true);
-        }
+        //cuando tenga armado movimientos, hacer la funcion que chequee si una clase se usa en la tabla de movimientos
+
+        
     }
 }

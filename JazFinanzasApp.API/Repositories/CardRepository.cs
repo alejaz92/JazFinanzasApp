@@ -1,18 +1,16 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
-    public class MovementClassRepository : GenericRepository<MovementClass>, IMovementClassRepository
+    public class CardRepository : GenericRepository<Card>, ICardRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public MovementClassRepository(ApplicationDbContext context) : base(context)
+        public CardRepository(ApplicationDbContext context) : base(context)
         {    
             _context = context;
         }
-
     }
 }
