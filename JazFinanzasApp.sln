@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.10.35122.118
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JazFinanzasApp.API", "JazFinanzasApp.API\JazFinanzasApp.API.csproj", "{77420960-30E4-4E18-BF85-A5817310ABCD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "JazFinanzasApp.API", "JazFinanzasApp.API\JazFinanzasApp.API.csproj", "{77420960-30E4-4E18-BF85-A5817310ABCD}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
