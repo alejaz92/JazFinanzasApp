@@ -36,6 +36,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var accountsDTO = accounts.Select(a => new AccountDTO
             {
+                Id = a.Id,
                 Name = a.Name
             }).ToList();
             return Ok(accountsDTO);

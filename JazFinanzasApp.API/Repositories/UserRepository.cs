@@ -76,5 +76,15 @@ namespace JazFinanzasApp.API.Repositories
             var token = tokenHandler.CreateToken(tokenDescriptor);
             return tokenHandler.WriteToken(token);
         }
+
+        public async Task<User> GetByIdAsync(int id)
+        {
+            return await _userManager.FindByIdAsync(id.ToString());
+        }
+
+        public async Task<IdentityResult> UpdateUserAsync(User user)
+        {
+            return await _userManager.UpdateAsync(user);
+        }
     }
 }
