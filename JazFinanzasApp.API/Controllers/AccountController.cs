@@ -1,6 +1,6 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO;
+using JazFinanzasApp.API.Models.DTO.Account;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

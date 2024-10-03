@@ -6,9 +6,12 @@ namespace JazFinanzasApp.API.Interfaces
 {
     public interface IUserRepository
     {
+        Task<bool> CheckPasswordAsync(User user, string password);
         Task<User> GetByIdAsync(int id);
+        Task<string> GetUserNameByIdAsync(int id);
         Task<string> LoginUserAsync(LoginUserDTO model);
         Task<IdentityResult> RegisterUserAsync(RegisterUserDTO model);
+        Task<IdentityResult> UpdatePasswordAsync(User user, string oldPassword, string newPassword);
         Task<IdentityResult> UpdateUserAsync(User user);
     }
 }

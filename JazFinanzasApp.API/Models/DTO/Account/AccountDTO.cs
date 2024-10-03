@@ -1,4 +1,4 @@
-﻿namespace JazFinanzasApp.API.Models.DTO
+﻿namespace JazFinanzasApp.API.Models.DTO.Account
 {
     public class AccountDTO
     {

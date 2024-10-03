@@ -38,17 +38,15 @@ namespace JazFinanzasApp.API.Controllers
 
             var userDTO = new EditUserDTO
             {
-                Id = user.Id,
                 Name = user.Name,
                 LastName = user.LastName,
-                UserName = user.UserName,
                 Email = user.Email
             };
 
             return Ok(userDTO);
         }
 
-        //metodo put, solo se pueda actualizar name, lastname y email
+       
         [HttpPut]
         public async Task<IActionResult> UpdateUser(EditUserDTO editUserDTO)
         {
@@ -59,11 +57,6 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             int userId = int.Parse(userIdClaim.Value);
-
-            if (userId != editUserDTO.Id)
-            {
-                return Unauthorized();
-            }
 
             var user = await _userRepository.GetByIdAsync(userId);
 
@@ -90,5 +83,72 @@ namespace JazFinanzasApp.API.Controllers
 
             return BadRequest(ModelState);
         }
+
+        
+        [HttpPut("updatePassword")]
+        public async Task<IActionResult> UpdatePassword(UpdatePasswordDTO updatePasswordDTO)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var user = await _userRepository.GetByIdAsync(userId);
+
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            var passwordCheck = await _userRepository.CheckPasswordAsync(user, updatePasswordDTO.OldPassword);
+
+            if (!passwordCheck)
+            {
+                return BadRequest(new { Message = "Old password is incorrect" });
+            }
+
+            var result = await _userRepository.UpdatePasswordAsync(user, updatePasswordDTO.OldPassword, updatePasswordDTO.NewPassword);
+
+            if (result.Succeeded)
+            {
+                user.UpdatedAt = DateTime.UtcNow;
+                await _userRepository.UpdateUserAsync(user);
+
+                return Ok(new { Message = "Password updated succesfully" });
+            }
+
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError(error.Code, error.Description);
+                Console.WriteLine($"Code: {error.Code}, Description: {error.Description}");
+            }
+
+            return BadRequest(ModelState);
+        }
+
+        [HttpGet("getUserName")]
+        public async Task<IActionResult> GetUserName()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var userName = await _userRepository.GetUserNameByIdAsync(userId);
+
+            if (userName == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(new { UserName = userName });
+        }
+
     }
 }
