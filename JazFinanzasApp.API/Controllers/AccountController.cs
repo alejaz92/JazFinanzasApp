@@ -150,5 +150,7 @@ namespace JazFinanzasApp.API.Controllers
             await _accountRepository.DeleteAsync(id);
             return Ok();
         }
+
+        
     }
 }

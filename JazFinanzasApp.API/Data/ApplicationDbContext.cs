@@ -22,6 +22,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<CardPayment> CardPayments { get; set; }
         public DbSet<Movement> Movements { get; set; }
         public DbSet<MovementClass> MovementClasses { get; set; }
+        public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

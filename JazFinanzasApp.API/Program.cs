@@ -33,6 +33,8 @@ builder.Services.AddScoped<IMovementClassRepository, MovementClassRepository>();
 builder.Services.AddScoped<IAssetRepository, AssetRepository>();
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<ICardRepository, CardRepository>();
+builder.Services.AddScoped<IAccount_AssetTypeRepository, Account_AssetTypeRepository>();
+builder.Services.AddScoped<IAssetTypeRepository, AssetTypeRepository>();
 
 
 builder.Services.AddIdentityCore<User>()
