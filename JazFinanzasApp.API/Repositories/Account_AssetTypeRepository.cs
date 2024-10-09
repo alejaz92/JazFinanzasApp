@@ -25,13 +25,38 @@ namespace JazFinanzasApp.API.Repositories
 
             var result = assetTypes.Select(assetType => new Account_AssetTypeDTO
             {
-                AssetTypeId = assetType.Id,
-                AssetTypeName = assetType.Name,
+                Id = assetType.Id,
+                Name = assetType.Name,
                 IsSelected = account_AssetType.Any(x => x.AssetTypeId == assetType.Id)
             }).ToList();
 
             return result;
 
+        }
+
+        public async Task<bool> AssignAssetTypesToAccountAsync(int accountId, List<Account_AssetTypeDTO> assetTypes)
+        {
+            // Paso 1: Obtener los registros actuales de tipos de activos para la cuenta
+            var currentAssetTypes = await _context.Account_AssetTypes
+                .Where(x => x.AccountId == accountId)
+                .ToListAsync();
+
+            // Paso 2: Eliminar los registros actuales
+            _context.Account_AssetTypes.RemoveRange(currentAssetTypes);
+
+            // Paso 3: Insertar los nuevos tipos de activos seleccionados
+            var newAssetTypes = assetTypes
+                .Where(x => x.IsSelected)
+                .Select(x => new Account_AssetType
+                {
+                    AccountId = accountId,
+                    AssetTypeId = x.Id
+                });
+
+            await _context.Account_AssetTypes.AddRangeAsync(newAssetTypes);
+
+            // Paso 4: Guardar los cambios
+            return await _context.SaveChangesAsync() > 0;
         }
     }
 }

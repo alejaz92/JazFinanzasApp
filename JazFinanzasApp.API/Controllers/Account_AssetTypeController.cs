@@ -32,7 +32,47 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
+            var account = await _accountRepository.GetByIdAsync(id);
+            if (account == null)
+            {
+                return NotFound();
+            }
+
+            if (account.UserId != int.Parse(userIdClaim.Value))
+            {
+                return Unauthorized();
+            }
+
             var result = await _account_AssetTypeRepository.GetAssetTypes(id);
+            return Ok(result);
+        }
+
+        [HttpPost("{id}")]
+        public async Task<IActionResult> AssignAssetTypesToAccount(int id, [FromBody]List<Account_AssetTypeDTO> assetTypes)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            var account = await _accountRepository.GetByIdAsync(id);
+            if (account == null)
+            {
+                return NotFound();
+            }
+
+            if (account.UserId != int.Parse(userIdClaim.Value))
+            {
+                return Unauthorized();
+            }
+
+            if (assetTypes == null || !assetTypes.Any())
+            {
+                return BadRequest("Select at least 1");
+            }
+
+            var result = await _account_AssetTypeRepository.AssignAssetTypesToAccountAsync(id, assetTypes);
             return Ok(result);
         }
     }
