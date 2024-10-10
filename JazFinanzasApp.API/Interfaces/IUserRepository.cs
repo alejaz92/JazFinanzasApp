@@ -10,7 +10,7 @@ namespace JazFinanzasApp.API.Interfaces
         Task<User> GetByIdAsync(int id);
         Task<string> GetUserNameByIdAsync(int id);
         Task<string> LoginUserAsync(LoginUserDTO model);
-        Task<IdentityResult> RegisterUserAsync(RegisterUserDTO model);
+        Task<(IdentityResult Result, int UserId)> RegisterUserAsync(RegisterUserDTO model);
         Task<IdentityResult> UpdatePasswordAsync(User user, string oldPassword, string newPassword);
         Task<IdentityResult> UpdateUserAsync(User user);
     }

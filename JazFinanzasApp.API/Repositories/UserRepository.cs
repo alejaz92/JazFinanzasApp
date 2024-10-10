@@ -26,7 +26,7 @@ namespace JazFinanzasApp.API.Repositories
             this.configuration = configuration;
         }
 
-        public async Task<IdentityResult> RegisterUserAsync(RegisterUserDTO model)
+        public async Task<(IdentityResult Result, int UserId)> RegisterUserAsync(RegisterUserDTO model)
         {
             var user = new User
             {
@@ -36,7 +36,9 @@ namespace JazFinanzasApp.API.Repositories
                 Email = model.Email
             };
 
-            return await _userManager.CreateAsync(user, model.Password);
+            var result =  await _userManager.CreateAsync(user, model.Password);
+
+            return (result, user.Id);
         }
 
         public async Task<string> LoginUserAsync(LoginUserDTO model)

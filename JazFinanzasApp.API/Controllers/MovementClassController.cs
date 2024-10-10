@@ -38,6 +38,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var movementClassesDTO = movementClasses.Select(mc => new MovementClassDTO
             {
+                Id = mc.Id,
                 Description = mc.Description,
                 IncExp = mc.IncExp
             }).ToList();
@@ -101,7 +102,8 @@ namespace JazFinanzasApp.API.Controllers
 
             var movementClassDTO = new MovementClassDTO
             {
-                Description = movementClass.Description
+                Description = movementClass.Description,
+                IncExp = movementClass.IncExp
             };
 
             return Ok(movementClassDTO);

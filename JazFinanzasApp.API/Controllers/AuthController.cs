@@ -19,9 +19,11 @@ namespace JazFinanzasApp.API.Controllers
     {
 
         private readonly IUserRepository _userRepository;
-        public AuthController(IUserRepository userRepository)
+        private readonly IMovementClassRepository _movementClassRepository;
+        public AuthController(IUserRepository userRepository, IMovementClassRepository movementClassRepository)
         {
             _userRepository = userRepository;
+            _movementClassRepository = movementClassRepository;
         }
 
         [HttpPost("register")]
@@ -33,12 +35,30 @@ namespace JazFinanzasApp.API.Controllers
             }
             var result = await _userRepository.RegisterUserAsync(registerUserDTO);
 
-            if (result.Succeeded)
+            if (result.Result.Succeeded)
             {
+                // al crear un usuario se le deben crear 2 clases de movimiento al usuario "Ajuste Saldo Ingreso", "Ajuste Saldo Egreso"
+
+                var movementClassInc = new MovementClass
+                {
+                    Description = "Ajuste Saldos Ingreso",
+                    IncExp = "I",
+                    UserId = result.UserId
+                };
+                await _movementClassRepository.AddAsync(movementClassInc);
+
+                var movementClassExp = new MovementClass
+                {
+                    Description = "Ajuste Saldos Egreso",
+                    IncExp = "E",
+                    UserId = result.UserId
+                };
+                await _movementClassRepository.AddAsync(movementClassExp);
+
                 return Ok(new { Message = "User created succesfully" });
             }
 
-            foreach (var error in result.Errors)
+            foreach (var error in result.Result.Errors)
             {
                 ModelState.AddModelError(error.Code, error.Description);
             }
