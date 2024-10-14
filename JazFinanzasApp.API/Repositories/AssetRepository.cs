@@ -16,18 +16,24 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<AssetDTO>> GetAllAssetsAsync()
+        public async Task<IEnumerable<Asset>> GetAssetsAsync()
+        {
+            return await _context.Assets.Include(a => a.AssetType).ToListAsync();
+        }
+        
+        public async Task<IEnumerable<Asset>> GetAssetsByTypeAsync(int assetTypeId)
+        {
+            return await _context.Assets
+                .Where(a => a.AssetTypeId == assetTypeId)
+                .Include(a => a.AssetType)
+                .ToListAsync();
+        }
+
+        public async Task<Asset> GetAssetByIdAsync(int id)
         {
             return await _context.Assets
                 .Include(a => a.AssetType)
-                .Select(a => new AssetDTO
-                {
-                    Name = a.Name,
-                    Symbol = a.Symbol,
-                    AssetTypeName = a.AssetType.Name
-                })
-                .ToListAsync();
-                
+                .FirstOrDefaultAsync(a => a.Id == id);
         }
     }
 }

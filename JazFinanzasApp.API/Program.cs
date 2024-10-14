@@ -35,6 +35,8 @@ builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<ICardRepository, CardRepository>();
 builder.Services.AddScoped<IAccount_AssetTypeRepository, Account_AssetTypeRepository>();
 builder.Services.AddScoped<IAssetTypeRepository, AssetTypeRepository>();
+builder.Services.AddScoped<IAsset_UserRepository, Asset_UserRepository>();
+
 
 
 builder.Services.AddIdentityCore<User>()

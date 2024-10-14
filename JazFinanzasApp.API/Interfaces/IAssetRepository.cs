@@ -5,6 +5,8 @@ namespace JazFinanzasApp.API.Interfaces
 {
     public interface IAssetRepository : IGenericRepository<Asset>
     {
-        Task<IEnumerable<AssetDTO>> GetAllAssetsAsync();
+        Task<Asset> GetAssetByIdAsync(int id);
+        Task<IEnumerable<Asset>> GetAssetsAsync();
+        Task<IEnumerable<Asset>> GetAssetsByTypeAsync(int assetTypeId);
     }
 }

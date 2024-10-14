@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
@@ -11,6 +12,38 @@ namespace JazFinanzasApp.API.Repositories
         public Asset_UserRepository(ApplicationDbContext context) : base(context)
         {    
             _context = context;
+        }
+
+        public async Task<IEnumerable<Asset_User>> GetUserAssetAsync(int userId)
+        {
+            return await _context.Assets_Users
+                .Include(au => au.Asset)
+                .Where(au => au.UserId == userId)                
+                .ToListAsync();
+        }
+
+        public async Task AssignAssetToUserAsync(int userId, int assetId)
+        {
+            var assetUser = new Asset_User
+            {
+                UserId = userId,
+                AssetId = assetId
+            };
+
+            await _context.Assets_Users.AddAsync(assetUser);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task UnassignAssetToUserAsync(int userId, int assetId)
+        {
+            var assetUser = await _context.Assets_Users
+                .FirstOrDefaultAsync(au => au.UserId == userId && au.AssetId == assetId);
+
+            if (assetUser != null)
+            {
+                _context.Assets_Users.Remove(assetUser);
+                await _context.SaveChangesAsync();
+            }
         }
     }
 }
