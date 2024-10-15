@@ -40,9 +40,29 @@ namespace JazFinanzasApp.API.Controllers
             {
                 Id = a.Id,
                 Name = a.Name,
+                Symbol = a.Symbol,
                 AssetTypeName = a.AssetType.Name
             }).ToList();
             return Ok(assetsDTO);
+        }
+
+        [HttpGet("type")]
+        public async Task<IActionResult> GetAssetTypes()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            var assetTypes = await _assetTypeRepository.GetAllAsync();
+
+            var assetTypesDTO = assetTypes.Select(at => new AssetTypeDTO
+            {
+                Id = at.Id,
+                Name = at.Name
+            }).ToList();
+            return Ok(assetTypesDTO);
         }
 
         [HttpGet("type/{assetTypeId}")]
@@ -66,13 +86,14 @@ namespace JazFinanzasApp.API.Controllers
             {
                 Id = a.Id,
                 Name = a.Name,
+                Symbol = a.Symbol,
                 AssetTypeName = a.AssetType.Name
             }).ToList();
             return Ok(assetsDTO);
         }
 
-        [HttpGet("user-assets")]
-        public async Task<IActionResult> GetUserAssets()
+        [HttpGet("user-assets/{assetTypeId}")]
+        public async Task<IActionResult> GetUserAssets(int assetTypeId)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -82,20 +103,21 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var assets = await _asset_UserRepository.GetUserAssetAsync(userId);
+            var assets = await _asset_UserRepository.GetUserAssetAsync(userId, assetTypeId);
 
             var assetsDTO = assets.Select(a => new AssetDTO
             {
                 Id = a.AssetId,
                 Name = a.Asset.Name,
-                AssetTypeName = a.Asset.AssetType.Name
+                Symbol = a.Asset.Symbol
+                //AssetTypeName = a.Asset.AssetType.Name
             }).ToList();
 
             return Ok(assetsDTO);
         }
 
-        [HttpPost("assign-assets")]
-        public async Task<IActionResult> AssignAsssetsToUser([FromBody] List<int> assetsId)
+        [HttpPost("assign-asset")]
+        public async Task<IActionResult> AssignAsssetToUser([FromBody] int assetId)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -103,21 +125,17 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            if (assetsId == null || !assetsId.Any())
+            if (assetId == null)
             {
-                return BadRequest("No assets to assign");
+                return BadRequest("No asset to assign");
             }
 
-            foreach(var assetId in assetsId)
-            {
-                await _asset_UserRepository.AssignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
-            }
-
+            await _asset_UserRepository.AssignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
             return Ok();
         }
 
-        [HttpDelete("unassign-assets")]
-        public async Task<IActionResult> UnassignAssetsToUser([FromBody] List<int> assetsId)
+        [HttpPost("unassign-asset")]
+        public async Task<IActionResult> UnassignAssetToUser([FromBody] int assetId)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -125,42 +143,27 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            if (assetsId == null || !assetsId.Any())
+            if (assetId == 0)
             {
-                return BadRequest("No assets to unassign");
+                return BadRequest("No asset to unassign");
             }
 
-            var failedToUnassign = new List<int>();
-            var successToUnassign = new List<int>();
 
-            foreach (var assetId in assetsId)
+
+            // luego agregar chequeo de si el asset se puede borrar
+            bool hasMovements = false;
+            if(hasMovements)
             {
-                // luego agregar chequeo de si el asset se puede borrar
-                bool hasMovements = false;
-                if(hasMovements)
-                {
-                    failedToUnassign.Add(assetId);
-                }
-                else
-                {
+                return BadRequest("Asset has movements, cannot be unassigned");
+            }
+            else
+            {
                     
-                    await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
-                    successToUnassign.Add(assetId);
-                }               
-            }
+                await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
+                return Ok();
+            }               
+            
 
-            if (failedToUnassign.Any())
-            {
-                return Ok( new
-                {
-                    message = "Some assets could not be unassigned.",
-                    successAssets = successToUnassign,
-                    failedAssets = failedToUnassign
-                });
-            }
-
-
-            return Ok(new { message = "All assets unassigned successfully." });
         }
  
     }

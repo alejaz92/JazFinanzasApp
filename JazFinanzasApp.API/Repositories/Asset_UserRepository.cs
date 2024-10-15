@@ -14,11 +14,12 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Asset_User>> GetUserAssetAsync(int userId)
+        public async Task<IEnumerable<Asset_User>> GetUserAssetAsync(int userId, int assetTypeId)
         {
             return await _context.Assets_Users
                 .Include(au => au.Asset)
-                .Where(au => au.UserId == userId)                
+                .Where(au => au.UserId == userId)   
+                .Where(au => au.Asset.AssetType.Id == assetTypeId)
                 .ToListAsync();
         }
 
