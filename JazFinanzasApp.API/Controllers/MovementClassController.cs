@@ -47,7 +47,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpPost]
-        public async Task<IActionResult> CreateMovementClass(MovementClassDTO movementClassDTO)
+        public async Task<IActionResult> CreateMovementClass(Models.DTO.movementClasses.MovementClassDTO movementClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -100,7 +100,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            var movementClassDTO = new MovementClassDTO
+            var movementClassDTO = new Models.DTO.movementClasses.MovementClassDTO
             {
                 Description = movementClass.Description,
                 IncExp = movementClass.IncExp
@@ -110,7 +110,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateMovementClass(int id, MovementClassDTO movementClassDTO)
+        public async Task<IActionResult> UpdateMovementClass(int id, Models.DTO.movementClasses.MovementClassDTO movementClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)

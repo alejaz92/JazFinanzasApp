@@ -37,5 +37,11 @@ namespace JazFinanzasApp.API.Repositories
             return (movements, totalCount);
         }
 
+        public async Task<int> GetNextId()
+        {
+            var lastMovement = await _context.Movements.OrderByDescending(m => m.Id).FirstOrDefaultAsync();
+            return lastMovement.Id + 1;
+        }
+
     }
 }
