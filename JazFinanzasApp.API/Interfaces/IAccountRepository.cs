@@ -4,5 +4,6 @@ namespace JazFinanzasApp.API.Interfaces
 {
     public interface IAccountRepository : IGenericRepository<Account>
     {
+        Task<IEnumerable<Account>> GetByAssetType(int assetTypeId, int userId);
     }
 }

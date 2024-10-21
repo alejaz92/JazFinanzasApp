@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
@@ -11,6 +12,17 @@ namespace JazFinanzasApp.API.Repositories
         public AssetTypeRepository(ApplicationDbContext context) : base(context)
         {    
             _context = context;
+        }
+
+        // get id by name   
+        public async Task<int> GetIdByName(string name) {
+            var assetType = await _context.AssetTypes.FirstOrDefaultAsync(a => a.Name == name);
+            return assetType.Id;
+        }
+
+        // get asset type by name
+        public async Task<AssetType> GetByName(string name) {
+            return await _context.AssetTypes.FirstOrDefaultAsync(a => a.Name == name);
         }
     }
 }

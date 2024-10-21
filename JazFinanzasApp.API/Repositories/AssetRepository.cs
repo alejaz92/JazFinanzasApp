@@ -26,6 +26,7 @@ namespace JazFinanzasApp.API.Repositories
             return await _context.Assets
                 .Where(a => a.AssetTypeId == assetTypeId)
                 .Include(a => a.AssetType)
+                .OrderBy(a => a.Name)
                 .ToListAsync();
         }
 
@@ -33,7 +34,11 @@ namespace JazFinanzasApp.API.Repositories
         {
             return await _context.Assets
                 .Include(a => a.AssetType)
+                .OrderBy(a => a.Name)
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
+
+        
+
     }
 }

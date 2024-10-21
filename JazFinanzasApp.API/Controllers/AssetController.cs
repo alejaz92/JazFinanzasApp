@@ -103,6 +103,8 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
+
+
             var assets = await _asset_UserRepository.GetUserAssetAsync(userId, assetTypeId);
 
             var assetsDTO = assets.Select(a => new AssetDTO
@@ -161,10 +163,43 @@ namespace JazFinanzasApp.API.Controllers
                     
                 await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
                 return Ok();
-            }               
-            
+            }
+
+
 
         }
- 
+
+
+        [HttpGet("user-assetsByName/{assetTypeName}")]
+        public async Task<IActionResult> GetUserAssetsByATName(string assetTypeName)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            AssetType assetType = await _assetTypeRepository.GetByName(assetTypeName);
+            if (assetType == null)
+            {
+                return NotFound();
+            }
+
+
+            var assets = await _asset_UserRepository.GetUserAssetAsync(userId, assetType.Id);
+
+            var assetsDTO = assets.Select(a => new AssetDTO
+            {
+                Id = a.AssetId,
+                Name = a.Asset.Name,
+                Symbol = a.Asset.Symbol,
+                AssetTypeName = a.Asset.AssetType.Name
+            }).ToList();
+
+            return Ok(assetsDTO);
+        }
+
     }
 }

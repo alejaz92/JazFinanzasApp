@@ -14,9 +14,11 @@ namespace JazFinanzasApp.API.Controllers
     public class AccountController : ControllerBase
     {
         private readonly IAccountRepository _accountRepository;
-        public AccountController(IAccountRepository accountRepository)
+        private readonly IAssetTypeRepository _assetTypeRepository;
+        public AccountController(IAccountRepository accountRepository, IAssetTypeRepository assetTypeRepository)
         {
             _accountRepository = accountRepository;
+            _assetTypeRepository = assetTypeRepository;
         }
 
         [HttpGet]
@@ -151,6 +153,38 @@ namespace JazFinanzasApp.API.Controllers
             return Ok();
         }
 
+
+        [HttpGet("byAssetType/{assetTypeName}")]
+        public async Task<IActionResult> GetByAssetType(string assetTypeName)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var assetType = await _assetTypeRepository.GetByName(assetTypeName);
+            if (assetType == null)
+            {
+                return NotFound();
+            }
+            
+
+            var accounts = await _accountRepository.GetByAssetType(assetType.Id,userId);
+            if (accounts == null)
+            {
+                return NotFound();
+            }
+
+            var accountsDTO = accounts.Select( a => new AccountDTO
+            {
+                Id = a.Id,
+                Name = a.Name
+            }).ToList();
+            return Ok(accountsDTO);
+        }
         
     }
 }

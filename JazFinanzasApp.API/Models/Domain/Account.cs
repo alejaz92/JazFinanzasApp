@@ -11,5 +11,7 @@ namespace JazFinanzasApp.API.Models.Domain
         public int UserId { get; set; }
         public User User { get; set; }
 
+        public ICollection<Account_AssetType> Account_AssetTypes { get; set; }
+
     }
 }
