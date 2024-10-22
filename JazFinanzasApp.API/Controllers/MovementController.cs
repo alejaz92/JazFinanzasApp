@@ -63,6 +63,7 @@ namespace JazFinanzasApp.API.Controllers
         [HttpPost]
          public async Task<IActionResult> CreateMovement(movementAddDTO movementDTO)
         {
+
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
             {
