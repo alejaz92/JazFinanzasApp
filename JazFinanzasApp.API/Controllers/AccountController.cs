@@ -122,6 +122,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
+            account.UpdatedAt = DateTime.UtcNow;
             account.Name = accountDTO.Name;
             await _accountRepository.UpdateAsync(account);
             return Ok();

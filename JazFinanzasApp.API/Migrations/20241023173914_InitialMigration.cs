@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
+#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
+
 namespace JazFinanzasApp.API.Migrations
 {
     /// <inheritdoc />
@@ -266,6 +268,30 @@ namespace JazFinanzasApp.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Account_AssetTypes",
+                columns: table => new
+                {
+                    AccountId = table.Column<int>(type: "int", nullable: false),
+                    AssetTypeId = table.Column<int>(type: "int", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Account_AssetTypes", x => new { x.AccountId, x.AssetTypeId });
+                    table.ForeignKey(
+                        name: "FK_Account_AssetTypes_Accounts_AccountId",
+                        column: x => x.AccountId,
+                        principalTable: "Accounts",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_Account_AssetTypes_AssetTypes_AssetTypeId",
+                        column: x => x.AssetTypeId,
+                        principalTable: "AssetTypes",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "CardPayments",
                 columns: table => new
                 {
@@ -373,22 +399,23 @@ namespace JazFinanzasApp.API.Migrations
                 name: "Movements",
                 columns: table => new
                 {
-                    Id = table.Column<int>(type: "int", nullable: false),
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
                     AccountId = table.Column<int>(type: "int", nullable: false),
                     AssetId = table.Column<int>(type: "int", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Date = table.Column<DateTime>(type: "datetime2", nullable: false),
                     MovementType = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    MovementClassId = table.Column<int>(type: "int", nullable: false),
+                    MovementClassId = table.Column<int>(type: "int", nullable: true),
                     Detail = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Amount = table.Column<decimal>(type: "decimal(18,10)", nullable: false),
                     QuotePrice = table.Column<decimal>(type: "decimal(18,10)", nullable: true),
-                    UserId = table.Column<int>(type: "int", nullable: false)
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Movements", x => new { x.Id, x.AccountId, x.AssetId });
+                    table.PrimaryKey("PK_Movements", x => x.Id);
                     table.ForeignKey(
                         name: "FK_Movements_Accounts_AccountId",
                         column: x => x.AccountId,
@@ -410,6 +437,26 @@ namespace JazFinanzasApp.API.Migrations
                         principalTable: "MovementClasses",
                         principalColumn: "Id");
                 });
+
+            migrationBuilder.InsertData(
+                table: "AssetTypes",
+                columns: new[] { "Id", "CreatedAt", "Environment", "Name", "UpdatedAt" },
+                values: new object[,]
+                {
+                    { 1, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1232), "FIAT", "Moneda", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1236) },
+                    { 2, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1239), "CRYPTO", "Criptomoneda", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1239) },
+                    { 3, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1240), "BOLSA", "Accion Argentina", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1241) },
+                    { 4, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1241), "BOLSA", "CEDEAR", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1242) },
+                    { 5, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1242), "BOLSA", "FCI", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1243) },
+                    { 6, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1243), "BOLSA", "Bono", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1244) },
+                    { 7, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1245), "BOLSA", "Accion USA", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1245) },
+                    { 8, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1246), "BOLSA", "Obligacion Negociable", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1246) }
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Account_AssetTypes_AssetTypeId",
+                table: "Account_AssetTypes",
+                column: "AssetTypeId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Accounts_UserId",
@@ -519,6 +566,9 @@ namespace JazFinanzasApp.API.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "Account_AssetTypes");
+
             migrationBuilder.DropTable(
                 name: "AspNetRoleClaims");
 

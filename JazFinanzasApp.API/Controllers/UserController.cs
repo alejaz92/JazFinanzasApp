@@ -68,6 +68,7 @@ namespace JazFinanzasApp.API.Controllers
             user.Name = editUserDTO.Name;
             user.LastName = editUserDTO.LastName;
             user.Email = editUserDTO.Email;
+            user.UpdatedAt = DateTime.UtcNow;
 
             var result = await _userRepository.UpdateUserAsync(user);
 

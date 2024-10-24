@@ -4,14 +4,9 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    [PrimaryKey(nameof(Id), nameof(AccountId), nameof(AssetId))]
-    public class Movement
+    
+    public class Movement : BaseEntity
     {
-        [Required]
-        public int Id { get; set; }
-
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         [Required]
         [ForeignKey("AccountId")]

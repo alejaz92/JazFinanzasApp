@@ -10,8 +10,8 @@ namespace JazFinanzasApp.API.Models.Domain
         [Required]
         public string Symbol {  get; set; }
         [Required]
-        [ForeignKey("AssetTypeId")]
         public int AssetTypeId { get; set; }
+        [Required]
         public AssetType AssetType { get; set; }
 
 

@@ -75,7 +75,7 @@ namespace JazFinanzasApp.API.Data
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
             modelBuilder.Entity<Asset>()
                 .HasOne(cm => cm.AssetType)
-                .WithMany() // Si no hay colección en User
+                .WithMany(at => at.Assets) // Si no hay colección en User
                 .HasForeignKey(cm => cm.AssetTypeId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
             modelBuilder.Entity<Asset_User>()
@@ -123,7 +123,6 @@ namespace JazFinanzasApp.API.Data
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
-
             modelBuilder.Entity<MovementClass>()
                 .HasOne(cm => cm.User)
                 .WithMany() // Si no hay colección en User

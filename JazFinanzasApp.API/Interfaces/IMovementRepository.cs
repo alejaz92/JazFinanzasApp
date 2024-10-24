@@ -4,7 +4,7 @@ namespace JazFinanzasApp.API.Interfaces
 {
     public interface IMovementRepository : IGenericRepository<Movement>
     {
-        Task<int> GetNextId();
+        Task<Movement> GetMovementByIdAsync(int id);
         Task<(IEnumerable<Movement> Movements, int TotalCount)> GetPaginatedMovements(int userId, int page, int pageSize);
     }
 }
