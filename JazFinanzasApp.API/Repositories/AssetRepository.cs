@@ -38,6 +38,17 @@ namespace JazFinanzasApp.API.Repositories
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
+        // get asset by name
+        public async Task<Asset> GetAssetByNameAsync(string name)
+        {
+            return await _context.Assets
+                .Include(a => a.AssetType)
+                .FirstOrDefaultAsync(a => a.Name == name);
+        }
+
+
+
+
         
 
     }

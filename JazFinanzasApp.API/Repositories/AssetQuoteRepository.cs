@@ -12,7 +12,6 @@ namespace JazFinanzasApp.API.Repositories
         {
             _context = context;
         }
-
         
         public async Task<decimal> GetQuotePrice(int assetId, DateTime date, string type)
         {

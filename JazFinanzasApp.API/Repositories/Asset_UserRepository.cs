@@ -14,7 +14,7 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Asset_User>> GetUserAssetAsync(int userId, int assetTypeId)
+        public async Task<IEnumerable<Asset_User>> GetUserAssetsAsync(int userId, int assetTypeId)
         {
             return await _context.Assets_Users
                 .Include(au => au.Asset)
@@ -45,6 +45,13 @@ namespace JazFinanzasApp.API.Repositories
                 _context.Assets_Users.Remove(assetUser);
                 await _context.SaveChangesAsync();
             }
+        }
+
+        
+        public async Task<Asset_User> GetUserAssetAsync(int userId, int assetId)
+        {
+            return await _context.Assets_Users
+                .FirstOrDefaultAsync(au => au.UserId == userId && au.AssetId == assetId);
         }
     }
 }

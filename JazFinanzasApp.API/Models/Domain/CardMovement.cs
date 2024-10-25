@@ -6,7 +6,7 @@ namespace JazFinanzasApp.API.Models.Domain
     public class CardMovement : BaseEntity
     {
         [Required]
-        public DateTime DateMovement {  get; set; }
+        public DateTime Date {  get; set; }
 
         public string Detail {  get; set; }
 
@@ -34,7 +34,7 @@ namespace JazFinanzasApp.API.Models.Domain
         [Required]
         public DateTime FirstInstallment {  get; set; }
 
-        public DateTime LastInstallment { get; set; }
+        public DateTime? LastInstallment { get; set; }
 
         [Required]
         public string Repeat {  get; set; }

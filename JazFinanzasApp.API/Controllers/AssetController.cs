@@ -105,7 +105,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
 
-            var assets = await _asset_UserRepository.GetUserAssetAsync(userId, assetTypeId);
+            var assets = await _asset_UserRepository.GetUserAssetsAsync(userId, assetTypeId);
 
             var assetsDTO = assets.Select(a => new AssetDTO
             {
@@ -188,7 +188,7 @@ namespace JazFinanzasApp.API.Controllers
             }
 
 
-            var assets = await _asset_UserRepository.GetUserAssetAsync(userId, assetType.Id);
+            var assets = await _asset_UserRepository.GetUserAssetsAsync(userId, assetType.Id);
 
             var assetsDTO = assets.Select(a => new AssetDTO
             {

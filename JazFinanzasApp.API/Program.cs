@@ -38,6 +38,7 @@ builder.Services.AddScoped<IAssetTypeRepository, AssetTypeRepository>();
 builder.Services.AddScoped<IAsset_UserRepository, Asset_UserRepository>();
 builder.Services.AddScoped<IMovementRepository, MovementRepository>();
 builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
+builder.Services.AddScoped<ICardMovementRepository, CardMovementRepository>();
 
 
 
