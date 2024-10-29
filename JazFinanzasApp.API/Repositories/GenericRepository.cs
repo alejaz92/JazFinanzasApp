@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Linq.Expressions;
 
 namespace JazFinanzasApp.API.Repositories
@@ -9,12 +10,14 @@ namespace JazFinanzasApp.API.Repositories
     {
         private readonly ApplicationDbContext _context;
         private readonly DbSet<T> _dbSet;
+        private IDbContextTransaction _transaction;
 
         public GenericRepository(ApplicationDbContext context)
         {
             _context = context;
             _dbSet = _context.Set<T>();
         }
+
 
         public async Task<IEnumerable<T>> GetAllAsync()
         {
@@ -31,6 +34,17 @@ namespace JazFinanzasApp.API.Repositories
             await _dbSet.AddAsync(entity);
             await _context.SaveChangesAsync();
         }
+
+        public async Task AddAsyncTransaction(T entity)
+        {
+            await _dbSet.AddAsync(entity);
+        }
+
+        public async Task SaveChangesAsyncTransaction()
+        {
+            await _context.SaveChangesAsync();
+        }
+        
 
         public async Task UpdateAsync(T entity)
         {
@@ -61,5 +75,27 @@ namespace JazFinanzasApp.API.Repositories
         }
 
 
+        public async Task BeginTransactionAsync()
+        {
+            _transaction = await _context.Database.BeginTransactionAsync();
+        }
+
+        public async Task CommitTransactionAsync()
+        {
+            if(_transaction != null)
+            {
+                await _transaction.CommitAsync();
+                await _transaction.DisposeAsync();
+            }
+        }
+
+        public async Task RollbackTransactionAsync()
+        {
+            if(_transaction != null)
+            {
+                await _transaction.RollbackAsync();
+                await _transaction.DisposeAsync();
+            }
+        }
     }
 }

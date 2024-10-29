@@ -45,5 +45,29 @@ namespace JazFinanzasApp.API.Repositories
 
             return pendingMovements;
         }
+
+        public async Task<IEnumerable<CardMovement>> GetCardMovementsToPay(int cardId, DateTime paymentMonth, int userId)
+        {
+            var firstDayOfMonth = new DateTime(paymentMonth.Year, paymentMonth.Month, 1);
+            var lastDayOfMonth = firstDayOfMonth.AddMonths(1).AddDays(-1);
+
+            return await _context.CardMovements
+                .Include(cm => cm.Card)
+                .Include(cm => cm.MovementClass)
+                .Include(cm => cm.Asset)
+                .Where(cm => cm.CardId == cardId
+                    && cm.UserId == userId
+                    && (
+                        (
+                            cm.Repeat == "NO"
+                            && cm.FirstInstallment <=lastDayOfMonth
+                            && cm.LastInstallment >= firstDayOfMonth) 
+                        ||
+                        (
+                            cm.Repeat == "YES"
+                            && cm.FirstInstallment <= firstDayOfMonth))
+                        )                
+                .ToListAsync();
+        }
     }
 }

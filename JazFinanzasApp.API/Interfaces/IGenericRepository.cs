@@ -11,5 +11,10 @@ namespace JazFinanzasApp.API.Interfaces
         Task DeleteAsync(int id);
         Task<IEnumerable<T>> FindAsync(Expression<Func<T, bool>> predicate);
         Task<IEnumerable<T>> GetByUserIdAsync(int userId);
+        Task AddAsyncTransaction(T entity);
+        Task BeginTransactionAsync();
+        Task CommitTransactionAsync();
+        Task RollbackTransactionAsync();
+        Task SaveChangesAsyncTransaction();
     }
 }

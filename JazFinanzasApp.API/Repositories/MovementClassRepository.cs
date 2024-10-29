@@ -14,5 +14,12 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
+
+
+        public async Task<MovementClass> GetMovementClassByDescriptionAsync(string Description)
+        {
+            return await _context.MovementClasses
+                .FirstOrDefaultAsync(m => m.Description == Description);
+        }
     }
 }

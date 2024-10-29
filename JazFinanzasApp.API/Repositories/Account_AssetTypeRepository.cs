@@ -58,5 +58,14 @@ namespace JazFinanzasApp.API.Repositories
             // Paso 4: Guardar los cambios
             return await _context.SaveChangesAsync() > 0;
         }
+
+
+        public async Task<Account_AssetType> GetAccount_AssetTypeByAccountIdAndAssetTypeNameAsync(int accountId, string assetTypeName)
+        {
+            return await _context.Account_AssetTypes
+                .Include(a => a.Account)
+                .Include(a => a.AssetType)
+                .FirstOrDefaultAsync(a => a.AccountId == accountId && a.AssetType.Name == assetTypeName);
+        }
     }
 }
