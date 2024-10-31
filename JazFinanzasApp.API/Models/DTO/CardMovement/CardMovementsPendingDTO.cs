@@ -3,6 +3,7 @@ namespace JazFinanzasApp.API.Models.DTO.CardMovement
 {
     public class CardMovementsPendingDTO
     {
+        public int Id { get; set; }
         public DateTime Date { get; set; }
         public string Card  { get; set; }
         public string MovementClass { get; set; }          

@@ -15,21 +15,32 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
+        
+
+
+
+
+
+
+
         public async Task<IEnumerable<CardMovementsPendingDTO>> GetPendingCardMovementsAsync(int userId)
         {
             var today = DateTime.Today;
-            
+            today = new DateTime(today.Year, today.Month, 1);
+            DateTime nullDate = new DateTime(0001, 01, 01, 00, 00, 00, 0000000);
+
             var pendingMovements = await _context.CardMovements
                 .Include(cm => cm.Card)
                 .Include(cm => cm.MovementClass)
                 .Include(cm => cm.Asset)
                 .Where(cm => cm.Card.UserId == userId && (
-                    (cm.Repeat == "YES" && cm.LastInstallment == null) ||
+                    (cm.Repeat == "YES" &&  cm.LastInstallment  ==   nullDate  ) ||
                     (cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today) 
                     
                 ))
                 .Select(cm => new CardMovementsPendingDTO
                 {
+                    Id = cm.Id,
                     Date = cm.Date,
                     Card = cm.Card.Name,
                     MovementClass = cm.MovementClass.Description,
@@ -41,6 +52,9 @@ namespace JazFinanzasApp.API.Repositories
                     LastInstallment = cm.Repeat == "YES" ? "NA" : (cm.LastInstallment.HasValue ? cm.LastInstallment.Value.ToString("MM/yyyy") : "NA"),
                     InstallmentAmount = cm.InstallmentAmount
                 })
+                .OrderBy(cm => cm.Card)
+                .ThenBy(cm => cm.Asset)
+                .ThenBy(cm => cm.Date)
                 .ToListAsync();
 
             return pendingMovements;
