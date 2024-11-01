@@ -17,7 +17,7 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAssetRepository _assetRepository;
         private readonly IAsset_UserRepository _asset_UserRepository;
         private readonly IAssetTypeRepository _assetTypeRepository;
-        public AssetController(IAssetRepository assetRepository, IAsset_UserRepository asset_UserRepository, 
+        public AssetController(IAssetRepository assetRepository, IAsset_UserRepository asset_UserRepository,
             IAssetTypeRepository assetTypeRepository)
         {
             _assetRepository = assetRepository;
@@ -26,7 +26,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll() 
+        public async Task<IActionResult> GetAll()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -154,13 +154,13 @@ namespace JazFinanzasApp.API.Controllers
 
             // luego agregar chequeo de si el asset se puede borrar
             bool hasMovements = false;
-            if(hasMovements)
+            if (hasMovements)
             {
                 return BadRequest("Asset has movements, cannot be unassigned");
             }
             else
             {
-                    
+
                 await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
                 return Ok();
             }
@@ -201,5 +201,45 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(assetsDTO);
         }
 
+
+        [HttpGet("card")]
+        public async Task<IActionResult> GetAssetsForCardMovements()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            //traer los assets cuyo nombre son Peso Argentino y Dolar Estadounidense con metodo GetAssetByNameAsync
+            Asset pesoArgentino = await _assetRepository.GetAssetByNameAsync("Peso Argentino");
+            Asset dolarEstadounidense = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+
+            if (pesoArgentino == null || dolarEstadounidense == null)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Error al buscar los assets");
+            }
+
+            var assetsDTO = new List<AssetDTO>
+            {
+                new AssetDTO
+                {
+                    Id = pesoArgentino.Id,
+                    Name = pesoArgentino.Name,
+                    Symbol = pesoArgentino.Symbol,
+                    AssetTypeName = pesoArgentino.AssetType.Name
+                },
+                new AssetDTO
+                {
+                    Id = dolarEstadounidense.Id,
+                    Name = dolarEstadounidense.Name,
+                    Symbol = dolarEstadounidense.Symbol,
+                    AssetTypeName = dolarEstadounidense.AssetType.Name
+                }
+            };
+
+            return Ok(assetsDTO);
+
+        }
     }
 }

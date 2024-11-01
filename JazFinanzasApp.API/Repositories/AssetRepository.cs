@@ -37,8 +37,6 @@ namespace JazFinanzasApp.API.Repositories
                 .OrderBy(a => a.Name)
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
-
-        // get asset by name
         public async Task<Asset> GetAssetByNameAsync(string name)
         {
             return await _context.Assets

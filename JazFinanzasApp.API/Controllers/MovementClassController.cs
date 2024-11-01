@@ -34,6 +34,9 @@ namespace JazFinanzasApp.API.Controllers
 
             var movementClasses = await _movementClassRepository.GetByUserIdAsync(userId);
 
+
+            movementClasses = movementClasses.OrderBy(mc => mc.Description);
+
             // convert to DTO
 
             var movementClassesDTO = movementClasses.Select(mc => new MovementClassDTO

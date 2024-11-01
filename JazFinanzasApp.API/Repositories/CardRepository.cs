@@ -12,5 +12,7 @@ namespace JazFinanzasApp.API.Repositories
         {    
             _context = context;
         }
+
+        
     }
 }
