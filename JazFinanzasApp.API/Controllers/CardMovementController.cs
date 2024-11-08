@@ -236,8 +236,21 @@ namespace JazFinanzasApp.API.Controllers
                 foreach (var cardMovement in cardMovementsPaymentDTO.CardMovements)
                 {
 
-                    if(!await ValidateMovement(cardMovement, userId)) return BadRequest("Error in Validation");
                     
+
+                    var asset = await _assetRepository.GetByIdAsync(cardMovement.AssetId);
+                    if (asset == null || (asset.Name != "Peso Argentino" && asset.Name != "Dolar Estadounidense")) BadRequest("Error in Validation");
+                    cardMovement.Asset = asset.Name;
+
+
+                    var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardMovement.AssetId);
+                    if (assetUser == null) return BadRequest("Error in Validation");
+
+                    var movementClass = await _movementClassRepository.GetByIdAsync(cardMovement.MovementClassId);
+                    if(movementClass == null) return BadRequest("Error in Validation");
+
+                    cardMovement.MovementClass = movementClass.Description;
+
 
 
                     var movement = CreateMovement(cardMovementsPaymentDTO, cardMovement, userId, peso, dolar, quotePrice);
@@ -259,6 +272,7 @@ namespace JazFinanzasApp.API.Controllers
                     MovementType = "E",
                     UserId = userId,
                     Amount = -cardMovementsPaymentDTO.CardExpenses,
+                    AssetId = peso.Id,
                     QuotePrice = quotePrice
                     
                 };
