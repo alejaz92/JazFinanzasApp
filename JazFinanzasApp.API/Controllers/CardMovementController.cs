@@ -200,7 +200,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPost("CardPayments")]
-        public async Task<IActionResult> RegistarCardPayment([FromBody] CardMovementsPaymentDTO cardMovementsPaymentDTO)
+        public async Task<IActionResult> RegisterCardPayment([FromBody] CardMovementsPaymentDTO cardMovementsPaymentDTO)
         {
            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -335,5 +335,66 @@ namespace JazFinanzasApp.API.Controllers
             return movement;
         }
 
+        [HttpPost("EditRecurrent")]
+        public async Task<IActionResult> EditRecurrent([FromBody] EditRecurrentDTO editRecurrentDTO)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            
+            editRecurrentDTO.Date = new DateTime(editRecurrentDTO.Date.Year, editRecurrentDTO.Date.Month, 1);
+
+
+            var cardMovement = await _cardMovementRepository.GetByIdAsync(editRecurrentDTO.CardMovementId);
+            if (cardMovement == null) return BadRequest("Card movement not found");
+
+            if (cardMovement.Repeat != "YES") return BadRequest("Card movement is not recurrent");
+
+            if (cardMovement.UserId != userId) return Unauthorized();
+
+
+            if (editRecurrentDTO.Date < cardMovement.FirstInstallment) return BadRequest("Date is lower than first installment");
+
+            cardMovement.Repeat = "CLOSED";
+            cardMovement.LastInstallment = editRecurrentDTO.Date;
+            cardMovement.UpdatedAt = DateTime.UtcNow;
+
+
+            await _cardMovementRepository.UpdateAsync(cardMovement);
+
+            if (editRecurrentDTO.IsUpdate)
+            {
+                // new cardmovement
+                var newCardMovement = new CardMovement
+                {
+                    Date = editRecurrentDTO.Date,
+                    Detail = cardMovement.Detail,
+                    CardId = cardMovement.CardId,
+                    Card = cardMovement.Card,
+                    MovementClassId = cardMovement.MovementClassId,
+                    MovementClass = cardMovement.MovementClass,
+                    AssetId = cardMovement.AssetId,
+                    Asset = cardMovement.Asset,
+                    TotalAmount = editRecurrentDTO.newAmount.Value,
+                    Installments = cardMovement.Installments,
+                    FirstInstallment = editRecurrentDTO.Date,
+                    //LAST INST
+
+                    Repeat = "YES",
+                    UserId = userId,
+                    InstallmentAmount = editRecurrentDTO.newAmount.Value
+                };
+
+                await _cardMovementRepository.AddAsync(newCardMovement);
+
+            }
+            return Ok();
+
+        }
     }     
 }

@@ -13,16 +13,7 @@ namespace JazFinanzasApp.API.Repositories
         public CardMovementRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
-        }
-
-        
-
-
-
-
-
-
-
+        }    
         public async Task<IEnumerable<CardMovementsPendingDTO>> GetPendingCardMovementsAsync(int userId)
         {
             var today = DateTime.Today;
@@ -83,5 +74,7 @@ namespace JazFinanzasApp.API.Repositories
                         )                
                 .ToListAsync();
         }
+
+        
     }
 }
