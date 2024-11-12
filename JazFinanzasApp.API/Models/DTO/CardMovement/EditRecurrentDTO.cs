@@ -2,8 +2,8 @@
 {
     public class EditRecurrentDTO
     {
-        public bool IsUpdate { get; set; }
-        public DateTime Date { get; set; }
+        public bool isUpdate { get; set; }
+        public DateTime newDate { get; set; }
         public decimal? newAmount { get; set; }
         
     }

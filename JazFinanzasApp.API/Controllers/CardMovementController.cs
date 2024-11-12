@@ -372,8 +372,8 @@ namespace JazFinanzasApp.API.Controllers
                 Date = cardMovement.Date,
                 Card = card.Name,
                 Description = cardMovement.Detail,
-                Amount = cardMovement.InstallmentAmount
-
+                Amount = cardMovement.InstallmentAmount,
+                FirstInstallment = cardMovement.FirstInstallment
             };
 
             return Ok(cardMovementDTO);
@@ -391,7 +391,10 @@ namespace JazFinanzasApp.API.Controllers
             int userId = int.Parse(userIdClaim.Value);
 
             
-            editRecurrentDTO.Date = new DateTime(editRecurrentDTO.Date.Year, editRecurrentDTO.Date.Month, 1);
+            var newFirstInstallment = new DateTime(editRecurrentDTO.newDate.Year, editRecurrentDTO.newDate.Month, 1);
+
+            
+            var oldLastInstallment = newFirstInstallment.AddMonths(-1);
 
 
             var cardMovement = await _cardMovementRepository.GetByIdAsync(Id);
@@ -402,21 +405,21 @@ namespace JazFinanzasApp.API.Controllers
             if (cardMovement.UserId != userId) return Unauthorized();
 
 
-            if (editRecurrentDTO.Date < cardMovement.FirstInstallment) return BadRequest("Date is lower than first installment");
+            if (oldLastInstallment < cardMovement.FirstInstallment) return BadRequest("Date is lower than first installment");
 
             cardMovement.Repeat = "CLOSED";
-            cardMovement.LastInstallment = editRecurrentDTO.Date;
+            cardMovement.LastInstallment = oldLastInstallment;
             cardMovement.UpdatedAt = DateTime.UtcNow;
 
 
             await _cardMovementRepository.UpdateAsync(cardMovement);
 
-            if (editRecurrentDTO.IsUpdate)
+            if (editRecurrentDTO.isUpdate)
             {
                 // new cardmovement
                 var newCardMovement = new CardMovement
                 {
-                    Date = editRecurrentDTO.Date,
+                    Date = editRecurrentDTO.newDate,
                     Detail = cardMovement.Detail,
                     CardId = cardMovement.CardId,
                     Card = cardMovement.Card,
@@ -426,7 +429,7 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = cardMovement.Asset,
                     TotalAmount = editRecurrentDTO.newAmount.Value,
                     Installments = cardMovement.Installments,
-                    FirstInstallment = editRecurrentDTO.Date,
+                    FirstInstallment = newFirstInstallment,
                     //LAST INST
 
                     Repeat = "YES",

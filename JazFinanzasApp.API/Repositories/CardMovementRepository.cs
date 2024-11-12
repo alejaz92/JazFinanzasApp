@@ -25,7 +25,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(cm => cm.MovementClass)
                 .Include(cm => cm.Asset)
                 .Where(cm => cm.Card.UserId == userId && (
-                    (cm.Repeat == "YES" &&  cm.LastInstallment  ==   nullDate  ) ||
+                    (cm.Repeat == "YES" &&  (cm.LastInstallment  ==   nullDate || cm.LastInstallment == null )) ||
                     (cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today) 
                     
                 ))
