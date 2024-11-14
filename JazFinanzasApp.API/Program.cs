@@ -40,6 +40,7 @@ builder.Services.AddScoped<IMovementRepository, MovementRepository>();
 builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
 builder.Services.AddScoped<ICardMovementRepository, CardMovementRepository>();
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
+builder.Services.AddScoped<IInvestmentMovementRepository, InvestmentMovementRepository>();
 
 
 

@@ -24,5 +24,25 @@ namespace JazFinanzasApp.API.Repositories
 
             return quote.Value;
         }
+
+        public async Task<AssetQuote> GetLastQuoteByAsset(int assetId, string? type)
+        {
+
+            if (type != null)
+            {
+                return await _context.AssetQuotes
+                    .Where(aq => aq.Asset.Id == assetId)
+                    .Where(aq => aq.Type == type)
+                    .OrderByDescending(aq => aq.Date)
+                    .FirstOrDefaultAsync();
+            } else
+            {
+                return await _context.AssetQuotes
+                .Where(aq => aq.Asset.Id == assetId)
+                .OrderByDescending(aq => aq.Date)
+                .FirstOrDefaultAsync();
+            }
+            
+        }
     }
 }

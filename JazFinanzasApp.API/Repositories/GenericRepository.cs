@@ -35,6 +35,14 @@ namespace JazFinanzasApp.API.Repositories
             await _context.SaveChangesAsync();
         }
 
+        
+        public async Task<T> AddAsyncReturnObject(T entity)
+        {
+            await _dbSet.AddAsync(entity);
+            await _context.SaveChangesAsync();
+            return entity;
+        }
+
         public async Task AddAsyncTransaction(T entity)
         {
             await _dbSet.AddAsync(entity);

@@ -47,6 +47,15 @@ namespace JazFinanzasApp.API.Controllers
                 };
                 await _movementClassRepository.AddAsync(movementClassInc);
 
+                movementClassInc = new MovementClass
+                {
+                    Description = "Ingreso Inversiones",
+                    IncExp = "I",
+                    UserId = result.UserId
+                };
+                await _movementClassRepository.AddAsync(movementClassInc);
+
+
                 var movementClassExp = new MovementClass
                 {
                     Description = "Ajuste Saldos Egreso",
@@ -54,6 +63,24 @@ namespace JazFinanzasApp.API.Controllers
                     UserId = result.UserId
                 };
                 await _movementClassRepository.AddAsync(movementClassExp);
+
+
+                movementClassExp = new MovementClass
+                {
+                    Description = "Gastos Tarjeta",
+                    IncExp = "E",
+                    UserId = result.UserId
+                };
+                await _movementClassRepository.AddAsync(movementClassExp);
+
+                movementClassExp = new MovementClass
+                {
+                    Description = "Inversiones",
+                    IncExp = "E",
+                    UserId = result.UserId
+                };
+                await _movementClassRepository.AddAsync(movementClassExp);
+
 
                 return Ok(new { Message = "User created succesfully" });
             }

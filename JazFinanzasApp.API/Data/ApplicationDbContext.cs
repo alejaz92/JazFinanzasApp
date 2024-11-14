@@ -23,6 +23,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<Movement> Movements { get; set; }
         public DbSet<MovementClass> MovementClasses { get; set; }
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
+        public DbSet<InvestmentMovement> InvestmentMovements { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
