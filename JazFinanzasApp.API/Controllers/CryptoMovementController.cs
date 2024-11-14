@@ -321,6 +321,20 @@ namespace JazFinanzasApp.API.Controllers
                 IncomeQuote = m.IncomeMovement?.QuotePrice
             }).ToList();
 
+
+            //if (Asset != "Peso Argentino") then quote = 1/quote
+            foreach (var movement in movementsDTO)
+            {
+                if (movement.ExpenseAsset != null && movement.ExpenseAsset != "Peso Argentino")
+                {
+                    movement.ExpenseQuote = 1 / movement.ExpenseQuote.Value;
+                }
+                if (movement.IncomeAsset != null && movement.IncomeAsset != "Peso Argentino")
+                {
+                    movement.IncomeQuote = 1 / movement.IncomeQuote.Value;
+                }
+            }
+
             return Ok(new { movements = movementsDTO, totalCount });
 
 
