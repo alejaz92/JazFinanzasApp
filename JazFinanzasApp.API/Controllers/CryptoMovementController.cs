@@ -339,5 +339,101 @@ namespace JazFinanzasApp.API.Controllers
 
 
         }
+
+        //[HttpGet("{id}")]
+        //public async Task<IActionResult> GetCryptoMovementById(int id)
+        //{
+        //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+        //    if (userIdClaim == null)
+        //    {
+        //        return Unauthorized();
+        //    }
+
+        //    int userId = int.Parse(userIdClaim.Value);
+
+        //    var movement = await _investmentMovementRepository.GetInvestmentMovementById(id);
+
+        //    if (movement == null)
+        //    {
+        //        return NotFound();
+        //    }
+
+        //    if (movement.UserId != userId)
+        //    {
+        //        return Unauthorized();
+        //    }
+
+        //    var movementDTO = new CryptoMovementListDTO
+        //    {
+        //        Id = movement.Id,
+        //        Date = movement.Date,
+        //        MovementType = movement.MovementType,
+        //        CommerceType = movement.CommerceType,
+        //        ExpenseAsset = movement.ExpenseMovement?.Asset?.Name,
+        //        ExpenseAccount = movement.ExpenseMovement?.Account?.Name,
+        //        ExpenseAmount = movement.ExpenseMovement?.Amount,
+        //        ExpenseQuote = movement.ExpenseMovement?.QuotePrice,
+        //        IncomeAsset = movement.IncomeMovement?.Asset?.Name,
+        //        IncomeAccount = movement.IncomeMovement?.Account?.Name,
+        //        IncomeAmount = movement.IncomeMovement?.Amount,
+        //        IncomeQuote = movement.IncomeMovement?.QuotePrice
+        //    };
+
+        //    return Ok(movementDTO);
+        //}
+
+        // delete
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> DeleteCryptoMovement(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var movement = await _investmentMovementRepository.GetInvestmentMovementById(id);
+
+            if (movement == null)
+            {
+                return NotFound();
+            }
+
+            if (movement.UserId != userId)
+            {
+                return Unauthorized();
+            }
+
+            
+            
+            try
+            {
+                await _investmentMovementRepository.BeginTransactionAsync();
+
+                if (movement.IncomeMovement != null)
+                {
+                    await _movementRepository.DeleteAsync(movement.IncomeMovement.Id);
+                }
+
+                if (movement.ExpenseMovement != null)
+                {
+                    await _movementRepository.DeleteAsync(movement.ExpenseMovement.Id);
+                }
+
+                await _investmentMovementRepository.DeleteAsync(movement.Id);
+
+                await _investmentMovementRepository.CommitTransactionAsync();
+
+                return Ok();
+            }
+            catch
+            {
+                await _investmentMovementRepository.RollbackTransactionAsync();
+                return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
+            }
+                            
+        }
     }
 }

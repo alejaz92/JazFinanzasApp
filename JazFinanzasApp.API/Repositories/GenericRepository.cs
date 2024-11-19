@@ -11,6 +11,7 @@ namespace JazFinanzasApp.API.Repositories
         private readonly ApplicationDbContext _context;
         private readonly DbSet<T> _dbSet;
         private IDbContextTransaction _transaction;
+        private bool _isTransactionActive = false;
 
         public GenericRepository(ApplicationDbContext context)
         {
@@ -48,10 +49,10 @@ namespace JazFinanzasApp.API.Repositories
             await _dbSet.AddAsync(entity);
         }
 
-        public async Task SaveChangesAsyncTransaction()
-        {
-            await _context.SaveChangesAsync();
-        }
+        //public async Task SaveChangesAsyncTransaction()
+        //{
+        //    await _context.SaveChangesAsync();
+        //}
         
 
         public async Task UpdateAsync(T entity)
@@ -66,7 +67,10 @@ namespace JazFinanzasApp.API.Repositories
             if (entity != null)
             {
                 _dbSet.Remove(entity);
-                await _context.SaveChangesAsync();
+                if (!_isTransactionActive) // Solo guarda cambios si no hay una transacción activa
+                {
+                    await _context.SaveChangesAsync();
+                }
             }
         }
 
@@ -86,14 +90,18 @@ namespace JazFinanzasApp.API.Repositories
         public async Task BeginTransactionAsync()
         {
             _transaction = await _context.Database.BeginTransactionAsync();
+            _isTransactionActive = true;
         }
 
         public async Task CommitTransactionAsync()
         {
             if(_transaction != null)
             {
+                await _context.SaveChangesAsync();
                 await _transaction.CommitAsync();
                 await _transaction.DisposeAsync();
+                _transaction = null;
+                _isTransactionActive = false;
             }
         }
 
@@ -103,6 +111,8 @@ namespace JazFinanzasApp.API.Repositories
             {
                 await _transaction.RollbackAsync();
                 await _transaction.DisposeAsync();
+                _transaction = null;
+                _isTransactionActive = false;
             }
         }
     }

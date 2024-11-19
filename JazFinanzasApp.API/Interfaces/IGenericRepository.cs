@@ -15,7 +15,6 @@ namespace JazFinanzasApp.API.Interfaces
         Task BeginTransactionAsync();
         Task CommitTransactionAsync();
         Task RollbackTransactionAsync();
-        Task SaveChangesAsyncTransaction();
         Task<T> AddAsyncReturnObject(T entity);
     }
 }

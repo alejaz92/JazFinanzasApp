@@ -278,7 +278,6 @@ namespace JazFinanzasApp.API.Controllers
                 };
 
                 await _movementRepository.AddAsyncTransaction(cardExpenses);
-                await _movementRepository.SaveChangesAsyncTransaction();
                 await _movementRepository.CommitTransactionAsync();
 
 

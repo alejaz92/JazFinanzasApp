@@ -37,5 +37,17 @@ namespace JazFinanzasApp.API.Repositories
             
             return (movements, totalCount);
         }
+
+        public async Task<InvestmentMovement> GetInvestmentMovementById(int id)
+        {
+            return await _context.InvestmentMovements
+                .Include(m => m.IncomeMovement)
+                .Include(m => m.IncomeMovement.Asset)
+                .Include(m => m.IncomeMovement.Account)
+                .Include(m => m.ExpenseMovement)
+                .Include(m => m.ExpenseMovement.Asset)
+                .Include(m => m.ExpenseMovement.Account)
+                .FirstOrDefaultAsync(m => m.Id == id);
+        }
     }
 }
