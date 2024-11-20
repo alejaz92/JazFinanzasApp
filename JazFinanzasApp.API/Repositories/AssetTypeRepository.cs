@@ -24,5 +24,10 @@ namespace JazFinanzasApp.API.Repositories
         public async Task<AssetType> GetByName(string name) {
             return await _context.AssetTypes.FirstOrDefaultAsync(a => a.Name == name);
         }
+
+        // get asset types by environment
+        public async Task<IEnumerable<AssetType>> GetAssetTypes(string environment) {
+            return await _context.AssetTypes.Where(a => a.Environment == environment).ToListAsync();
+        }
     }
 }
