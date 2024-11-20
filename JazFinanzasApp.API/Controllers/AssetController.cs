@@ -111,12 +111,14 @@ namespace JazFinanzasApp.API.Controllers
             {
                 Id = a.AssetId,
                 Name = a.Asset.Name,
-                Symbol = a.Asset.Symbol
-                //AssetTypeName = a.Asset.AssetType.Name
+                Symbol = a.Asset.Symbol,
+                AssetTypeName = a.Asset.AssetType.Name
             }).ToList();
 
             return Ok(assetsDTO);
         }
+
+
 
         [HttpPost("assign-asset")]
         public async Task<IActionResult> AssignAsssetToUser([FromBody] int assetId)

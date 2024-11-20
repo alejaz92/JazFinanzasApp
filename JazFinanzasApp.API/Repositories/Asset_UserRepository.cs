@@ -18,10 +18,13 @@ namespace JazFinanzasApp.API.Repositories
         {
             return await _context.Assets_Users
                 .Include(au => au.Asset)
+                .Include(au => au.Asset.AssetType)
                 .Where(au => au.UserId == userId)   
                 .Where(au => au.Asset.AssetType.Id == assetTypeId)
                 .ToListAsync();
         }
+
+
 
         public async Task AssignAssetToUserAsync(int userId, int assetId)
         {

@@ -186,6 +186,38 @@ namespace JazFinanzasApp.API.Controllers
             }).ToList();
             return Ok(accountsDTO);
         }
+
+        //get account by asset type Id
+        [HttpGet("byAssetTypeId/{assetTypeId}")]
+        public async Task<IActionResult> GetByAssetTypeId(int assetTypeId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var assetType = await _assetTypeRepository.GetByIdAsync(assetTypeId);
+            if (assetType == null)
+            {
+                return NotFound();
+            }
+
+            var accounts = await _accountRepository.GetByAssetType(assetTypeId, userId);
+            if (accounts == null)
+            {
+                return NotFound();
+            }
+
+            var accountsDTO = accounts.Select(a => new AccountDTO
+            {
+                Id = a.Id,
+                Name = a.Name
+            }).ToList();
+            return Ok(accountsDTO);
+        }
         
     }
 }
