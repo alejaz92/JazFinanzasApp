@@ -18,15 +18,22 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAccountRepository _accountRepository;
         private readonly IMovementClassRepository _movementClassRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
-        public MovementController(IMovementRepository movementRepository, IAssetRepository assetRepository,
-            IAccountRepository accountRepository, IMovementClassRepository movementClassRepository,
-            IAssetQuoteRepository assetQuoteRepository)
+        private readonly IInvestmentMovementRepository _investmentMovementRepository;
+        public MovementController(
+            IMovementRepository movementRepository, 
+            IAssetRepository assetRepository,
+            IAccountRepository accountRepository, 
+            IMovementClassRepository movementClassRepository,
+            IAssetQuoteRepository assetQuoteRepository,
+            IInvestmentMovementRepository investmentMovementRepository
+            )
         {
             _movementRepository = movementRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _movementClassRepository = movementClassRepository;
             _assetQuoteRepository = assetQuoteRepository;
+            _investmentMovementRepository = investmentMovementRepository;
         }
 
         [HttpGet]
@@ -39,7 +46,11 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             var userId = int.Parse(userIdClaim.Value);
+
+            
             var (movements, totalCount) = await _movementRepository.GetPaginatedMovements(userId, page, pageSize);
+
+
 
             var movementsDTO = movements.Select(m => new MovementListDTO
             {

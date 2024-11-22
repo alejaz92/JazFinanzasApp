@@ -14,6 +14,7 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
+
         public async Task<(IEnumerable<InvestmentMovement> Movements, int TotalCount)> GetPaginatedInvestmentMovements(int userId, int page, int pageSize, string environment)
         {
             var totalCount = await _context.InvestmentMovements
@@ -51,5 +52,8 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(m => m.ExpenseMovement.Account)
                 .FirstOrDefaultAsync(m => m.Id == id);
         }
+
+       
     }
+
 }

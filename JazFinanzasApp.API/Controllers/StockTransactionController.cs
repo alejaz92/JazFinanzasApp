@@ -52,7 +52,7 @@ namespace JazFinanzasApp.API.Controllers
             {
                 if (stockTransactionDto.Environment == "Stock")
                 {
-                    if (stockTransactionDto.MovementType == "I")
+                    if (stockTransactionDto.StockTransactionType == "I")
                     {
                         var incomeAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.IncomeAssetId.Value);
                         var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
@@ -114,7 +114,7 @@ namespace JazFinanzasApp.API.Controllers
                             expenseId = expenseMovement.Id;
                         }
                     }
-                    else if (stockTransactionDto.MovementType == "E")
+                    else if (stockTransactionDto.StockTransactionType == "E")
                     {
                         var expenseAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.ExpenseAssetId.Value);
                         var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
@@ -181,7 +181,7 @@ namespace JazFinanzasApp.API.Controllers
                     {
                         Date = stockTransactionDto.Date,
                         Environment = stockTransactionDto.Environment,
-                        MovementType = stockTransactionDto.MovementType,
+                        MovementType = stockTransactionDto.StockTransactionType,
                         CommerceType = stockTransactionDto.CommerceType,
                         ExpenseMovementId = expenseId,
                         IncomeMovementId = incomeId,
@@ -239,11 +239,11 @@ namespace JazFinanzasApp.API.Controllers
             {
                 var (movements, totalCount) = await _investmentMovementRepository.GetPaginatedInvestmentMovements(userId, page, pageSize, environment);
 
-                var movementsToReturn = movements.Select(m => new StockTransactionListDTO
+                var transactions = movements.Select(m => new StockTransactionListDTO
                 {
                     Id = m.Id,
                     Date = m.Date,
-                    MovementType = m.MovementType,
+                    StockTransactionType = m.MovementType,
                     CommerceType = m.CommerceType,
                     AssetType =
                         m.ExpenseMovement == null || m.ExpenseMovement.Asset.AssetType.Name == "Moneda"
@@ -251,17 +251,21 @@ namespace JazFinanzasApp.API.Controllers
                         : m.ExpenseMovement.Asset.AssetType.Name,
                     ExpenseAsset = m.ExpenseMovement?.Asset?.Name,
                     ExpenseAccount = m.ExpenseMovement?.Account?.Name,
-                    ExpenseAmount = m.ExpenseMovement?.Amount,
-                    ExpenseQuote = m.ExpenseMovement?.QuotePrice,
+                    ExpenseQuantity = m.ExpenseMovement?.Amount,
+                    ExpenseQuotePrice = m.ExpenseMovement?.Asset.Name == "Peso Argentino"
+                        ? m.ExpenseMovement?.QuotePrice
+                        : 1 / m.ExpenseMovement?.QuotePrice,
                     IncomeAsset = m.IncomeMovement?.Asset?.Name,
                     IncomeAccount = m.IncomeMovement?.Account?.Name,
-                    IncomeAmount = m.IncomeMovement?.Amount,
-                    IncomeQuote = m.IncomeMovement?.QuotePrice
+                    IncomeQuantity = m.IncomeMovement?.Amount,
+                    IncomeQuotePrice = m.IncomeMovement?.Asset.Name == "Peso Argentino"
+                        ? m.IncomeMovement?.QuotePrice
+                        : 1/m.IncomeMovement?.QuotePrice
                 });
 
                 
 
-                return Ok(new { movementsToReturn, totalCount });
+                return Ok(new { transactions, totalCount });
             }
             catch
             {

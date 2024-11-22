@@ -129,6 +129,17 @@ namespace JazFinanzasApp.API.Data
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+            modelBuilder.Entity<InvestmentMovement>()
+            .HasOne(im => im.IncomeMovement)
+            .WithMany()
+            .HasForeignKey(im => im.IncomeMovementId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<InvestmentMovement>()
+                .HasOne(im => im.ExpenseMovement)
+                .WithMany()
+                .HasForeignKey(im => im.ExpenseMovementId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

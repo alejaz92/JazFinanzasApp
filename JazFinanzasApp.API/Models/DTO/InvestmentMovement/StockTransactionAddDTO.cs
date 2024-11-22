@@ -5,7 +5,7 @@
         public DateTime Date { get; set; }
         public string Environment { get; set; }
         public string AssetType { get; set; }
-        public string MovementType { get; set; }
+        public string StockTransactionType { get; set; }
         public string CommerceType { get; set; }
         public int? ExpenseAssetId { get; set; }
         public int? ExpenseAccountId { get; set; }

@@ -16,16 +16,25 @@ namespace JazFinanzasApp.API.Repositories
 
         public async Task<(IEnumerable<Movement> Movements, int TotalCount)> GetPaginatedMovements(int userId, int page, int pageSize)
         {
+            //var excludedIds = await _context.InvestmentMovements
+            //    .SelectMany(im => new[] { im.IncomeMovementId, im.ExpenseMovementId })
+            //    .Where(id => id.HasValue)
+            //    .Select(id => id.Value)
+            //    .ToListAsync();
+
+
             var totalCount = await _context.Movements
                 .Where(m => m.Account.UserId == userId)
                 .Where(m => m.MovementClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
+                .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
                 .CountAsync();
 
             var movements = await _context.Movements
                 .Where(m => m.Account.UserId == userId)
                 .Where(m => m.MovementClassId != null)
-                .Where(m => m.MovementType == "E" || m.MovementType == "I") 
+                .Where(m => m.MovementType == "E" || m.MovementType == "I")
+                .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
                 .Include(m => m.MovementClass)
