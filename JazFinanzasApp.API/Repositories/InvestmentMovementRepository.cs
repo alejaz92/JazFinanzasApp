@@ -19,6 +19,7 @@ namespace JazFinanzasApp.API.Repositories
         {
             var totalCount = await _context.InvestmentMovements
                 .Where(m => m.UserId == userId)
+                .Where(m => m.Environment == environment)
                 .CountAsync();
 
             var movements = await _context.InvestmentMovements
