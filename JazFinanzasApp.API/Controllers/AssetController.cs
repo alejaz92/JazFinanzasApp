@@ -155,10 +155,10 @@ namespace JazFinanzasApp.API.Controllers
 
 
             // luego agregar chequeo de si el asset se puede borrar
-            bool hasMovements = false;
-            if (hasMovements)
+            bool hasTransactions = false;
+            if (hasTransactions)
             {
-                return BadRequest("Asset has movements, cannot be unassigned");
+                return BadRequest("Asset has transactions, cannot be unassigned");
             }
             else
             {

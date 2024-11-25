@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.InvestmentMovement;
+using JazFinanzasApp.API.Models.DTO;
+using JazFinanzasApp.API.Models.DTO.InvestmentTransaction;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,16 +14,16 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class FiatCurrencyExchangeController : ControllerBase
     {
-        private readonly IMovementRepository _movementRepository;
-        private readonly IInvestmentMovementRepository _investmentMovementRepository;
+        private readonly ITransactionRepository _transactionRepository;
+        private readonly IInvestmentTransactionRepository _investmentTransactionRepository;
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
 
-        public FiatCurrencyExchangeController(IMovementRepository movementRepository, IInvestmentMovementRepository investmentMovementRepository, IAssetRepository assetRepository, IAccountRepository accountRepository, IAssetQuoteRepository assetQuoteRepository)
+        public FiatCurrencyExchangeController(ITransactionRepository transactionRepository, IInvestmentTransactionRepository investmentTransactionRepository, IAssetRepository assetRepository, IAccountRepository accountRepository, IAssetQuoteRepository assetQuoteRepository)
         {
-            _movementRepository = movementRepository;
-            _investmentMovementRepository = investmentMovementRepository;
+            _transactionRepository = transactionRepository;
+            _investmentTransactionRepository = investmentTransactionRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _assetQuoteRepository = assetQuoteRepository;
@@ -41,21 +42,21 @@ namespace JazFinanzasApp.API.Controllers
 
             try
             {
-                var (movements, totalCount) = await _investmentMovementRepository.GetPaginatedInvestmentMovements(userId, page, pageSize, environment);
+                var (transactions, totalCount) = await _investmentTransactionRepository.GetPaginatedInvestmentTransactions(userId, page, pageSize, environment);
 
-                var transactions = movements.Select(m => new CurrencyExchangeListDTO
+                var transactionsDTO = transactions.Select(m => new CurrencyExchangeListDTO
                 {
                     Id = m.Id,
                     Date = m.Date,
-                    ExpenseAsset = m.ExpenseMovement?.Asset?.Name,
-                    ExpenseAccount = m.ExpenseMovement?.Account?.Name,
-                    ExpenseAmount = m.ExpenseMovement?.Amount,
-                    IncomeAsset = m.IncomeMovement?.Asset?.Name,
-                    IncomeAccount = m.IncomeMovement?.Account?.Name,
-                    IncomeAmount = m.IncomeMovement?.Amount
+                    ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
+                    ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
+                    ExpenseAmount = m.ExpenseTransaction?.Amount,
+                    IncomeAsset = m.IncomeTransaction?.Asset?.Name,
+                    IncomeAccount = m.IncomeTransaction?.Account?.Name,
+                    IncomeAmount = m.IncomeTransaction?.Amount
                 });
 
-                return Ok(new { transactions, totalCount });
+                return Ok(new { transactionsDTO, totalCount });
             }
             catch (Exception ex)
             {
@@ -112,8 +113,8 @@ namespace JazFinanzasApp.API.Controllers
                 var incomeQuote = await _assetQuoteRepository.GetLastQuoteByAsset(incomeAsset.Id, assetQuoteType);
 
 
-                //create movements
-                var expenseMovement = new Movement
+                //create transactions
+                var expenseTransaction = new Transaction
                 {
                     AccountId = exchangeTransactionDTO.ExpenseAccountId.Value,
                     Account = expenseAccount,
@@ -128,7 +129,7 @@ namespace JazFinanzasApp.API.Controllers
                     UserId = userId
                 };
 
-                var incomeMovement = new Movement
+                var incomeTransaction = new Transaction
                 {
                     AccountId = exchangeTransactionDTO.IncomeAccountId.Value,
                     Account = incomeAccount,
@@ -143,27 +144,27 @@ namespace JazFinanzasApp.API.Controllers
                     UserId = userId
                 };
 
-                //save movements
-                expenseMovement = await _movementRepository.AddAsyncReturnObject(expenseMovement);
-                expenseId = expenseMovement.Id;
+                //save transactions
+                expenseTransaction = await _transactionRepository.AddAsyncReturnObject(expenseTransaction);
+                expenseId = expenseTransaction.Id;
 
-                incomeMovement = await _movementRepository.AddAsyncReturnObject(incomeMovement);
-                incomeId = incomeMovement.Id;
+                incomeTransaction = await _transactionRepository.AddAsyncReturnObject(incomeTransaction);
+                incomeId = incomeTransaction.Id;
 
 
-                //create and save investment movement
-                var investmentMovement = new InvestmentMovement
+                //create and save investment transaction
+                var investmentTransaction = new InvestmentTransaction
                 {
                     Date = exchangeTransactionDTO.Date,
                     Environment = "CurrencyExchange",
                     MovementType = "EX",  
                     CommerceType = "CurrencyExchange",
-                    ExpenseMovementId = expenseId,
-                    IncomeMovementId = incomeId,
+                    ExpenseTransactionId = expenseId,
+                    IncomeTransactionId = incomeId,
                     UserId = userId
                 };
 
-                await _investmentMovementRepository.AddAsync(investmentMovement);
+                await _investmentTransactionRepository.AddAsync(investmentTransaction);
                 return Ok();
 
             }
@@ -187,14 +188,14 @@ namespace JazFinanzasApp.API.Controllers
 
             try
             {
-                var investmentMovement = await _investmentMovementRepository.GetInvestmentMovementById(id);
+                var investmentTransaction = await _investmentTransactionRepository.GetInvestmentTransactionById(id);
 
-                if (investmentMovement == null)
+                if (investmentTransaction == null)
                 {
                     return NotFound();
                 }
 
-                if (investmentMovement.UserId != userId)
+                if (investmentTransaction.UserId != userId)
                 {
                     return Unauthorized();
                 }
@@ -202,25 +203,25 @@ namespace JazFinanzasApp.API.Controllers
 
                 try
                 {
-                    await _investmentMovementRepository.BeginTransactionAsync();
+                    await _investmentTransactionRepository.BeginTransactionAsync();
 
-                    if (investmentMovement.IncomeMovement != null)
+                    if (investmentTransaction.IncomeTransaction != null)
                     {
-                        await _movementRepository.DeleteAsync(investmentMovement.IncomeMovementId.Value);
+                        await _transactionRepository.DeleteAsync(investmentTransaction.IncomeTransactionId.Value);
                     }
 
-                    if (investmentMovement.ExpenseMovement != null)
+                    if (investmentTransaction.ExpenseTransaction != null)
                     {
-                        await _movementRepository.DeleteAsync(investmentMovement.ExpenseMovementId.Value);
+                        await _transactionRepository.DeleteAsync(investmentTransaction.ExpenseTransactionId.Value);
                     }
 
-                    await _investmentMovementRepository.DeleteAsync(investmentMovement.Id);
-                    await _investmentMovementRepository.CommitTransactionAsync();
+                    await _investmentTransactionRepository.DeleteAsync(investmentTransaction.Id);
+                    await _investmentTransactionRepository.CommitTransactionAsync();
                     return Ok();
                 }
                 catch
                 {
-                    await _investmentMovementRepository.RollbackTransactionAsync();
+                    await _investmentTransactionRepository.RollbackTransactionAsync();
                     return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
                 }
                 

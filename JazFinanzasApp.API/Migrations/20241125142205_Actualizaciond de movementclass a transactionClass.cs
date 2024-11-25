@@ -6,18 +6,18 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace JazFinanzasApp.API.Migrations
 {
     /// <inheritdoc />
-    public partial class ActualizacionddemovementclassatransactionClass : Migration
+    public partial class ActualizacionddetransactionclassatransactionClass : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
-                name: "FK_InvestmentMovements_Movements_ExpenseMovementId",
-                table: "InvestmentMovements");
+                name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                table: "InvestmentTransactions");
 
             migrationBuilder.DropForeignKey(
-                name: "FK_InvestmentMovements_Movements_IncomeMovementId",
-                table: "InvestmentMovements");
+                name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                table: "InvestmentTransactions");
 
             migrationBuilder.UpdateData(
                 table: "AssetTypes",
@@ -76,18 +76,18 @@ namespace JazFinanzasApp.API.Migrations
                 values: new object[] { new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9784), new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9785) });
 
             migrationBuilder.AddForeignKey(
-                name: "FK_InvestmentMovements_Movements_ExpenseMovementId",
-                table: "InvestmentMovements",
-                column: "ExpenseMovementId",
-                principalTable: "Movements",
+                name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                table: "InvestmentTransactions",
+                column: "ExpenseTransactionId",
+                principalTable: "Transactions",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
 
             migrationBuilder.AddForeignKey(
-                name: "FK_InvestmentMovements_Movements_IncomeMovementId",
-                table: "InvestmentMovements",
-                column: "IncomeMovementId",
-                principalTable: "Movements",
+                name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                table: "InvestmentTransactions",
+                column: "IncomeTransactionId",
+                principalTable: "Transactions",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
         }
@@ -96,12 +96,12 @@ namespace JazFinanzasApp.API.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
-                name: "FK_InvestmentMovements_Movements_ExpenseMovementId",
-                table: "InvestmentMovements");
+                name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                table: "InvestmentTransactions");
 
             migrationBuilder.DropForeignKey(
-                name: "FK_InvestmentMovements_Movements_IncomeMovementId",
-                table: "InvestmentMovements");
+                name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                table: "InvestmentTransactions");
 
             migrationBuilder.UpdateData(
                 table: "AssetTypes",
@@ -160,17 +160,17 @@ namespace JazFinanzasApp.API.Migrations
                 values: new object[] { new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818), new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818) });
 
             migrationBuilder.AddForeignKey(
-                name: "FK_InvestmentMovements_Movements_ExpenseMovementId",
-                table: "InvestmentMovements",
-                column: "ExpenseMovementId",
-                principalTable: "Movements",
+                name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                table: "InvestmentTransactions",
+                column: "ExpenseTransactionId",
+                principalTable: "Transactions",
                 principalColumn: "Id");
 
             migrationBuilder.AddForeignKey(
-                name: "FK_InvestmentMovements_Movements_IncomeMovementId",
-                table: "InvestmentMovements",
-                column: "IncomeMovementId",
-                principalTable: "Movements",
+                name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                table: "InvestmentTransactions",
+                column: "IncomeTransactionId",
+                principalTable: "Transactions",
                 principalColumn: "Id");
         }
     }

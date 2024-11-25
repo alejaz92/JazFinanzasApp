@@ -5,7 +5,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 namespace JazFinanzasApp.API.Models.Domain
 {
     
-    public class Movement : BaseEntity
+    public class Transaction : BaseEntity
     {
 
         [Required]

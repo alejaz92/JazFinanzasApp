@@ -6,13 +6,13 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace JazFinanzasApp.API.Migrations
 {
     /// <inheritdoc />
-    public partial class Updatedatefieldincardmovement : Migration
+    public partial class Updatedatefieldincardtransaction : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.RenameColumn(
-                name: "DateMovement",
+                name: "DateTransaction",
                 table: "CardTransactions",
                 newName: "Date");
 
@@ -79,7 +79,7 @@ namespace JazFinanzasApp.API.Migrations
             migrationBuilder.RenameColumn(
                 name: "Date",
                 table: "CardTransactions",
-                newName: "DateMovement");
+                newName: "DateTransaction");
 
             migrationBuilder.UpdateData(
                 table: "AssetTypes",

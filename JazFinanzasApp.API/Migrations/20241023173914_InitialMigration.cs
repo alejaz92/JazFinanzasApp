@@ -355,7 +355,7 @@ namespace JazFinanzasApp.API.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    DateMovement = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    DateTransaction = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Detail = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CardId = table.Column<int>(type: "int", nullable: false),
                     TransactionClassId = table.Column<int>(type: "int", nullable: false),
@@ -396,7 +396,7 @@ namespace JazFinanzasApp.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Movements",
+                name: "Transactions",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -415,24 +415,24 @@ namespace JazFinanzasApp.API.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Movements", x => x.Id);
+                    table.PrimaryKey("PK_Transactions", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Movements_Accounts_AccountId",
+                        name: "FK_Transactions_Accounts_AccountId",
                         column: x => x.AccountId,
                         principalTable: "Accounts",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_Movements_AspNetUsers_UserId",
+                        name: "FK_Transactions_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_Movements_Assets_AssetId",
+                        name: "FK_Transactions_Assets_AssetId",
                         column: x => x.AssetId,
                         principalTable: "Assets",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_Movements_TransactionClasses_TransactionClassId",
+                        name: "FK_Transactions_TransactionClasses_TransactionClassId",
                         column: x => x.TransactionClassId,
                         principalTable: "TransactionClasses",
                         principalColumn: "Id");
@@ -543,23 +543,23 @@ namespace JazFinanzasApp.API.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Movements_AccountId",
-                table: "Movements",
+                name: "IX_Transactions_AccountId",
+                table: "Transactions",
                 column: "AccountId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Movements_AssetId",
-                table: "Movements",
+                name: "IX_Transactions_AssetId",
+                table: "Transactions",
                 column: "AssetId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Movements_TransactionClassId",
-                table: "Movements",
+                name: "IX_Transactions_TransactionClassId",
+                table: "Transactions",
                 column: "TransactionClassId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Movements_UserId",
-                table: "Movements",
+                name: "IX_Transactions_UserId",
+                table: "Transactions",
                 column: "UserId");
         }
 
@@ -597,7 +597,7 @@ namespace JazFinanzasApp.API.Migrations
                 name: "CardPayments");
 
             migrationBuilder.DropTable(
-                name: "Movements");
+                name: "Transactions");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");

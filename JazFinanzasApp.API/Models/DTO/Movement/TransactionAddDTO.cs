@@ -1,6 +1,6 @@
-﻿namespace JazFinanzasApp.API.Models.DTO.Movement
+﻿namespace JazFinanzasApp.API.Models.DTO.Transaction
 {
-    public class MovementAddDTO
+    public class TransactionAddDTO
     {
         public int? incomeAccountId { get; set; }
         public int? expenseAccountId { get; set; }

@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    public class InvestmentMovement : BaseEntity
+    public class InvestmentTransaction : BaseEntity
     {
         [Required]
         public DateTime Date { get; set; }
@@ -14,12 +14,12 @@ namespace JazFinanzasApp.API.Models.Domain
         [Required]
         public string CommerceType { get; set; }
 
-        [ForeignKey("MovementId")]
-        public int? ExpenseMovementId { get; set; }
-        public Movement? ExpenseMovement { get; set; }
-        [ForeignKey("MovementId")]
-        public int? IncomeMovementId { get; set; }
-        public Movement? IncomeMovement { get; set; }
+        [ForeignKey("TransactionId")]
+        public int? ExpenseTransactionId { get; set; }
+        public Transaction? ExpenseTransaction { get; set; }
+        [ForeignKey("TransactionId")]
+        public int? IncomeTransactionId { get; set; }
+        public Transaction? IncomeTransaction { get; set; }
 
         [Required]
         [ForeignKey("UserId")]

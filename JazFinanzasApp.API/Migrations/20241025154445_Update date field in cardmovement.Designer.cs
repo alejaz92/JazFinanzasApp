@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JazFinanzasApp.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20241025154445_Update date field in cardmovement")]
-    partial class Updatedatefieldincardmovement
+    [Migration("20241025154445_Update date field in cardtransaction")]
+    partial class Updatedatefieldincardtransaction
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -333,7 +333,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.ToTable("CardPayments");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -385,7 +385,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Movements");
+                    b.ToTable("Transactions");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
@@ -766,7 +766,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Navigation("Card");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Account", "Account")
                         .WithMany()

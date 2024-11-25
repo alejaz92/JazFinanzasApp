@@ -1,6 +1,6 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.Movement;
+using JazFinanzasApp.API.Models.DTO.Transaction;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -11,33 +11,33 @@ namespace JazFinanzasApp.API.Controllers
     [Authorize]
     [Route("api/[controller]")]
     [ApiController]
-    public class MovementController : ControllerBase
+    public class TransactionController : ControllerBase
     {
-        private readonly IMovementRepository _movementRepository;
+        private readonly ITransactionRepository _transactionRepository;
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
-        private readonly IInvestmentMovementRepository _investmentMovementRepository;
-        public MovementController(
-            IMovementRepository movementRepository, 
+        private readonly IInvestmentTransactionRepository _investmentTransactionRepository;
+        public TransactionController(
+            ITransactionRepository transactionRepository, 
             IAssetRepository assetRepository,
             IAccountRepository accountRepository, 
             ITransactionClassRepository transactionClassRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IInvestmentMovementRepository investmentMovementRepository
+            IInvestmentTransactionRepository investmentTransactionRepository
             )
         {
-            _movementRepository = movementRepository;
+            _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _transactionClassRepository = transactionClassRepository;
             _assetQuoteRepository = assetQuoteRepository;
-            _investmentMovementRepository = investmentMovementRepository;
+            _investmentTransactionRepository = investmentTransactionRepository;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetPaginatedMovements([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetPaginatedTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -48,11 +48,11 @@ namespace JazFinanzasApp.API.Controllers
             var userId = int.Parse(userIdClaim.Value);
 
             
-            var (movements, totalCount) = await _movementRepository.GetPaginatedMovements(userId, page, pageSize);
+            var (transactions, totalCount) = await _transactionRepository.GetPaginatedTransactions(userId, page, pageSize);
 
 
 
-            var movementsDTO = movements.Select(m => new MovementListDTO
+            var transactionsDTO = transactions.Select(m => new TransactionListDTO
             {
                 Id = m.Id,
                 Date = m.Date,
@@ -68,11 +68,11 @@ namespace JazFinanzasApp.API.Controllers
 
             }).ToList();
 
-            return Ok(new { Movements = movementsDTO, TotalCount = totalCount });
+            return Ok(new { Transactions = transactionsDTO, TotalCount = totalCount });
         }
 
         [HttpPost]
-        public async Task<IActionResult> CreateMovement(MovementAddDTO movementDTO)
+        public async Task<IActionResult> CreateTransaction(TransactionAddDTO transactionDTO)
         {
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -84,7 +84,7 @@ namespace JazFinanzasApp.API.Controllers
             var userId = int.Parse(userIdClaim.Value);
 
 
-            var asset = await _assetRepository.GetByIdAsync(movementDTO.assetId);
+            var asset = await _assetRepository.GetByIdAsync(transactionDTO.assetId);
             if (asset == null)
             {
                 return NotFound();
@@ -96,15 +96,15 @@ namespace JazFinanzasApp.API.Controllers
             {
                 quotePrice = 1;
             }
-            else if (movementDTO.quotePrice != 0)
+            else if (transactionDTO.quotePrice != 0)
             {
                 if (asset.Symbol == "ARS")
                 {
-                    quotePrice = movementDTO.quotePrice;
+                    quotePrice = transactionDTO.quotePrice;
                 }
                 else
                 {
-                    quotePrice = 1 / movementDTO.quotePrice;
+                    quotePrice = 1 / transactionDTO.quotePrice;
                 }
             }
             else
@@ -119,16 +119,16 @@ namespace JazFinanzasApp.API.Controllers
                     type = "NA";
                 }
 
-                quotePrice = await _assetQuoteRepository.GetQuotePrice(asset.Id, movementDTO.date, type);
+                quotePrice = await _assetQuoteRepository.GetQuotePrice(asset.Id, transactionDTO.date, type);
             }
 
 
            
 
 
-            if (movementDTO.movementType == "I")
+            if (transactionDTO.movementType == "I")
             {
-                var incomeAccount = await _accountRepository.GetByIdAsync(movementDTO.incomeAccountId.Value);
+                var incomeAccount = await _accountRepository.GetByIdAsync(transactionDTO.incomeAccountId.Value);
                 if (incomeAccount == null)
                 {
                     return NotFound();
@@ -137,7 +137,7 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     return Unauthorized();
                 }
-                var transactionClass = await _transactionClassRepository.GetByIdAsync(movementDTO.transactionClassId.Value);
+                var transactionClass = await _transactionClassRepository.GetByIdAsync(transactionDTO.transactionClassId.Value);
                 if (transactionClass == null)
                 {
                     return NotFound();
@@ -151,28 +151,28 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var movement = new Movement
+                var transaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
                     AssetId = asset.Id,
                     Asset = asset,
-                    Date = movementDTO.date,
-                    MovementType = movementDTO.movementType,
+                    Date = transactionDTO.date,
+                    MovementType = transactionDTO.movementType,
                     TransactionClassId = transactionClass.Id,
                     TransactionClass = transactionClass,
-                    Detail = movementDTO.detail,
-                    Amount = movementDTO.amount,
+                    Detail = transactionDTO.detail,
+                    Amount = transactionDTO.amount,
                     UserId = userId,
                     QuotePrice = quotePrice
                 };
 
-                await _movementRepository.AddAsync(movement);
+                await _transactionRepository.AddAsync(transaction);
 
             }
-            else if (movementDTO.movementType == "E")
+            else if (transactionDTO.movementType == "E")
             {
-                var expenseAccount = await _accountRepository.GetByIdAsync(movementDTO.expenseAccountId.Value);
+                var expenseAccount = await _accountRepository.GetByIdAsync(transactionDTO.expenseAccountId.Value);
                 if (expenseAccount == null)
                 {
                     return NotFound();
@@ -182,7 +182,7 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var transactionClass = await _transactionClassRepository.GetByIdAsync(movementDTO.transactionClassId.Value);
+                var transactionClass = await _transactionClassRepository.GetByIdAsync(transactionDTO.transactionClassId.Value);
                 if (transactionClass == null)
                 {
                     return NotFound();
@@ -196,28 +196,28 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var movement = new Movement
+                var transaction = new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
                     AssetId = asset.Id,
                     Asset = asset,
-                    Date = movementDTO.date,
-                    MovementType = movementDTO.movementType,
+                    Date = transactionDTO.date,
+                    MovementType = transactionDTO.movementType,
                     TransactionClassId = transactionClass.Id,
                     TransactionClass = transactionClass,
-                    Detail = movementDTO.detail,
-                    Amount = -movementDTO.amount,
+                    Detail = transactionDTO.detail,
+                    Amount = -transactionDTO.amount,
                     UserId = userId,
                     QuotePrice = quotePrice
                 };
-                await _movementRepository.AddAsync(movement);
+                await _transactionRepository.AddAsync(transaction);
             }
-            else if (movementDTO.movementType == "EX")
+            else if (transactionDTO.movementType == "EX")
             {
                 var time = DateTime.UtcNow;
 
-                var incomeAccount = await _accountRepository.GetByIdAsync(movementDTO.incomeAccountId.Value);
+                var incomeAccount = await _accountRepository.GetByIdAsync(transactionDTO.incomeAccountId.Value);
                 if (incomeAccount == null)
                 {
                     return NotFound();
@@ -227,7 +227,7 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var expenseAccount = await _accountRepository.GetByIdAsync(movementDTO.expenseAccountId.Value);
+                var expenseAccount = await _accountRepository.GetByIdAsync(transactionDTO.expenseAccountId.Value);
                 if (expenseAccount == null)
                 {
                     return NotFound();
@@ -237,44 +237,44 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var movement = new Movement
+                var transaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
                     AssetId = asset.Id,
                     Asset = asset,
-                    Date = movementDTO.date,
-                    MovementType = movementDTO.movementType,
+                    Date = transactionDTO.date,
+                    MovementType = transactionDTO.movementType,
                     TransactionClassId = null,
-                    Detail = movementDTO.detail,
-                    Amount = movementDTO.amount,
+                    Detail = transactionDTO.detail,
+                    Amount = transactionDTO.amount,
                     UserId = userId,
                     QuotePrice = quotePrice,
                     CreatedAt = time,
                     UpdatedAt = time
                 };
 
-                await _movementRepository.AddAsync(movement);
+                await _transactionRepository.AddAsync(transaction);
 
 
 
-                movement = new Movement
+                transaction = new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
                     AssetId = asset.Id,
                     Asset = asset,
-                    Date = movementDTO.date,
-                    MovementType = movementDTO.movementType,
+                    Date = transactionDTO.date,
+                    MovementType = transactionDTO.movementType,
                     TransactionClassId = null,
-                    Detail = movementDTO.detail,
-                    Amount = -movementDTO.amount,
+                    Detail = transactionDTO.detail,
+                    Amount = -transactionDTO.amount,
                     UserId = userId,
                     QuotePrice = quotePrice,
                     CreatedAt = time,
                     UpdatedAt = time
                 };
-                await _movementRepository.AddAsync(movement);
+                await _transactionRepository.AddAsync(transaction);
             }
 
 
@@ -284,7 +284,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> EditMovement(int id, MovementEditDTO movementDTO)
+        public async Task<IActionResult> EditTransaction(int id, TransactionEditDTO transactionDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -294,31 +294,31 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            var movement = await _movementRepository.GetByIdAsync(id);
-            if (movement == null)
+            var transaction = await _transactionRepository.GetByIdAsync(id);
+            if (transaction == null)
             {
                 return NotFound();
             }
-            if (movement.UserId != userId)
+            if (transaction.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            movement.Amount = movementDTO.Amount;
-            if (movement.MovementType == "E" && movement.Amount > 0)
+            transaction.Amount = transactionDTO.Amount;
+            if (transaction.MovementType == "E" && transaction.Amount > 0)
             {
-                movement.Amount = -movementDTO.Amount;
+                transaction.Amount = -transactionDTO.Amount;
             }
-            movement.UpdatedAt = DateTime.UtcNow;
+            transaction.UpdatedAt = DateTime.UtcNow;
 
-            await _movementRepository.UpdateAsync(movement);
+            await _transactionRepository.UpdateAsync(transaction);
 
             return Ok();
         }
 
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteMovement(int id)
+        public async Task<IActionResult> DeleteTransaction(int id)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -328,24 +328,24 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            var movement = await _movementRepository.GetByIdAsync(id);
+            var transaction = await _transactionRepository.GetByIdAsync(id);
 
-            if (movement == null)
+            if (transaction == null)
             {
                 return NotFound();
             }
-            if (movement.UserId != userId)
+            if (transaction.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            await _movementRepository.DeleteAsync(movement.Id);
+            await _transactionRepository.DeleteAsync(transaction.Id);
 
             return Ok();
         }
 
         [HttpGet("{Id}")]
-        public async Task<IActionResult> GetMovement(int Id)
+        public async Task<IActionResult> GetTransaction(int Id)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -355,36 +355,36 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            var movement = await _movementRepository.GetMovementByIdAsync(Id);
-            if (movement == null)
+            var transaction = await _transactionRepository.GetTransactionByIdAsync(Id);
+            if (transaction == null)
             {
                 return NotFound();
             }
-            if (movement.UserId != userId)
+            if (transaction.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            var movementDTO = new MovementListDTO
+            var transactionDTO = new TransactionListDTO
             {
-                Id = movement.Id,
-                Date = movement.Date,
-                Amount = movement.Amount,
-                Detail = movement.Detail,
-                AccountId = movement.AccountId,
-                AccountName = movement.Account.Name,
-                AssetId = movement.AssetId,
-                AssetName = movement.Asset.Name,
-                TransactionClassId = movement.TransactionClassId,
-                TransactionClassName = movement.TransactionClass.Description,
-                MovementType = movement.MovementType
+                Id = transaction.Id,
+                Date = transaction.Date,
+                Amount = transaction.Amount,
+                Detail = transaction.Detail,
+                AccountId = transaction.AccountId,
+                AccountName = transaction.Account.Name,
+                AssetId = transaction.AssetId,
+                AssetName = transaction.Asset.Name,
+                TransactionClassId = transaction.TransactionClassId,
+                TransactionClassName = transaction.TransactionClass.Description,
+                MovementType = transaction.MovementType
             };
 
-            return Ok(movementDTO);
+            return Ok(transactionDTO);
         }
 
         [HttpPost("refund/{Id}")]
-        public async Task<IActionResult> RefundMovement(int Id, [FromBody] RefundDTO refundDTO)
+        public async Task<IActionResult> RefundTransaction(int Id, [FromBody] RefundDTO refundDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -394,19 +394,19 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            var movement = await _movementRepository.GetByIdAsync(Id);
-            if (movement == null)
+            var transaction = await _transactionRepository.GetByIdAsync(Id);
+            if (transaction == null)
             {
                 return NotFound();
             }
-            if (movement.UserId != userId)
+            if (transaction.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            if (movement.MovementType == "I")
+            if (transaction.MovementType == "I")
             {
-                return BadRequest("Cannot refund an income movement");
+                return BadRequest("Cannot refund an income transaction");
             }
 
             var refundAccount = await _accountRepository.GetByIdAsync(refundDTO.AccountId);
@@ -417,20 +417,20 @@ namespace JazFinanzasApp.API.Controllers
 
 
 
-            movement.Amount = movement.Amount + refundDTO.Amount;
-            movement.UpdatedAt = DateTime.UtcNow;
-            await _movementRepository.UpdateAsync(movement);
+            transaction.Amount = transaction.Amount + refundDTO.Amount;
+            transaction.UpdatedAt = DateTime.UtcNow;
+            await _transactionRepository.UpdateAsync(transaction);
 
-            if (movement.AccountId != refundAccount.Id)
+            if (transaction.AccountId != refundAccount.Id)
             {
                 var time = DateTime.UtcNow;
 
-                var refundExpenseMovement = new Movement
+                var refundExpenseTransaction = new Transaction
                 {
-                    AccountId = movement.AccountId,
-                    Account = movement.Account,
-                    AssetId = movement.AssetId,
-                    Asset = movement.Asset,
+                    AccountId = transaction.AccountId,
+                    Account = transaction.Account,
+                    AssetId = transaction.AssetId,
+                    Asset = transaction.Asset,
                     Date = refundDTO.Date,
                     MovementType = "EX",
                     TransactionClassId = null,
@@ -439,16 +439,16 @@ namespace JazFinanzasApp.API.Controllers
                     UserId = userId,
                     CreatedAt = time,
                     UpdatedAt = time,
-                    QuotePrice = movement.QuotePrice                    
+                    QuotePrice = transaction.QuotePrice                    
                 };
-                await _movementRepository.AddAsync(refundExpenseMovement);
+                await _transactionRepository.AddAsync(refundExpenseTransaction);
 
-                var refundIncomeMovement = new Movement
+                var refundIncomeTransaction = new Transaction
                 {
                     AccountId = refundAccount.Id,
                     Account = refundAccount,
-                    AssetId = movement.AssetId,
-                    Asset = movement.Asset,
+                    AssetId = transaction.AssetId,
+                    Asset = transaction.Asset,
                     Date = refundDTO.Date,
                     MovementType = "EX",
                     TransactionClassId = null,
@@ -457,9 +457,9 @@ namespace JazFinanzasApp.API.Controllers
                     UserId = userId,
                     CreatedAt = time,
                     UpdatedAt = time,
-                    QuotePrice = movement.QuotePrice
+                    QuotePrice = transaction.QuotePrice
                 };
-                await _movementRepository.AddAsync(refundIncomeMovement);
+                await _transactionRepository.AddAsync(refundIncomeTransaction);
             }
             return Ok();
         }

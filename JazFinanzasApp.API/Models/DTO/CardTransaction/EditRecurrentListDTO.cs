@@ -1,4 +1,4 @@
-﻿namespace JazFinanzasApp.API.Models.DTO.CardMovement
+﻿namespace JazFinanzasApp.API.Models.DTO.CardTransaction
 {
     public class EditRecurrentListDTO
     {

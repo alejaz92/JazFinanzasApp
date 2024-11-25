@@ -1,4 +1,4 @@
-﻿namespace JazFinanzasApp.API.Models.DTO.InvestmentMovement
+﻿namespace JazFinanzasApp.API.Models.DTO.InvestmentTransaction
 {
     public class CryptoTransactionListDTO
     {

@@ -272,7 +272,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime>("DateMovement")
+                    b.Property<DateTime>("DateTransaction")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("Detail")
@@ -333,7 +333,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.ToTable("CardPayments");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -385,7 +385,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Movements");
+                    b.ToTable("Transactions");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
@@ -766,7 +766,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Navigation("Card");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Account", "Account")
                         .WithMany()

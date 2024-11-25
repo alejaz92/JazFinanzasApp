@@ -6,13 +6,13 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace JazFinanzasApp.API.Migrations
 {
     /// <inheritdoc />
-    public partial class creacioninvestmentMovements : Migration
+    public partial class creacioninvestmentTransactions : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "InvestmentMovements",
+                name: "InvestmentTransactions",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -21,30 +21,30 @@ namespace JazFinanzasApp.API.Migrations
                     Environment = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     MovementType = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CommerceType = table.Column<string>(type: "nvarchar(max)", nullable: false),
-                    ExpenseMovementId = table.Column<int>(type: "int", nullable: true),
-                    IncomeMovementId = table.Column<int>(type: "int", nullable: true),
+                    ExpenseTransactionId = table.Column<int>(type: "int", nullable: true),
+                    IncomeTransactionId = table.Column<int>(type: "int", nullable: true),
                     UserId = table.Column<int>(type: "int", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_InvestmentMovements", x => x.Id);
+                    table.PrimaryKey("PK_InvestmentTransactions", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_InvestmentMovements_AspNetUsers_UserId",
+                        name: "FK_InvestmentTransactions_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_InvestmentMovements_Movements_ExpenseMovementId",
-                        column: x => x.ExpenseMovementId,
-                        principalTable: "Movements",
+                        name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                        column: x => x.ExpenseTransactionId,
+                        principalTable: "Transactions",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_InvestmentMovements_Movements_IncomeMovementId",
-                        column: x => x.IncomeMovementId,
-                        principalTable: "Movements",
+                        name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                        column: x => x.IncomeTransactionId,
+                        principalTable: "Transactions",
                         principalColumn: "Id");
                 });
 
@@ -105,18 +105,18 @@ namespace JazFinanzasApp.API.Migrations
                 values: new object[] { new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818), new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818) });
 
             migrationBuilder.CreateIndex(
-                name: "IX_InvestmentMovements_ExpenseMovementId",
-                table: "InvestmentMovements",
-                column: "ExpenseMovementId");
+                name: "IX_InvestmentTransactions_ExpenseTransactionId",
+                table: "InvestmentTransactions",
+                column: "ExpenseTransactionId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_InvestmentMovements_IncomeMovementId",
-                table: "InvestmentMovements",
-                column: "IncomeMovementId");
+                name: "IX_InvestmentTransactions_IncomeTransactionId",
+                table: "InvestmentTransactions",
+                column: "IncomeTransactionId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_InvestmentMovements_UserId",
-                table: "InvestmentMovements",
+                name: "IX_InvestmentTransactions_UserId",
+                table: "InvestmentTransactions",
                 column: "UserId");
         }
 
@@ -124,7 +124,7 @@ namespace JazFinanzasApp.API.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "InvestmentMovements");
+                name: "InvestmentTransactions");
 
             migrationBuilder.UpdateData(
                 table: "AssetTypes",

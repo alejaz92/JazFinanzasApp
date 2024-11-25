@@ -1,10 +1,11 @@
-﻿namespace JazFinanzasApp.API.Models.DTO.InvestmentMovement
+﻿namespace JazFinanzasApp.API.Models.DTO.InvestmentTransaction
 {
-    public class InvestmentMovementAddDTO
+    public class StockTransactionAddDTO
     {
         public DateTime Date { get; set; }
         public string Environment { get; set; }
-        public string MovementType { get; set; }
+        public string AssetType { get; set; }
+        public string StockMovementType { get; set; }
         public string CommerceType { get; set; }
         public int? ExpenseAssetId { get; set; }
         public int? ExpenseAccountId { get; set; }

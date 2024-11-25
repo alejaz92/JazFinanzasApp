@@ -20,7 +20,7 @@ namespace JazFinanzasApp.API.Repositories
             today = new DateTime(today.Year, today.Month, 1);
             DateTime nullDate = new DateTime(0001, 01, 01, 00, 00, 00, 0000000);
 
-            var pendingMovements = await _context.CardTransactions
+            var pendingTransactions = await _context.CardTransactions
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
@@ -48,7 +48,7 @@ namespace JazFinanzasApp.API.Repositories
                 .ThenBy(cm => cm.Date)
                 .ToListAsync();
 
-            return pendingMovements;
+            return pendingTransactions;
         }
 
         public async Task<IEnumerable<CardTransaction>> GetCardTransactionsToPay(int cardId, DateTime paymentMonth, int userId)

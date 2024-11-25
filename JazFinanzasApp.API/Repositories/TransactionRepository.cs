@@ -5,36 +5,36 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
-    public class MovementRepository : GenericRepository<Movement>, IMovementRepository
+    public class TransactionRepository : GenericRepository<Transaction>, ITransactionRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public MovementRepository(ApplicationDbContext context) : base(context)
+        public TransactionRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
         }
 
-        public async Task<(IEnumerable<Movement> Movements, int TotalCount)> GetPaginatedMovements(int userId, int page, int pageSize)
+        public async Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize)
         {
-            //var excludedIds = await _context.InvestmentMovements
-            //    .SelectMany(im => new[] { im.IncomeMovementId, im.ExpenseMovementId })
+            //var excludedIds = await _context.InvestmentTransactions
+            //    .SelectMany(im => new[] { im.IncomeTransactionId, im.ExpenseTransactionId })
             //    .Where(id => id.HasValue)
             //    .Select(id => id.Value)
             //    .ToListAsync();
 
 
-            var totalCount = await _context.Movements
+            var totalCount = await _context.Transactions
                 .Where(m => m.Account.UserId == userId)
                 .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
-                .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
+                .Where(m => !_context.InvestmentTransactions.Any(im => im.IncomeTransactionId == m.Id || im.ExpenseTransactionId == m.Id))
                 .CountAsync();
 
-            var movements = await _context.Movements
+            var transactions = await _context.Transactions
                 .Where(m => m.Account.UserId == userId)
                 .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
-                .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
+                .Where(m => !_context.InvestmentTransactions.Any(im => im.IncomeTransactionId == m.Id || im.ExpenseTransactionId == m.Id))
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
                 .Include(m => m.TransactionClass)
@@ -43,14 +43,14 @@ namespace JazFinanzasApp.API.Repositories
                 .Take(pageSize)
                 .ToListAsync();
             
-            return (movements, totalCount);
+            return (transactions, totalCount);
         }
 
 
         // get by id including related tables
-        public async Task<Movement> GetMovementByIdAsync(int id)
+        public async Task<Transaction> GetTransactionByIdAsync(int id)
         {
-            return await _context.Movements
+            return await _context.Transactions
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
                 .Include(m => m.TransactionClass)

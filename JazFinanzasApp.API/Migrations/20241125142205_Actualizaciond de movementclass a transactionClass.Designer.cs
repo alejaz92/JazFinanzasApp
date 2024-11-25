@@ -12,8 +12,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JazFinanzasApp.API.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20241125142205_Actualizaciond de movementclass a transactionClass")]
-    partial class ActualizacionddemovementclassatransactionClass
+    [Migration("20241125142205_Actualizaciond de transactionclass a transactionClass")]
+    partial class ActualizacionddetransactionclassatransactionClass
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -333,7 +333,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.ToTable("CardPayments");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.InvestmentMovement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.InvestmentTransaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -355,10 +355,10 @@ namespace JazFinanzasApp.API.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("ExpenseMovementId")
+                    b.Property<int?>("ExpenseTransactionId")
                         .HasColumnType("int");
 
-                    b.Property<int?>("IncomeMovementId")
+                    b.Property<int?>("IncomeTransactionId")
                         .HasColumnType("int");
 
                     b.Property<string>("MovementType")
@@ -373,16 +373,16 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("ExpenseMovementId");
+                    b.HasIndex("ExpenseTransactionId");
 
-                    b.HasIndex("IncomeMovementId");
+                    b.HasIndex("IncomeTransactionId");
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("InvestmentMovements");
+                    b.ToTable("InvestmentTransactions");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -434,7 +434,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Movements");
+                    b.ToTable("Transactions");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
@@ -815,16 +815,16 @@ namespace JazFinanzasApp.API.Migrations
                     b.Navigation("Card");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.InvestmentMovement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.InvestmentTransaction", b =>
                 {
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.Movement", "ExpenseMovement")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.Transaction", "ExpenseTransaction")
                         .WithMany()
-                        .HasForeignKey("ExpenseMovementId")
+                        .HasForeignKey("ExpenseTransactionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.Movement", "IncomeMovement")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.Transaction", "IncomeTransaction")
                         .WithMany()
-                        .HasForeignKey("IncomeMovementId")
+                        .HasForeignKey("IncomeTransactionId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
@@ -833,14 +833,14 @@ namespace JazFinanzasApp.API.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("ExpenseMovement");
+                    b.Navigation("ExpenseTransaction");
 
-                    b.Navigation("IncomeMovement");
+                    b.Navigation("IncomeTransaction");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Movement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.Transaction", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Account", "Account")
                         .WithMany()

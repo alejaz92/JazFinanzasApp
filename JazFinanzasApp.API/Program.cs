@@ -36,11 +36,11 @@ builder.Services.AddScoped<ICardRepository, CardRepository>();
 builder.Services.AddScoped<IAccount_AssetTypeRepository, Account_AssetTypeRepository>();
 builder.Services.AddScoped<IAssetTypeRepository, AssetTypeRepository>();
 builder.Services.AddScoped<IAsset_UserRepository, Asset_UserRepository>();
-builder.Services.AddScoped<IMovementRepository, MovementRepository>();
+builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
 builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
 builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository>();
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
-builder.Services.AddScoped<IInvestmentMovementRepository, InvestmentMovementRepository>();
+builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
 
 
 

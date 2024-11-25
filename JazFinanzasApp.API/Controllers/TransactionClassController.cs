@@ -66,7 +66,7 @@ namespace JazFinanzasApp.API.Controllers
 
             if (checkExists.Any())
             {
-                return BadRequest("Movement Class already exists");
+                return BadRequest("Transaction Class already exists");
             }
 
             var transactionClass = new TransactionClass

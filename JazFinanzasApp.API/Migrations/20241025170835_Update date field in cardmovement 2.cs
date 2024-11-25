@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace JazFinanzasApp.API.Migrations
 {
     /// <inheritdoc />
-    public partial class Updatedatefieldincardmovement2 : Migration
+    public partial class Updatedatefieldincardtransaction2 : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
