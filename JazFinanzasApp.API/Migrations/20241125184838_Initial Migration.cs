@@ -355,7 +355,7 @@ namespace JazFinanzasApp.API.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    DateTransaction = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Date = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Detail = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     CardId = table.Column<int>(type: "int", nullable: false),
                     TransactionClassId = table.Column<int>(type: "int", nullable: false),
@@ -363,7 +363,7 @@ namespace JazFinanzasApp.API.Migrations
                     TotalAmount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     Installments = table.Column<int>(type: "int", nullable: false),
                     FirstInstallment = table.Column<DateTime>(type: "datetime2", nullable: false),
-                    LastInstallment = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    LastInstallment = table.Column<DateTime>(type: "datetime2", nullable: true),
                     Repeat = table.Column<string>(type: "nvarchar(max)", nullable: false),
                     InstallmentAmount = table.Column<decimal>(type: "decimal(18,2)", nullable: false),
                     UserId = table.Column<int>(type: "int", nullable: false),
@@ -438,19 +438,58 @@ namespace JazFinanzasApp.API.Migrations
                         principalColumn: "Id");
                 });
 
+            migrationBuilder.CreateTable(
+                name: "InvestmentTransactions",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Date = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    Environment = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    MovementType = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    CommerceType = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    ExpenseTransactionId = table.Column<int>(type: "int", nullable: true),
+                    IncomeTransactionId = table.Column<int>(type: "int", nullable: true),
+                    UserId = table.Column<int>(type: "int", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_InvestmentTransactions", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_InvestmentTransactions_AspNetUsers_UserId",
+                        column: x => x.UserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_InvestmentTransactions_Transactions_ExpenseTransactionId",
+                        column: x => x.ExpenseTransactionId,
+                        principalTable: "Transactions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_InvestmentTransactions_Transactions_IncomeTransactionId",
+                        column: x => x.IncomeTransactionId,
+                        principalTable: "Transactions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
             migrationBuilder.InsertData(
                 table: "AssetTypes",
                 columns: new[] { "Id", "CreatedAt", "Environment", "Name", "UpdatedAt" },
                 values: new object[,]
                 {
-                    { 1, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1232), "FIAT", "Moneda", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1236) },
-                    { 2, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1239), "CRYPTO", "Criptomoneda", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1239) },
-                    { 3, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1240), "BOLSA", "Accion Argentina", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1241) },
-                    { 4, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1241), "BOLSA", "CEDEAR", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1242) },
-                    { 5, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1242), "BOLSA", "FCI", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1243) },
-                    { 6, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1243), "BOLSA", "Bono", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1244) },
-                    { 7, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1245), "BOLSA", "Accion USA", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1245) },
-                    { 8, new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1246), "BOLSA", "Obligacion Negociable", new DateTime(2024, 10, 23, 17, 39, 13, 776, DateTimeKind.Utc).AddTicks(1246) }
+                    { 1, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5428), "FIAT", "Moneda", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5431) },
+                    { 2, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5435), "CRYPTO", "Criptomoneda", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5436) },
+                    { 3, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5437), "BOLSA", "Accion Argentina", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5438) },
+                    { 4, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5439), "BOLSA", "CEDEAR", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5439) },
+                    { 5, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5440), "BOLSA", "FCI", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5440) },
+                    { 6, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5441), "BOLSA", "Bono", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5442) },
+                    { 7, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5443), "BOLSA", "Accion USA", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5443) },
+                    { 8, new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5444), "BOLSA", "Obligacion Negociable", new DateTime(2024, 11, 25, 18, 48, 37, 330, DateTimeKind.Utc).AddTicks(5444) }
                 });
 
             migrationBuilder.CreateIndex(
@@ -513,6 +552,11 @@ namespace JazFinanzasApp.API.Migrations
                 column: "AssetId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Cards_UserId",
+                table: "Cards",
+                column: "UserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_CardTransactions_AssetId",
                 table: "CardTransactions",
                 column: "AssetId");
@@ -533,8 +577,18 @@ namespace JazFinanzasApp.API.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Cards_UserId",
-                table: "Cards",
+                name: "IX_InvestmentTransactions_ExpenseTransactionId",
+                table: "InvestmentTransactions",
+                column: "ExpenseTransactionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_InvestmentTransactions_IncomeTransactionId",
+                table: "InvestmentTransactions",
+                column: "IncomeTransactionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_InvestmentTransactions_UserId",
+                table: "InvestmentTransactions",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
@@ -591,19 +645,22 @@ namespace JazFinanzasApp.API.Migrations
                 name: "Assets_Users");
 
             migrationBuilder.DropTable(
-                name: "CardTransactions");
-
-            migrationBuilder.DropTable(
                 name: "CardPayments");
 
             migrationBuilder.DropTable(
-                name: "Transactions");
+                name: "CardTransactions");
+
+            migrationBuilder.DropTable(
+                name: "InvestmentTransactions");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");
 
             migrationBuilder.DropTable(
                 name: "Cards");
+
+            migrationBuilder.DropTable(
+                name: "Transactions");
 
             migrationBuilder.DropTable(
                 name: "Accounts");
