@@ -11,8 +11,8 @@
         public string AssetName { get; set; }
         public DateTime Date { get; set; }
         public string MovementType { get; set; }
-        public int? MovementClassId { get; set; }
-        public string? MovementClassName { get; set; }
+        public int? TransactionClassId { get; set; }
+        public string? TransactionClassName { get; set; }
         public string Detail { get; set; }
         public decimal Amount { get; set; }
     }

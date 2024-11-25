@@ -21,7 +21,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<CardMovement> CardMovements { get; set; }
         public DbSet<CardPayment> CardPayments { get; set; }
         public DbSet<Movement> Movements { get; set; }
-        public DbSet<MovementClass> MovementClasses { get; set; }
+        public DbSet<TransactionClass> TransactionClasses { get; set; }
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
         public DbSet<InvestmentMovement> InvestmentMovements { get; set; }
 
@@ -52,9 +52,9 @@ namespace JazFinanzasApp.API.Data
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
 
             modelBuilder.Entity<CardMovement>()
-                .HasOne(cm => cm.MovementClass)
-                .WithMany() // Si no hay colección en MovementClass
-                .HasForeignKey(cm => cm.MovementClassId)
+                .HasOne(cm => cm.TransactionClass)
+                .WithMany() // Si no hay colección en TransactionClass
+                .HasForeignKey(cm => cm.TransactionClassId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
 
             modelBuilder.Entity<CardMovement>()
@@ -115,16 +115,16 @@ namespace JazFinanzasApp.API.Data
                 .HasForeignKey(cm => cm.AssetId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
             modelBuilder.Entity<Movement>()
-                .HasOne(cm => cm.MovementClass)
+                .HasOne(cm => cm.TransactionClass)
                 .WithMany() // Si no hay colección en User
-                .HasForeignKey(cm => cm.MovementClassId)
+                .HasForeignKey(cm => cm.TransactionClassId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
             modelBuilder.Entity<Movement>()
                 .HasOne(cm => cm.User)
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
-            modelBuilder.Entity<MovementClass>()
+            modelBuilder.Entity<TransactionClass>()
                 .HasOne(cm => cm.User)
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.UserId)

@@ -16,9 +16,9 @@ namespace JazFinanzasApp.API.Models.Domain
         public Card Card { get; set; }
 
         [Required]
-        [ForeignKey("MovementClassId")]
-        public int MovementClassId { get; set; }
-        public MovementClass MovementClass { get; set; }
+        [ForeignKey("TransactionClassId")]
+        public int TransactionClassId { get; set; }
+        public TransactionClass TransactionClass { get; set; }
 
         [Required]
         [ForeignKey("AssetId")]

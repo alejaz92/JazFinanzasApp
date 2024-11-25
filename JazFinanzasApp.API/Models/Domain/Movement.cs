@@ -25,9 +25,9 @@ namespace JazFinanzasApp.API.Models.Domain
         public string MovementType { get; set; }
 
         
-        [ForeignKey("MovementClassId")]
-        public int? MovementClassId { get; set; }
-        public MovementClass? MovementClass { get; set; }
+        [ForeignKey("TransactionClassId")]
+        public int? TransactionClassId { get; set; }
+        public TransactionClass? TransactionClass { get; set; }
 
         public string? Detail {  get; set; }
 

@@ -146,66 +146,66 @@ namespace JazFinanzasApp.API.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2804),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9770),
                             Environment = "FIAT",
                             Name = "Moneda",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2807)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9774)
                         },
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2810),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9777),
                             Environment = "CRYPTO",
                             Name = "Criptomoneda",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2811)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9777)
                         },
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2812),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9778),
                             Environment = "BOLSA",
                             Name = "Accion Argentina",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2812)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9779)
                         },
                         new
                         {
                             Id = 4,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2813),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9780),
                             Environment = "BOLSA",
                             Name = "CEDEAR",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2813)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9780)
                         },
                         new
                         {
                             Id = 5,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2814),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9781),
                             Environment = "BOLSA",
                             Name = "FCI",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2815)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9781)
                         },
                         new
                         {
                             Id = 6,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2815),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9782),
                             Environment = "BOLSA",
                             Name = "Bono",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2816)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9782)
                         },
                         new
                         {
                             Id = 7,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2817),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9783),
                             Environment = "BOLSA",
                             Name = "Accion USA",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2817)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9784)
                         },
                         new
                         {
                             Id = 8,
-                            CreatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818),
+                            CreatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9784),
                             Environment = "BOLSA",
                             Name = "Obligacion Negociable",
-                            UpdatedAt = new DateTime(2024, 11, 13, 14, 35, 18, 642, DateTimeKind.Utc).AddTicks(2818)
+                            UpdatedAt = new DateTime(2024, 11, 25, 14, 22, 4, 463, DateTimeKind.Utc).AddTicks(9785)
                         });
                 });
 
@@ -288,15 +288,15 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<DateTime?>("LastInstallment")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("MovementClassId")
-                        .HasColumnType("int");
-
                     b.Property<string>("Repeat")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal>("TotalAmount")
                         .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("TransactionClassId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -310,7 +310,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("CardId");
 
-                    b.HasIndex("MovementClassId");
+                    b.HasIndex("TransactionClassId");
 
                     b.HasIndex("UserId");
 
@@ -405,15 +405,15 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<string>("Detail")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("MovementClassId")
-                        .HasColumnType("int");
-
                     b.Property<string>("MovementType")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<decimal?>("QuotePrice")
                         .HasColumnType("decimal(18,10)");
+
+                    b.Property<int?>("TransactionClassId")
+                        .HasColumnType("int");
 
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -427,14 +427,14 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("AssetId");
 
-                    b.HasIndex("MovementClassId");
+                    b.HasIndex("TransactionClassId");
 
                     b.HasIndex("UserId");
 
                     b.ToTable("Movements");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.MovementClass", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -463,7 +463,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("MovementClasses");
+                    b.ToTable("TransactionClasses");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.User", b =>
@@ -780,9 +780,9 @@ namespace JazFinanzasApp.API.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.MovementClass", "MovementClass")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.TransactionClass", "TransactionClass")
                         .WithMany()
-                        .HasForeignKey("MovementClassId")
+                        .HasForeignKey("TransactionClassId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
@@ -796,7 +796,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.Navigation("Card");
 
-                    b.Navigation("MovementClass");
+                    b.Navigation("TransactionClass");
 
                     b.Navigation("User");
                 });
@@ -816,11 +816,13 @@ namespace JazFinanzasApp.API.Migrations
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Movement", "ExpenseMovement")
                         .WithMany()
-                        .HasForeignKey("ExpenseMovementId");
+                        .HasForeignKey("ExpenseMovementId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Movement", "IncomeMovement")
                         .WithMany()
-                        .HasForeignKey("IncomeMovementId");
+                        .HasForeignKey("IncomeMovementId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
                         .WithMany()
@@ -849,9 +851,9 @@ namespace JazFinanzasApp.API.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.MovementClass", "MovementClass")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.TransactionClass", "TransactionClass")
                         .WithMany()
-                        .HasForeignKey("MovementClassId")
+                        .HasForeignKey("TransactionClassId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
@@ -864,12 +866,12 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.Navigation("Asset");
 
-                    b.Navigation("MovementClass");
+                    b.Navigation("TransactionClass");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.MovementClass", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
                         .WithMany()

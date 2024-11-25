@@ -22,7 +22,7 @@ namespace JazFinanzasApp.API.Repositories
 
             var pendingMovements = await _context.CardMovements
                 .Include(cm => cm.Card)
-                .Include(cm => cm.MovementClass)
+                .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
                 .Where(cm => cm.Card.UserId == userId && (
                     (cm.Repeat == "YES" &&  (cm.LastInstallment  ==   nullDate || cm.LastInstallment == null )) ||
@@ -34,7 +34,7 @@ namespace JazFinanzasApp.API.Repositories
                     Id = cm.Id,
                     Date = cm.Date,
                     Card = cm.Card.Name,
-                    MovementClass = cm.MovementClass.Description,
+                    TransactionClass = cm.TransactionClass.Description,
                     Detail = cm.Detail,
                     Installments = cm.Repeat == "YES" ? "Recurrente" : cm.Installments.ToString(),
                     Asset = cm.Asset.Name,
@@ -58,7 +58,7 @@ namespace JazFinanzasApp.API.Repositories
 
             return await _context.CardMovements
                 .Include(cm => cm.Card)
-                .Include(cm => cm.MovementClass)
+                .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
                 .Where(cm => cm.CardId == cardId
                     && cm.UserId == userId

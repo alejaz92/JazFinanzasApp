@@ -3,8 +3,8 @@
     public class CardMovementsPaymentListDTO
     {
         public DateTime Date { get; set; }
-        public int MovementClassId { get; set; }
-        public string? MovementClass { get; set; }   
+        public int TransactionClassId { get; set; }
+        public string? TransactionClass { get; set; }   
         public string Detail { get; set; }
         public int AssetId { get; set; }
         public string? Asset { get; set; }

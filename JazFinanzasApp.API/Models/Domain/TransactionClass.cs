@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    public class MovementClass : BaseEntity
+    public class TransactionClass : BaseEntity
     {
         [Required]
         public string Description { get; set; }

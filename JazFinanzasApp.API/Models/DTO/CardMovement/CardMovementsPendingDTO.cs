@@ -6,7 +6,7 @@ namespace JazFinanzasApp.API.Models.DTO.CardMovement
         public int Id { get; set; }
         public DateTime Date { get; set; }
         public string Card  { get; set; }
-        public string MovementClass { get; set; }          
+        public string TransactionClass { get; set; }          
         public string Detail { get; set; }
         public string Installments { get; set; }
         public string Asset { get; set; }

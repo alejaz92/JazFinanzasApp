@@ -25,19 +25,19 @@ namespace JazFinanzasApp.API.Repositories
 
             var totalCount = await _context.Movements
                 .Where(m => m.Account.UserId == userId)
-                .Where(m => m.MovementClassId != null)
+                .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
                 .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
                 .CountAsync();
 
             var movements = await _context.Movements
                 .Where(m => m.Account.UserId == userId)
-                .Where(m => m.MovementClassId != null)
+                .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
                 .Where(m => !_context.InvestmentMovements.Any(im => im.IncomeMovementId == m.Id || im.ExpenseMovementId == m.Id))
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
-                .Include(m => m.MovementClass)
+                .Include(m => m.TransactionClass)
                 .OrderByDescending(m => m.Date)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -53,7 +53,7 @@ namespace JazFinanzasApp.API.Repositories
             return await _context.Movements
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
-                .Include(m => m.MovementClass)
+                .Include(m => m.TransactionClass)
                 .FirstOrDefaultAsync(m => m.Id == id);
         }
         

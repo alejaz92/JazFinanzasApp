@@ -1,8 +1,8 @@
 ﻿using Microsoft.Identity.Client;
 
-namespace JazFinanzasApp.API.Models.DTO.movementClasses
+namespace JazFinanzasApp.API.Models.DTO.transactionClass
 {
-    public class MovementClassDTO
+    public class TransactionClassDTO
     {
         public int Id { get; set; }
         public string Description { get; set; }

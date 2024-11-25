@@ -16,14 +16,14 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IMovementRepository _movementRepository;
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
-        private readonly IMovementClassRepository _movementClassRepository;
+        private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IInvestmentMovementRepository _investmentMovementRepository;
         public MovementController(
             IMovementRepository movementRepository, 
             IAssetRepository assetRepository,
             IAccountRepository accountRepository, 
-            IMovementClassRepository movementClassRepository,
+            ITransactionClassRepository transactionClassRepository,
             IAssetQuoteRepository assetQuoteRepository,
             IInvestmentMovementRepository investmentMovementRepository
             )
@@ -31,7 +31,7 @@ namespace JazFinanzasApp.API.Controllers
             _movementRepository = movementRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
-            _movementClassRepository = movementClassRepository;
+            _transactionClassRepository = transactionClassRepository;
             _assetQuoteRepository = assetQuoteRepository;
             _investmentMovementRepository = investmentMovementRepository;
         }
@@ -62,8 +62,8 @@ namespace JazFinanzasApp.API.Controllers
                 AccountName = m.Account.Name,
                 AssetId = m.AssetId,
                 AssetName = m.Asset.Name,
-                MovementClassId = m.MovementClassId,
-                MovementClassName = m.MovementClass.Description,
+                TransactionClassId = m.TransactionClassId,
+                TransactionClassName = m.TransactionClass.Description,
                 MovementType = m.MovementType
 
             }).ToList();
@@ -137,16 +137,16 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     return Unauthorized();
                 }
-                var movementClass = await _movementClassRepository.GetByIdAsync(movementDTO.movementClassId.Value);
-                if (movementClass == null)
+                var transactionClass = await _transactionClassRepository.GetByIdAsync(movementDTO.transactionClassId.Value);
+                if (transactionClass == null)
                 {
                     return NotFound();
                 }
-                if (movementClass.IncExp == "E")
+                if (transactionClass.IncExp == "E")
                 {
                     return BadRequest("No se puede asignar una clase de movimiento de tipo egreso a un movimiento de tipo ingreso");
                 }
-                if (movementClass.UserId != userId)
+                if (transactionClass.UserId != userId)
                 {
                     return Unauthorized();
                 }
@@ -159,8 +159,8 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = asset,
                     Date = movementDTO.date,
                     MovementType = movementDTO.movementType,
-                    MovementClassId = movementClass.Id,
-                    MovementClass = movementClass,
+                    TransactionClassId = transactionClass.Id,
+                    TransactionClass = transactionClass,
                     Detail = movementDTO.detail,
                     Amount = movementDTO.amount,
                     UserId = userId,
@@ -182,16 +182,16 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var movementClass = await _movementClassRepository.GetByIdAsync(movementDTO.movementClassId.Value);
-                if (movementClass == null)
+                var transactionClass = await _transactionClassRepository.GetByIdAsync(movementDTO.transactionClassId.Value);
+                if (transactionClass == null)
                 {
                     return NotFound();
                 }
-                if (movementClass.IncExp == "I")
+                if (transactionClass.IncExp == "I")
                 {
                     return BadRequest("No se puede asignar una clase de movimiento de tipo ingreso a un movimiento de tipo egreso");
                 }
-                if (movementClass.UserId != userId)
+                if (transactionClass.UserId != userId)
                 {
                     return Unauthorized();
                 }
@@ -204,8 +204,8 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = asset,
                     Date = movementDTO.date,
                     MovementType = movementDTO.movementType,
-                    MovementClassId = movementClass.Id,
-                    MovementClass = movementClass,
+                    TransactionClassId = transactionClass.Id,
+                    TransactionClass = transactionClass,
                     Detail = movementDTO.detail,
                     Amount = -movementDTO.amount,
                     UserId = userId,
@@ -245,7 +245,7 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = asset,
                     Date = movementDTO.date,
                     MovementType = movementDTO.movementType,
-                    MovementClassId = null,
+                    TransactionClassId = null,
                     Detail = movementDTO.detail,
                     Amount = movementDTO.amount,
                     UserId = userId,
@@ -266,7 +266,7 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = asset,
                     Date = movementDTO.date,
                     MovementType = movementDTO.movementType,
-                    MovementClassId = null,
+                    TransactionClassId = null,
                     Detail = movementDTO.detail,
                     Amount = -movementDTO.amount,
                     UserId = userId,
@@ -375,8 +375,8 @@ namespace JazFinanzasApp.API.Controllers
                 AccountName = movement.Account.Name,
                 AssetId = movement.AssetId,
                 AssetName = movement.Asset.Name,
-                MovementClassId = movement.MovementClassId,
-                MovementClassName = movement.MovementClass.Description,
+                TransactionClassId = movement.TransactionClassId,
+                TransactionClassName = movement.TransactionClass.Description,
                 MovementType = movement.MovementType
             };
 
@@ -433,7 +433,7 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = movement.Asset,
                     Date = refundDTO.Date,
                     MovementType = "EX",
-                    MovementClassId = null,
+                    TransactionClassId = null,
                     Detail = "Refund",
                     Amount = - refundDTO.Amount,
                     UserId = userId,
@@ -451,7 +451,7 @@ namespace JazFinanzasApp.API.Controllers
                     Asset = movement.Asset,
                     Date = refundDTO.Date,
                     MovementType = "EX",
-                    MovementClassId = null,
+                    TransactionClassId = null,
                     Detail = "Refund",
                     Amount = refundDTO.Amount,
                     UserId = userId,

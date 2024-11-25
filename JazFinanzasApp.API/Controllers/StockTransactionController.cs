@@ -16,7 +16,7 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
-        private readonly IMovementClassRepository _movementClassRepository;
+        private readonly ITransactionClassRepository _transactionClassRepository;
 
         public StockTransactionController(
             IMovementRepository movementRepository,
@@ -24,7 +24,7 @@ namespace JazFinanzasApp.API.Controllers
             IAssetRepository assetRepository,
             IAccountRepository accountRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IMovementClassRepository movementClassRepository
+            ITransactionClassRepository transactionClassRepository
             )
         {
             _movementRepository = movementRepository;
@@ -32,7 +32,7 @@ namespace JazFinanzasApp.API.Controllers
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _assetQuoteRepository = assetQuoteRepository;
-            _movementClassRepository = movementClassRepository;
+            _transactionClassRepository = transactionClassRepository;
         }
 
         [HttpPost]
@@ -66,7 +66,7 @@ namespace JazFinanzasApp.API.Controllers
                             Asset = incomeAsset,
                             Date = stockTransactionDto.Date,
                             MovementType = "I",
-                            MovementClassId = null,
+                            TransactionClassId = null,
                             Detail = stockTransactionDto.CommerceType,
                             Amount = stockTransactionDto.IncomeQuantity.Value,
                             QuotePrice = 1 / stockTransactionDto.IncomeQuotePrice.Value,
@@ -82,7 +82,7 @@ namespace JazFinanzasApp.API.Controllers
                             var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
                             await CheckAssetsAndAccounts(expenseAsset, expenseAccount);
 
-                            MovementClass investmentClass = await _movementClassRepository.GetMovementClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
@@ -103,7 +103,7 @@ namespace JazFinanzasApp.API.Controllers
                                 Asset = expenseAsset,
                                 Date = stockTransactionDto.Date,
                                 MovementType = "E",
-                                MovementClassId = investmentClass.Id,
+                                TransactionClassId = investmentClass.Id,
                                 Detail = stockTransactionDto.CommerceType,
                                 Amount = -stockTransactionDto.ExpenseQuantity.Value,
                                 QuotePrice = quote.Value,
@@ -128,7 +128,7 @@ namespace JazFinanzasApp.API.Controllers
                             Asset = expenseAsset,
                             Date = stockTransactionDto.Date,
                             MovementType = "E",
-                            MovementClassId = null,
+                            TransactionClassId = null,
                             Detail = stockTransactionDto.CommerceType,
                             Amount = -stockTransactionDto.ExpenseQuantity.Value,
                             QuotePrice = stockTransactionDto.ExpenseQuotePrice.Value,
@@ -144,7 +144,7 @@ namespace JazFinanzasApp.API.Controllers
                             var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
                             await CheckAssetsAndAccounts(incomeAsset, incomeAccount);
 
-                            MovementClass investmentClass = await _movementClassRepository.GetMovementClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
@@ -165,7 +165,7 @@ namespace JazFinanzasApp.API.Controllers
                                 Asset = incomeAsset,
                                 Date = stockTransactionDto.Date,
                                 MovementType = "I",
-                                MovementClassId = investmentClass.Id,
+                                TransactionClassId = investmentClass.Id,
                                 Detail = stockTransactionDto.CommerceType,
                                 Amount = stockTransactionDto.IncomeQuantity.Value,
                                 QuotePrice = quote.Value,

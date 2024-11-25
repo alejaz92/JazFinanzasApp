@@ -5,20 +5,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
-    public class MovementClassRepository : GenericRepository<MovementClass>, IMovementClassRepository
+    public class TransactionClassRepository : GenericRepository<TransactionClass>, ITransactionClassRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public MovementClassRepository(ApplicationDbContext context) : base(context)
+        public TransactionClassRepository(ApplicationDbContext context) : base(context)
         {    
             _context = context;
         }
 
 
 
-        public async Task<MovementClass> GetMovementClassByDescriptionAsync(string Description)
+        public async Task<TransactionClass> GetTransactionClassByDescriptionAsync(string Description)
         {
-            return await _context.MovementClasses
+            return await _context.TransactionClasses
                 .FirstOrDefaultAsync(m => m.Description == Description);
         }
     }

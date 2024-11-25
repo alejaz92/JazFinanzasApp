@@ -1,6 +1,6 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.movementClasses;
+using JazFinanzasApp.API.Models.DTO.transactionClass;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,12 +13,12 @@ namespace JazFinanzasApp.API.Controllers
     [Authorize]
     [Route("api/[controller]")]
     [ApiController]
-    public class MovementClassController : ControllerBase
+    public class TransactionClassController : ControllerBase
     {
-        private readonly IMovementClassRepository _movementClassRepository;
-        public MovementClassController(IMovementClassRepository movementClassRepository)
+        private readonly ITransactionClassRepository _transactionClassRepository;
+        public TransactionClassController(ITransactionClassRepository transactionClassRepository)
         {
-            _movementClassRepository = movementClassRepository;
+            _transactionClassRepository = transactionClassRepository;
         }
 
         [HttpGet]
@@ -32,25 +32,25 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var movementClasses = await _movementClassRepository.GetByUserIdAsync(userId);
+            var transactionClasses = await _transactionClassRepository.GetByUserIdAsync(userId);
 
 
-            movementClasses = movementClasses.OrderBy(mc => mc.Description);
+            transactionClasses = transactionClasses.OrderBy(mc => mc.Description);
 
             // convert to DTO
 
-            var movementClassesDTO = movementClasses.Select(mc => new MovementClassDTO
+            var transactionClassesDTO = transactionClasses.Select(mc => new TransactionClassDTO
             {
                 Id = mc.Id,
                 Description = mc.Description,
                 IncExp = mc.IncExp
             }).ToList();
-            return Ok(movementClassesDTO);
+            return Ok(transactionClassesDTO);
         }
 
 
         [HttpPost]
-        public async Task<IActionResult> CreateMovementClass(Models.DTO.movementClasses.MovementClassDTO movementClassDTO)
+        public async Task<IActionResult> CreateTransactionClass(Models.DTO.transactionClass.TransactionClassDTO transactionClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -60,7 +60,7 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var checkExists = await _movementClassRepository.FindAsync(mc => mc.Description == movementClassDTO.Description && 
+            var checkExists = await _transactionClassRepository.FindAsync(mc => mc.Description == transactionClassDTO.Description && 
                 mc.UserId == userId);
             //lo siguiente no funciona, viene vacio y no entra
 
@@ -69,15 +69,15 @@ namespace JazFinanzasApp.API.Controllers
                 return BadRequest("Movement Class already exists");
             }
 
-            var movementClass = new MovementClass
+            var transactionClass = new TransactionClass
             {
-                Description = movementClassDTO.Description,
-                IncExp = movementClassDTO.IncExp,
+                Description = transactionClassDTO.Description,
+                IncExp = transactionClassDTO.IncExp,
                 UserId = userId
             };
 
-            await _movementClassRepository.AddAsync(movementClass);
-            return Ok(movementClassDTO);
+            await _transactionClassRepository.AddAsync(transactionClass);
+            return Ok(transactionClassDTO);
         }
 
 
@@ -92,28 +92,28 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var movementClass = await _movementClassRepository.GetByIdAsync(id);
-            if (movementClass == null)
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(id);
+            if (transactionClass == null)
             {
                 return NotFound();
             }
 
-            if (movementClass.UserId != userId)
+            if (transactionClass.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            var movementClassDTO = new Models.DTO.movementClasses.MovementClassDTO
+            var transactionClassDTO = new Models.DTO.transactionClass.TransactionClassDTO
             {
-                Description = movementClass.Description,
-                IncExp = movementClass.IncExp
+                Description = transactionClass.Description,
+                IncExp = transactionClass.IncExp
             };
 
-            return Ok(movementClassDTO);
+            return Ok(transactionClassDTO);
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateMovementClass(int id, Models.DTO.movementClasses.MovementClassDTO movementClassDTO)
+        public async Task<IActionResult> UpdateTransactionClass(int id, Models.DTO.transactionClass.TransactionClassDTO transactionClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -123,27 +123,27 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var movementClass = await _movementClassRepository.GetByIdAsync(id);
-            if (movementClass == null)
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(id);
+            if (transactionClass == null)
             {
                 return NotFound();
             }
 
-            if (movementClass.UserId != userId)
+            if (transactionClass.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            movementClass.Description = movementClassDTO.Description;
-            movementClass.UpdatedAt = DateTime.UtcNow;
+            transactionClass.Description = transactionClassDTO.Description;
+            transactionClass.UpdatedAt = DateTime.UtcNow;
 
-            await _movementClassRepository.UpdateAsync(movementClass);
+            await _transactionClassRepository.UpdateAsync(transactionClass);
 
-            return Ok(movementClassDTO);
+            return Ok(transactionClassDTO);
         }
 
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteMovementClass(int id)
+        public async Task<IActionResult> DeleteTransactionClass(int id)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -153,18 +153,18 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var movementClass = await _movementClassRepository.GetByIdAsync(id);
-            if (movementClass == null)
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(id);
+            if (transactionClass == null)
             {
                 return NotFound();
             }
 
-            if (movementClass.UserId != userId)
+            if (transactionClass.UserId != userId)
             {
                 return Unauthorized();
             }
 
-            await _movementClassRepository.DeleteAsync(id);
+            await _transactionClassRepository.DeleteAsync(id);
 
             return Ok();
         }

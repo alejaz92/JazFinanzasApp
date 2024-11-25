@@ -291,7 +291,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<DateTime>("LastInstallment")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("MovementClassId")
+                    b.Property<int>("TransactionClassId")
                         .HasColumnType("int");
 
                     b.Property<string>("Repeat")
@@ -313,7 +313,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("CardId");
 
-                    b.HasIndex("MovementClassId");
+                    b.HasIndex("TransactionClassId");
 
                     b.HasIndex("UserId");
 
@@ -359,7 +359,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<string>("Detail")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("MovementClassId")
+                    b.Property<int?>("TransactionClassId")
                         .HasColumnType("int");
 
                     b.Property<string>("MovementType")
@@ -381,14 +381,14 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("AssetId");
 
-                    b.HasIndex("MovementClassId");
+                    b.HasIndex("TransactionClassId");
 
                     b.HasIndex("UserId");
 
                     b.ToTable("Movements");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.MovementClass", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -417,7 +417,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("MovementClasses");
+                    b.ToTable("TransactionClasses");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.User", b =>
@@ -734,9 +734,9 @@ namespace JazFinanzasApp.API.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.MovementClass", "MovementClass")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.TransactionClass", "TransactionClass")
                         .WithMany()
-                        .HasForeignKey("MovementClassId")
+                        .HasForeignKey("TransactionClassId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
@@ -750,7 +750,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.Navigation("Card");
 
-                    b.Navigation("MovementClass");
+                    b.Navigation("TransactionClass");
 
                     b.Navigation("User");
                 });
@@ -780,9 +780,9 @@ namespace JazFinanzasApp.API.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
-                    b.HasOne("JazFinanzasApp.API.Models.Domain.MovementClass", "MovementClass")
+                    b.HasOne("JazFinanzasApp.API.Models.Domain.TransactionClass", "TransactionClass")
                         .WithMany()
-                        .HasForeignKey("MovementClassId")
+                        .HasForeignKey("TransactionClassId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
@@ -795,12 +795,12 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.Navigation("Asset");
 
-                    b.Navigation("MovementClass");
+                    b.Navigation("TransactionClass");
 
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.MovementClass", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.TransactionClass", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.User", "User")
                         .WithMany()

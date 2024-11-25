@@ -19,11 +19,11 @@ namespace JazFinanzasApp.API.Controllers
     {
 
         private readonly IUserRepository _userRepository;
-        private readonly IMovementClassRepository _movementClassRepository;
-        public AuthController(IUserRepository userRepository, IMovementClassRepository movementClassRepository)
+        private readonly ITransactionClassRepository _transactionClassRepository;
+        public AuthController(IUserRepository userRepository, ITransactionClassRepository transactionClassRepository)
         {
             _userRepository = userRepository;
-            _movementClassRepository = movementClassRepository;
+            _transactionClassRepository = transactionClassRepository;
         }
 
         [HttpPost("register")]
@@ -39,47 +39,47 @@ namespace JazFinanzasApp.API.Controllers
             {
                 // al crear un usuario se le deben crear 2 clases de movimiento al usuario "Ajuste Saldo Ingreso", "Ajuste Saldo Egreso"
 
-                var movementClassInc = new MovementClass
+                var transactionClassInc = new TransactionClass
                 {
                     Description = "Ajuste Saldos Ingreso",
                     IncExp = "I",
                     UserId = result.UserId
                 };
-                await _movementClassRepository.AddAsync(movementClassInc);
+                await _transactionClassRepository.AddAsync(transactionClassInc);
 
-                movementClassInc = new MovementClass
+                transactionClassInc = new TransactionClass
                 {
                     Description = "Ingreso Inversiones",
                     IncExp = "I",
                     UserId = result.UserId
                 };
-                await _movementClassRepository.AddAsync(movementClassInc);
+                await _transactionClassRepository.AddAsync(transactionClassInc);
 
 
-                var movementClassExp = new MovementClass
+                var transactionClassExp = new TransactionClass
                 {
                     Description = "Ajuste Saldos Egreso",
                     IncExp = "E",
                     UserId = result.UserId
                 };
-                await _movementClassRepository.AddAsync(movementClassExp);
+                await _transactionClassRepository.AddAsync(transactionClassExp);
 
 
-                movementClassExp = new MovementClass
+                transactionClassExp = new TransactionClass
                 {
                     Description = "Gastos Tarjeta",
                     IncExp = "E",
                     UserId = result.UserId
                 };
-                await _movementClassRepository.AddAsync(movementClassExp);
+                await _transactionClassRepository.AddAsync(transactionClassExp);
 
-                movementClassExp = new MovementClass
+                transactionClassExp = new TransactionClass
                 {
                     Description = "Inversiones",
                     IncExp = "E",
                     UserId = result.UserId
                 };
-                await _movementClassRepository.AddAsync(movementClassExp);
+                await _transactionClassRepository.AddAsync(transactionClassExp);
 
 
                 return Ok(new { Message = "User created succesfully" });
