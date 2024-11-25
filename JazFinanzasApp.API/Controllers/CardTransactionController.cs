@@ -2,6 +2,7 @@
 using JazFinanzasApp.API.Models;
 using JazFinanzasApp.API.Models.Domain;
 using JazFinanzasApp.API.Models.DTO.CardMovement;
+using JazFinanzasApp.API.Models.DTO.CardTransaction;
 using JazFinanzasApp.API.Repositories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -13,9 +14,9 @@ namespace JazFinanzasApp.API.Controllers
     [Authorize]
     [Route("api/[controller]")]
     [ApiController]
-    public class CardMovementController : ControllerBase
+    public class CardTransactionController : ControllerBase
     {
-        private readonly ICardMovementRepository _cardMovementRepository;
+        private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly ICardRepository _cardRepository;
         private readonly IAsset_UserRepository _assetUserRepository;
         private readonly ITransactionClassRepository _transactionClassRepository;
@@ -27,7 +28,7 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IMovementRepository _movementRepository;
 
 
-        public CardMovementController(ICardMovementRepository cardMovementRepository,
+        public CardTransactionController(ICardTransactionRepository cardTransactionRepository,
             ICardRepository cardRepository,
             IAsset_UserRepository asset_UserRepository,
             ITransactionClassRepository transactionClassRepository,
@@ -38,7 +39,7 @@ namespace JazFinanzasApp.API.Controllers
             IAccount_AssetTypeRepository account_AssetTypeRepository,
             IMovementRepository movementRepository)
         {
-            _cardMovementRepository = cardMovementRepository;
+            _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
             _assetUserRepository = asset_UserRepository;
             _transactionClassRepository = transactionClassRepository;
@@ -53,7 +54,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpPost]
-        public async Task<IActionResult> AddCardMovement([FromBody] CardMovementAddDTO cardMovementAddDTO)
+        public async Task<IActionResult> AddCardTransaction([FromBody] CardTransactionAddDTO cardTransactionAddDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -62,61 +63,61 @@ namespace JazFinanzasApp.API.Controllers
             }
             var userId = int.Parse(userIdClaim.Value);
 
-            var card = await _cardRepository.GetByIdAsync(cardMovementAddDTO.CardId);
+            var card = await _cardRepository.GetByIdAsync(cardTransactionAddDTO.CardId);
             if (card == null)
             {
                 return BadRequest("Card not found");
             }
 
-            var asset = await _assetRepository.GetByIdAsync(cardMovementAddDTO.AssetId);
+            var asset = await _assetRepository.GetByIdAsync(cardTransactionAddDTO.AssetId);
             if (asset == null)
             {
                 return BadRequest("Asset not found");
             }
 
-            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardMovementAddDTO.AssetId);
+            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransactionAddDTO.AssetId);
             if (assetUser == null)
             {
                 return Unauthorized();
             }
 
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardMovementAddDTO.TransactionClassId);
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransactionAddDTO.TransactionClassId);
             if (transactionClass == null)
             {
                 return BadRequest("Movement class not found");
             }
 
             //make first installment and last installment the day 1 of its month
-            cardMovementAddDTO.FirstInstallment = new DateTime(cardMovementAddDTO.FirstInstallment.Year, cardMovementAddDTO.FirstInstallment.Month, 1);
-            cardMovementAddDTO.LastInstallment = new DateTime(cardMovementAddDTO.LastInstallment.Year, cardMovementAddDTO.LastInstallment.Month, 1);
+            cardTransactionAddDTO.FirstInstallment = new DateTime(cardTransactionAddDTO.FirstInstallment.Year, cardTransactionAddDTO.FirstInstallment.Month, 1);
+            cardTransactionAddDTO.LastInstallment = new DateTime(cardTransactionAddDTO.LastInstallment.Year, cardTransactionAddDTO.LastInstallment.Month, 1);
 
-            var cardMovement = new CardMovement
+            var cardTransaction = new CardTransaction
             {
-                Date = cardMovementAddDTO.Date,
-                Detail = cardMovementAddDTO.Detail,
-                CardId = cardMovementAddDTO.CardId,
+                Date = cardTransactionAddDTO.Date,
+                Detail = cardTransactionAddDTO.Detail,
+                CardId = cardTransactionAddDTO.CardId,
                 Card = card,
-                TransactionClassId = cardMovementAddDTO.TransactionClassId,
+                TransactionClassId = cardTransactionAddDTO.TransactionClassId,
                 TransactionClass = transactionClass,
-                AssetId = cardMovementAddDTO.AssetId,
+                AssetId = cardTransactionAddDTO.AssetId,
                 Asset = asset,
-                TotalAmount = cardMovementAddDTO.TotalAmount,
-                Installments = cardMovementAddDTO.Installments,
-                FirstInstallment = cardMovementAddDTO.FirstInstallment,
-                LastInstallment = cardMovementAddDTO.LastInstallment,
-                Repeat = cardMovementAddDTO.Repeat,
+                TotalAmount = cardTransactionAddDTO.TotalAmount,
+                Installments = cardTransactionAddDTO.Installments,
+                FirstInstallment = cardTransactionAddDTO.FirstInstallment,
+                LastInstallment = cardTransactionAddDTO.LastInstallment,
+                Repeat = cardTransactionAddDTO.Repeat,
                 UserId = userId,
-                InstallmentAmount = cardMovementAddDTO.TotalAmount / cardMovementAddDTO.Installments
+                InstallmentAmount = cardTransactionAddDTO.TotalAmount / cardTransactionAddDTO.Installments
             };
 
-            await _cardMovementRepository.AddAsync(cardMovement);
+            await _cardTransactionRepository.AddAsync(cardTransaction);
 
-            return Ok(cardMovementAddDTO);
+            return Ok(cardTransactionAddDTO);
 
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetPendingCardMovements()
+        public async Task<IActionResult> GetPendingCardTransactions()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -126,7 +127,7 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var pendingMovements = await _cardMovementRepository.GetPendingCardMovementsAsync(userId);
+            var pendingMovements = await _cardTransactionRepository.GetPendingCardTransactionsAsync(userId);
 
             return Ok(pendingMovements);
         }
@@ -160,11 +161,11 @@ namespace JazFinanzasApp.API.Controllers
 
             var exchangeRate = await _assetQuoteRepository.GetQuotePrice(peso.Id, today, "TARJETA");
 
-            var cardMovements = await _cardMovementRepository.GetCardMovementsToPay(CardId, paymentMonth, userId);
+            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(CardId, paymentMonth, userId);
 
 
 
-            var cardPaymments = cardMovements.Select(m =>
+            var cardPaymments = cardTransactions.Select(m =>
             {
                 // Calculamos el número de cuota actual solo para movimientos únicos
                 string installmentDisplay;
@@ -182,7 +183,7 @@ namespace JazFinanzasApp.API.Controllers
                 // Calculamos el valor en pesos si el movimiento está en dólares
                 var valueInPesos = m.Asset.Name == "Dolar Estadounidense" ? m.InstallmentAmount * exchangeRate : m.InstallmentAmount;
 
-                return new CardMovementsPaymentListDTO
+                return new CardTransactionPaymentListDTO
                 {
                     Date = m.Date,
                     TransactionClassId = m.TransactionClassId,
@@ -200,7 +201,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPost("CardPayments")]
-        public async Task<IActionResult> RegisterCardPayment([FromBody] CardMovementsPaymentDTO cardMovementsPaymentDTO)
+        public async Task<IActionResult> RegisterCardPayment([FromBody] CardTransactionPaymentDTO cardTransactionsPaymentDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -210,11 +211,11 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var card = await _cardRepository.GetByIdAsync(cardMovementsPaymentDTO.CardId);
+            var card = await _cardRepository.GetByIdAsync(cardTransactionsPaymentDTO.CardId);
             if (card == null) return BadRequest("Card not found");
 
 
-            Account account = await _accountRepository.GetByIdAsync(cardMovementsPaymentDTO.accountId);
+            Account account = await _accountRepository.GetByIdAsync(cardTransactionsPaymentDTO.accountId);
             if (account == null) return BadRequest("Account not found");
 
 
@@ -226,34 +227,34 @@ namespace JazFinanzasApp.API.Controllers
             var peso = await _assetRepository.GetAssetByNameAsync("Peso Argentino");
             var dolar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
             var quotePrice = await _assetQuoteRepository
-                .GetQuotePrice(peso.Id, cardMovementsPaymentDTO.PaymentDate, "BLUE");
+                .GetQuotePrice(peso.Id, cardTransactionsPaymentDTO.PaymentDate, "BLUE");
 
 
             await _movementRepository.BeginTransactionAsync();
 
             try
             {
-                foreach (var cardMovement in cardMovementsPaymentDTO.CardMovements)
+                foreach (var cardTransaction in cardTransactionsPaymentDTO.CardTransactions)
                 {
 
 
 
-                    var asset = await _assetRepository.GetByIdAsync(cardMovement.AssetId);
+                    var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
                     if (asset == null || (asset.Name != "Peso Argentino" && asset.Name != "Dolar Estadounidense")) BadRequest("Error in Validation");
-                    cardMovement.Asset = asset.Name;
+                    cardTransaction.Asset = asset.Name;
 
 
-                    var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardMovement.AssetId);
+                    var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransaction.AssetId);
                     if (assetUser == null) return BadRequest("Error in Validation");
 
-                    var transactionClass = await _transactionClassRepository.GetByIdAsync(cardMovement.TransactionClassId);
+                    var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransaction.TransactionClassId);
                     if (transactionClass == null) return BadRequest("Error in Validation");
 
-                    cardMovement.TransactionClass = transactionClass.Description;
+                    cardTransaction.TransactionClass = transactionClass.Description;
 
 
 
-                    var movement = CreateMovement(cardMovementsPaymentDTO, cardMovement, userId, peso, dolar, quotePrice);
+                    var movement = CreateMovement(cardTransactionsPaymentDTO, cardTransaction, userId, peso, dolar, quotePrice);
 
                     await _movementRepository.AddAsyncTransaction(movement);
 
@@ -265,13 +266,13 @@ namespace JazFinanzasApp.API.Controllers
 
                 Movement cardExpenses = new Movement
                 {
-                    Date = cardMovementsPaymentDTO.PaymentDate,
+                    Date = cardTransactionsPaymentDTO.PaymentDate,
                     Detail = $"Gastos Tarjeta - {card.Name}",
-                    AccountId = cardMovementsPaymentDTO.accountId,
+                    AccountId = cardTransactionsPaymentDTO.accountId,
                     TransactionClassId = cardExpensesClass.Id,
                     MovementType = "E",
                     UserId = userId,
-                    Amount = -cardMovementsPaymentDTO.CardExpenses,
+                    Amount = -cardTransactionsPaymentDTO.CardExpenses,
                     AssetId = peso.Id,
                     QuotePrice = quotePrice
 
@@ -285,14 +286,14 @@ namespace JazFinanzasApp.API.Controllers
 
                 CardPayment cardPayment = new CardPayment
                 {
-                    CardId = cardMovementsPaymentDTO.CardId,
+                    CardId = cardTransactionsPaymentDTO.CardId,
                     Card = card,
-                    Date = cardMovementsPaymentDTO.PaymentMonth
+                    Date = cardTransactionsPaymentDTO.PaymentMonth
                 };
 
                 await _cardPaymentRepository.AddAsync(cardPayment);
 
-                return Ok(cardMovementsPaymentDTO);
+                return Ok(cardTransactionsPaymentDTO);
             }
             catch (Exception ex)
             {
@@ -302,31 +303,31 @@ namespace JazFinanzasApp.API.Controllers
 
         }
 
-        private async Task<bool> ValidateMovement(CardMovementsPaymentListDTO cardMovement, int userId)
+        private async Task<bool> ValidateMovement(CardTransactionPaymentListDTO cardTransaction, int userId)
         {
-            var asset = await _assetRepository.GetByIdAsync(cardMovement.AssetId);
+            var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
             if (asset == null || (asset.Name != "Peso Argentino" && asset.Name != "Dolar Estadounidense")) return false;
 
-            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardMovement.AssetId);
+            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransaction.AssetId);
             if (assetUser == null) return false;
 
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardMovement.TransactionClassId);
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransaction.TransactionClassId);
             return transactionClass != null;
         }
 
-        private Movement CreateMovement(CardMovementsPaymentDTO cardMovementspaymentDTO, CardMovementsPaymentListDTO cardMovementsPaymentListDTO, int userId, Asset peso, Asset dolar, decimal quotePrice)
+        private Movement CreateMovement(CardTransactionPaymentDTO cardTransactionspaymentDTO, CardTransactionPaymentListDTO cardTransactionsPaymentListDTO, int userId, Asset peso, Asset dolar, decimal quotePrice)
         {
             var movement = new Movement
             {
-                Date = cardMovementspaymentDTO.PaymentMonth,
-                Detail = $"(Tarjeta | {cardMovementsPaymentListDTO.Installment}) {cardMovementsPaymentListDTO.Detail}",
-                AccountId = cardMovementspaymentDTO.accountId,
-                TransactionClassId = cardMovementsPaymentListDTO.TransactionClassId,
+                Date = cardTransactionspaymentDTO.PaymentMonth,
+                Detail = $"(Tarjeta | {cardTransactionsPaymentListDTO.Installment}) {cardTransactionsPaymentListDTO.Detail}",
+                AccountId = cardTransactionspaymentDTO.accountId,
+                TransactionClassId = cardTransactionsPaymentListDTO.TransactionClassId,
                 MovementType = "E",
                 UserId = userId,
-                Amount = cardMovementsPaymentListDTO.Asset == "Dolar Estadounidense" && cardMovementspaymentDTO.PaymentAsset == "P+D" ?
-                 -cardMovementsPaymentListDTO.InstallmentAmount : -cardMovementsPaymentListDTO.ValueInPesos,
-                AssetId = cardMovementsPaymentListDTO.Asset == "Dolar Estadounidense" && cardMovementspaymentDTO.PaymentAsset == "P+D" ? dolar.Id : peso.Id,
+                Amount = cardTransactionsPaymentListDTO.Asset == "Dolar Estadounidense" && cardTransactionspaymentDTO.PaymentAsset == "P+D" ?
+                 -cardTransactionsPaymentListDTO.InstallmentAmount : -cardTransactionsPaymentListDTO.ValueInPesos,
+                AssetId = cardTransactionsPaymentListDTO.Asset == "Dolar Estadounidense" && cardTransactionspaymentDTO.PaymentAsset == "P+D" ? dolar.Id : peso.Id,
                 QuotePrice = quotePrice
             };
 
@@ -346,36 +347,36 @@ namespace JazFinanzasApp.API.Controllers
 
             int userId = int.Parse(userIdClaim.Value);
 
-            var cardMovement = await _cardMovementRepository.GetByIdAsync(Id);
-            if (cardMovement == null) return BadRequest("Card movement not found");
+            var cardTransaction = await _cardTransactionRepository.GetByIdAsync(Id);
+            if (cardTransaction == null) return BadRequest("Card movement not found");
 
-            if (cardMovement.Repeat != "YES") return BadRequest("Card movement is not recurrent");
+            if (cardTransaction.Repeat != "YES") return BadRequest("Card movement is not recurrent");
 
-            if (cardMovement.UserId != userId) return Unauthorized();
+            if (cardTransaction.UserId != userId) return Unauthorized();
 
-            var card = await _cardRepository.GetByIdAsync(cardMovement.CardId);
+            var card = await _cardRepository.GetByIdAsync(cardTransaction.CardId);
             if (card == null) return BadRequest("Card not found");
 
-            var asset = await _assetRepository.GetByIdAsync(cardMovement.AssetId);
+            var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
             if (asset == null) return BadRequest("Asset not found");
 
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardMovement.TransactionClassId);
+            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransaction.TransactionClassId);
             if (transactionClass == null) return BadRequest("Movement class not found");
 
-            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardMovement.AssetId);
+            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransaction.AssetId);
             if (assetUser == null) return Unauthorized();
 
-            var cardMovementDTO = new EditRecurrentListDTO
+            var cardTransactionDTO = new EditRecurrentListDTO
             {
-                Id = cardMovement.Id,
-                Date = cardMovement.Date,
+                Id = cardTransaction.Id,
+                Date = cardTransaction.Date,
                 Card = card.Name,
-                Description = cardMovement.Detail,
-                Amount = cardMovement.InstallmentAmount,
-                FirstInstallment = cardMovement.FirstInstallment
+                Description = cardTransaction.Detail,
+                Amount = cardTransaction.InstallmentAmount,
+                FirstInstallment = cardTransaction.FirstInstallment
             };
 
-            return Ok(cardMovementDTO);
+            return Ok(cardTransactionDTO);
         }
 
         [HttpPut("EditRecurrent/{Id}")]
@@ -396,38 +397,38 @@ namespace JazFinanzasApp.API.Controllers
             var oldLastInstallment = newFirstInstallment.AddMonths(-1);
 
 
-            var cardMovement = await _cardMovementRepository.GetByIdAsync(Id);
-            if (cardMovement == null) return BadRequest("Card movement not found");
+            var cardTransaction = await _cardTransactionRepository.GetByIdAsync(Id);
+            if (cardTransaction == null) return BadRequest("Card movement not found");
 
-            if (cardMovement.Repeat != "YES") return BadRequest("Card movement is not recurrent");
+            if (cardTransaction.Repeat != "YES") return BadRequest("Card movement is not recurrent");
 
-            if (cardMovement.UserId != userId) return Unauthorized();
-
-
-            if (oldLastInstallment < cardMovement.FirstInstallment) return BadRequest("Date is lower than first installment");
-
-            cardMovement.Repeat = "CLOSED";
-            cardMovement.LastInstallment = oldLastInstallment;
-            cardMovement.UpdatedAt = DateTime.UtcNow;
+            if (cardTransaction.UserId != userId) return Unauthorized();
 
 
-            await _cardMovementRepository.UpdateAsync(cardMovement);
+            if (oldLastInstallment < cardTransaction.FirstInstallment) return BadRequest("Date is lower than first installment");
+
+            cardTransaction.Repeat = "CLOSED";
+            cardTransaction.LastInstallment = oldLastInstallment;
+            cardTransaction.UpdatedAt = DateTime.UtcNow;
+
+
+            await _cardTransactionRepository.UpdateAsync(cardTransaction);
 
             if (editRecurrentDTO.isUpdate)
             {
                 // new cardmovement
-                var newCardMovement = new CardMovement
+                var newCardTransaction = new CardTransaction
                 {
                     Date = editRecurrentDTO.newDate,
-                    Detail = cardMovement.Detail,
-                    CardId = cardMovement.CardId,
-                    Card = cardMovement.Card,
-                    TransactionClassId = cardMovement.TransactionClassId,
-                    TransactionClass = cardMovement.TransactionClass,
-                    AssetId = cardMovement.AssetId,
-                    Asset = cardMovement.Asset,
+                    Detail = cardTransaction.Detail,
+                    CardId = cardTransaction.CardId,
+                    Card = cardTransaction.Card,
+                    TransactionClassId = cardTransaction.TransactionClassId,
+                    TransactionClass = cardTransaction.TransactionClass,
+                    AssetId = cardTransaction.AssetId,
+                    Asset = cardTransaction.Asset,
                     TotalAmount = editRecurrentDTO.newAmount.Value,
-                    Installments = cardMovement.Installments,
+                    Installments = cardTransaction.Installments,
                     FirstInstallment = newFirstInstallment,
                     //LAST INST
 
@@ -436,7 +437,7 @@ namespace JazFinanzasApp.API.Controllers
                     InstallmentAmount = editRecurrentDTO.newAmount.Value
                 };
 
-                await _cardMovementRepository.AddAsync(newCardMovement);
+                await _cardTransactionRepository.AddAsync(newCardTransaction);
 
             }
             return Ok();

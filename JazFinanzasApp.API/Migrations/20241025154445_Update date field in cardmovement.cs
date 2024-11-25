@@ -13,7 +13,7 @@ namespace JazFinanzasApp.API.Migrations
         {
             migrationBuilder.RenameColumn(
                 name: "DateMovement",
-                table: "CardMovements",
+                table: "CardTransactions",
                 newName: "Date");
 
             migrationBuilder.UpdateData(
@@ -78,7 +78,7 @@ namespace JazFinanzasApp.API.Migrations
         {
             migrationBuilder.RenameColumn(
                 name: "Date",
-                table: "CardMovements",
+                table: "CardTransactions",
                 newName: "DateMovement");
 
             migrationBuilder.UpdateData(

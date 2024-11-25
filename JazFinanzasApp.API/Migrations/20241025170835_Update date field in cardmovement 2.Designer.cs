@@ -255,7 +255,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.ToTable("Cards");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.CardMovement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.CardTransaction", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -317,7 +317,7 @@ namespace JazFinanzasApp.API.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("CardMovements");
+                    b.ToTable("CardTransactions");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.CardPayment", b =>
@@ -720,7 +720,7 @@ namespace JazFinanzasApp.API.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.CardMovement", b =>
+            modelBuilder.Entity("JazFinanzasApp.API.Models.Domain.CardTransaction", b =>
                 {
                     b.HasOne("JazFinanzasApp.API.Models.Domain.Asset", "Asset")
                         .WithMany()

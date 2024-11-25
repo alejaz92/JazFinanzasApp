@@ -13,7 +13,7 @@ namespace JazFinanzasApp.API.Migrations
         {
             migrationBuilder.AlterColumn<DateTime>(
                 name: "LastInstallment",
-                table: "CardMovements",
+                table: "CardTransactions",
                 type: "datetime2",
                 nullable: true,
                 oldClrType: typeof(DateTime),
@@ -81,7 +81,7 @@ namespace JazFinanzasApp.API.Migrations
         {
             migrationBuilder.AlterColumn<DateTime>(
                 name: "LastInstallment",
-                table: "CardMovements",
+                table: "CardTransactions",
                 type: "datetime2",
                 nullable: false,
                 defaultValue: new DateTime(1, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified),

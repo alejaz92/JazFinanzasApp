@@ -205,7 +205,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpGet("card")]
-        public async Task<IActionResult> GetAssetsForCardMovements()
+        public async Task<IActionResult> GetAssetsForCardTransactions()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)

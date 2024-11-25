@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 
 namespace JazFinanzasApp.API.Models.Domain
 {
-    public class CardMovement : BaseEntity
+    public class CardTransaction : BaseEntity
     {
         [Required]
         public DateTime Date {  get; set; }

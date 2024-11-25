@@ -1,26 +1,26 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.CardMovement;
+using JazFinanzasApp.API.Models.DTO.CardTransaction;
 using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
-    public class CardMovementRepository : GenericRepository<CardMovement>, ICardMovementRepository
+    public class CardTransactionRepository : GenericRepository<CardTransaction>, ICardTransactionRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public CardMovementRepository(ApplicationDbContext context) : base(context)
+        public CardTransactionRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
         }    
-        public async Task<IEnumerable<CardMovementsPendingDTO>> GetPendingCardMovementsAsync(int userId)
+        public async Task<IEnumerable<CardTransactionsPendingDTO>> GetPendingCardTransactionsAsync(int userId)
         {
             var today = DateTime.Today;
             today = new DateTime(today.Year, today.Month, 1);
             DateTime nullDate = new DateTime(0001, 01, 01, 00, 00, 00, 0000000);
 
-            var pendingMovements = await _context.CardMovements
+            var pendingMovements = await _context.CardTransactions
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
@@ -29,7 +29,7 @@ namespace JazFinanzasApp.API.Repositories
                     (cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today) 
                     
                 ))
-                .Select(cm => new CardMovementsPendingDTO
+                .Select(cm => new CardTransactionsPendingDTO
                 {
                     Id = cm.Id,
                     Date = cm.Date,
@@ -51,12 +51,12 @@ namespace JazFinanzasApp.API.Repositories
             return pendingMovements;
         }
 
-        public async Task<IEnumerable<CardMovement>> GetCardMovementsToPay(int cardId, DateTime paymentMonth, int userId)
+        public async Task<IEnumerable<CardTransaction>> GetCardTransactionsToPay(int cardId, DateTime paymentMonth, int userId)
         {
             var firstDayOfMonth = new DateTime(paymentMonth.Year, paymentMonth.Month, 1);
             var lastDayOfMonth = firstDayOfMonth.AddMonths(1).AddDays(-1);
 
-            return await _context.CardMovements
+            return await _context.CardTransactions
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)

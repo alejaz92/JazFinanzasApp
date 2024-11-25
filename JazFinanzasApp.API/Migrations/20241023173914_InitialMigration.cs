@@ -350,7 +350,7 @@ namespace JazFinanzasApp.API.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "CardMovements",
+                name: "CardTransactions",
                 columns: table => new
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
@@ -372,24 +372,24 @@ namespace JazFinanzasApp.API.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_CardMovements", x => x.Id);
+                    table.PrimaryKey("PK_CardTransactions", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_CardMovements_AspNetUsers_UserId",
+                        name: "FK_CardTransactions_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_CardMovements_Assets_AssetId",
+                        name: "FK_CardTransactions_Assets_AssetId",
                         column: x => x.AssetId,
                         principalTable: "Assets",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_CardMovements_Cards_CardId",
+                        name: "FK_CardTransactions_Cards_CardId",
                         column: x => x.CardId,
                         principalTable: "Cards",
                         principalColumn: "Id");
                     table.ForeignKey(
-                        name: "FK_CardMovements_TransactionClasses_TransactionClassId",
+                        name: "FK_CardTransactions_TransactionClasses_TransactionClassId",
                         column: x => x.TransactionClassId,
                         principalTable: "TransactionClasses",
                         principalColumn: "Id");
@@ -513,23 +513,23 @@ namespace JazFinanzasApp.API.Migrations
                 column: "AssetId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_CardMovements_AssetId",
-                table: "CardMovements",
+                name: "IX_CardTransactions_AssetId",
+                table: "CardTransactions",
                 column: "AssetId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_CardMovements_CardId",
-                table: "CardMovements",
+                name: "IX_CardTransactions_CardId",
+                table: "CardTransactions",
                 column: "CardId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_CardMovements_TransactionClassId",
-                table: "CardMovements",
+                name: "IX_CardTransactions_TransactionClassId",
+                table: "CardTransactions",
                 column: "TransactionClassId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_CardMovements_UserId",
-                table: "CardMovements",
+                name: "IX_CardTransactions_UserId",
+                table: "CardTransactions",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
@@ -591,7 +591,7 @@ namespace JazFinanzasApp.API.Migrations
                 name: "Assets_Users");
 
             migrationBuilder.DropTable(
-                name: "CardMovements");
+                name: "CardTransactions");
 
             migrationBuilder.DropTable(
                 name: "CardPayments");

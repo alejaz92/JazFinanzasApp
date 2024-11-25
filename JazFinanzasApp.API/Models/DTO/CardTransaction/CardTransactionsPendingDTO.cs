@@ -1,7 +1,7 @@
 ﻿
-namespace JazFinanzasApp.API.Models.DTO.CardMovement
+namespace JazFinanzasApp.API.Models.DTO.CardTransaction
 {
-    public class CardMovementsPendingDTO
+    public class CardTransactionsPendingDTO
     {
         public int Id { get; set; }
         public DateTime Date { get; set; }

@@ -18,7 +18,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<AssetQuote> AssetQuotes { get; set; }
         public DbSet<AssetType> AssetTypes { get; set; }
         public DbSet<Card> Cards { get; set; }
-        public DbSet<CardMovement> CardMovements { get; set; }
+        public DbSet<CardTransaction> CardTransactions { get; set; }
         public DbSet<CardPayment> CardPayments { get; set; }
         public DbSet<Movement> Movements { get; set; }
         public DbSet<TransactionClass> TransactionClasses { get; set; }
@@ -45,25 +45,25 @@ namespace JazFinanzasApp.API.Data
             modelBuilder.Entity<IdentityUserRole<int>>(entity => entity.HasKey(e => new { e.UserId, e.RoleId }));
             modelBuilder.Entity<IdentityUserToken<int>>(entity => entity.HasKey(e => new { e.UserId, e.LoginProvider, e.Name }));
 
-            modelBuilder.Entity<CardMovement>()
+            modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.Card)
                 .WithMany() // Si no hay colección en Card
                 .HasForeignKey(cm => cm.CardId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
 
-            modelBuilder.Entity<CardMovement>()
+            modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.TransactionClass)
                 .WithMany() // Si no hay colección en TransactionClass
                 .HasForeignKey(cm => cm.TransactionClassId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
 
-            modelBuilder.Entity<CardMovement>()
+            modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.Asset)
                 .WithMany() // Si no hay colección en Asset
                 .HasForeignKey(cm => cm.AssetId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
 
-            modelBuilder.Entity<CardMovement>()
+            modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.User)
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.UserId)

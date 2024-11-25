@@ -1,8 +1,8 @@
-﻿using JazFinanzasApp.API.Models.DTO.CardMovement;
+﻿using JazFinanzasApp.API.Models.DTO.CardTransaction;
 
 namespace JazFinanzasApp.API.Models
 {
-    public class CardMovementsPaymentDTO
+    public class CardTransactionPaymentDTO
     {
         public int CardId { get; set; }
         public DateTime PaymentMonth { get; set; }
@@ -13,7 +13,7 @@ namespace JazFinanzasApp.API.Models
         public decimal? DolarAmount { get; set; }
         public decimal CardExpenses { get; set; }
 
-        public List<CardMovementsPaymentListDTO> CardMovements { get; set; }
+        public List<CardTransactionPaymentListDTO> CardTransactions { get; set; }
      
     }
 }
