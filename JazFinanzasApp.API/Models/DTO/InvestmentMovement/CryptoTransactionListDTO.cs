@@ -1,6 +1,6 @@
 ﻿namespace JazFinanzasApp.API.Models.DTO.InvestmentMovement
 {
-    public class CryptoMovementListDTO
+    public class CryptoTransactionListDTO
     {
         public int Id { get; set; }
         public DateTime Date { get; set; }
