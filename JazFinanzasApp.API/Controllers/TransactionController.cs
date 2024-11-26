@@ -237,7 +237,7 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var transaction = new Transaction
+                var incomeTransaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
@@ -254,11 +254,11 @@ namespace JazFinanzasApp.API.Controllers
                     UpdatedAt = time
                 };
 
-                await _transactionRepository.AddAsync(transaction);
+                incomeTransaction = await _transactionRepository.AddAsyncReturnObject(incomeTransaction);
 
 
 
-                transaction = new Transaction
+                var expenseTransaction = new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
@@ -274,7 +274,20 @@ namespace JazFinanzasApp.API.Controllers
                     CreatedAt = time,
                     UpdatedAt = time
                 };
-                await _transactionRepository.AddAsync(transaction);
+                expenseTransaction = await _transactionRepository.AddAsyncReturnObject(expenseTransaction);
+
+                var investmentTransaction = new InvestmentTransaction
+                {
+                    Date = transactionDTO.date,
+                    Environment = "Exchange",
+                    MovementType = "EX",
+                    CommerceType = "Exchange",
+                    IncomeTransactionId = incomeTransaction.Id,
+                    ExpenseTransactionId = expenseTransaction.Id,
+                    UserId = userId
+                };
+
+                await _investmentTransactionRepository.AddAsync(investmentTransaction);
             }
 
 
