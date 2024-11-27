@@ -16,10 +16,10 @@ namespace JazFinanzasApp.API.Repositories
 
 
 
-        public async Task<TransactionClass> GetTransactionClassByDescriptionAsync(string Description)
+        public async Task<TransactionClass> GetTransactionClassByDescriptionAsync(string Description, int UserId)
         {
             return await _context.TransactionClasses
-                .FirstOrDefaultAsync(m => m.Description == Description);
+                .FirstOrDefaultAsync(m => m.Description == Description && m.UserId == UserId);
         }
     }
 }

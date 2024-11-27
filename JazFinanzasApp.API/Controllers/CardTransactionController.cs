@@ -260,7 +260,7 @@ namespace JazFinanzasApp.API.Controllers
 
                 }
 
-                var cardExpensesClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Gastos Tarjeta");
+                var cardExpensesClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Gastos Tarjeta", userId);
                 if (cardExpensesClass == null) return BadRequest("Transaction class 'Gastos Tarjeta' not found");
 
 

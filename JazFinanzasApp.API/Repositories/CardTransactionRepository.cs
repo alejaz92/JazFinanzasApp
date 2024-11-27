@@ -43,9 +43,9 @@ namespace JazFinanzasApp.API.Repositories
                     LastInstallment = cm.Repeat == "YES" ? "NA" : (cm.LastInstallment.HasValue ? cm.LastInstallment.Value.ToString("MM/yyyy") : "NA"),
                     InstallmentAmount = cm.InstallmentAmount
                 })
-                .OrderBy(cm => cm.Card)
+                .OrderBy(cm => cm.Date)
+                .ThenBy(cm => cm.Card)
                 .ThenBy(cm => cm.Asset)
-                .ThenBy(cm => cm.Date)
                 .ToListAsync();
 
             return pendingTransactions;

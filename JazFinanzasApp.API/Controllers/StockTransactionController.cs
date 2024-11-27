@@ -83,7 +83,7 @@ namespace JazFinanzasApp.API.Controllers
                             var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
                             await CheckAssetsAndAccounts(expenseAsset, expenseAccount);
 
-                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
@@ -145,7 +145,7 @@ namespace JazFinanzasApp.API.Controllers
                             var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
                             await CheckAssetsAndAccounts(incomeAsset, incomeAccount);
 
-                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
@@ -226,7 +226,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet] 
-        public async Task<IActionResult> GetPaginatedStockTransactions(int page = 1, int pageSize = 10, string environment = "Stock")
+        public async Task<IActionResult> GetPaginatedStockTransactions(int page = 1, int pageSize = 20, string environment = "Stock")
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)

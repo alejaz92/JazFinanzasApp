@@ -1,5 +1,6 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using JazFinanzasApp.API.Models.DTO.InvestmentTransaction;
 using JazFinanzasApp.API.Models.DTO.Transaction;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -475,6 +476,92 @@ namespace JazFinanzasApp.API.Controllers
                 await _transactionRepository.AddAsync(refundIncomeTransaction);
             }
             return Ok();
+        }
+
+        // get paginated exchange transactions
+        [HttpGet("exchange")]
+        public async Task<IActionResult> GetPaginatedExchangeTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            var userId = int.Parse(userIdClaim.Value);
+
+            var (transactions, totalCount) = await _investmentTransactionRepository.GetPaginatedInvestmentTransactions(userId, page, pageSize, "Exchange");
+
+            var transactionsDTO = transactions.Select(m => new CurrencyExchangeListDTO
+            {
+                Id = m.Id,
+                Date = m.Date,
+                ExpenseAsset = m.ExpenseTransaction.Asset.Name,
+                ExpenseAccount = m.ExpenseTransaction.Account.Name,
+                ExpenseAmount = m.ExpenseTransaction.Amount,
+                IncomeAsset = m.IncomeTransaction.Asset.Name,
+                IncomeAccount = m.IncomeTransaction.Account.Name,
+                IncomeAmount = m.IncomeTransaction.Amount
+            }).ToList();
+
+            return Ok(new { Transactions = transactionsDTO, TotalCount = totalCount });
+        }
+
+        [HttpDelete("exchange/{id}")]
+        public async Task<IActionResult> DeleteExchangeTransaction(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            try
+            {
+                var investmentTransaction = await _investmentTransactionRepository.GetInvestmentTransactionById(id);
+
+                if (investmentTransaction == null)
+                {
+                    return NotFound();
+                }
+
+                if (investmentTransaction.UserId != userId)
+                {
+                    return Unauthorized();
+                }
+
+
+                try
+                {
+                    await _investmentTransactionRepository.BeginTransactionAsync();
+
+                    if (investmentTransaction.IncomeTransaction != null)
+                    {
+                        await _transactionRepository.DeleteAsync(investmentTransaction.IncomeTransactionId.Value);
+                    }
+
+                    if (investmentTransaction.ExpenseTransaction != null)
+                    {
+                        await _transactionRepository.DeleteAsync(investmentTransaction.ExpenseTransactionId.Value);
+                    }
+
+                    await _investmentTransactionRepository.DeleteAsync(investmentTransaction.Id);
+                    await _investmentTransactionRepository.CommitTransactionAsync();
+                    return Ok();
+                }
+                catch
+                {
+                    await _investmentTransactionRepository.RollbackTransactionAsync();
+                    return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
+                }
+
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
+            }
         }
 
     }

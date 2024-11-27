@@ -90,7 +90,7 @@ namespace JazFinanzasApp.API.Controllers
                             var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
                             await CheckAssetsAndAccounts(expenseAsset,expenseAccount);
 
-                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
@@ -153,7 +153,7 @@ namespace JazFinanzasApp.API.Controllers
                             var incomeAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAccountId.Value);
                             await CheckAssetsAndAccounts(incomeAsset,incomeAccount);
 
-                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones");
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");

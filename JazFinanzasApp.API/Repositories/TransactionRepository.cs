@@ -16,11 +16,6 @@ namespace JazFinanzasApp.API.Repositories
 
         public async Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize)
         {
-            //var excludedIds = await _context.InvestmentTransactions
-            //    .SelectMany(im => new[] { im.IncomeTransactionId, im.ExpenseTransactionId })
-            //    .Where(id => id.HasValue)
-            //    .Select(id => id.Value)
-            //    .ToListAsync();
 
 
             var totalCount = await _context.Transactions
@@ -42,7 +37,9 @@ namespace JazFinanzasApp.API.Repositories
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
-            
+
+
+
             return (transactions, totalCount);
         }
 
