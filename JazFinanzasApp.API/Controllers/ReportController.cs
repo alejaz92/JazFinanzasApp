@@ -28,8 +28,8 @@ namespace JazFinanzasApp.API.Controllers
             _asset_UserRepository = asset_UserRepository;
         }
 
-        [HttpGet("Balance")]
-        public async Task<IActionResult> GetBalance([FromQuery] int assetId)
+        [HttpGet("Balance/{id}")]
+        public async Task<IActionResult> GetBalance(int id)
         {
             
 
@@ -40,14 +40,14 @@ namespace JazFinanzasApp.API.Controllers
             }
             var userId = int.Parse(userIdClaim.Value);
 
-            var asset = await _assetRepository.GetByIdAsync(assetId);
+            var asset = await _assetRepository.GetByIdAsync(id);
             if (asset == null)
             {
                 return NotFound();
             }
 
 
-            var balanceDTO = await _transactionRepository.GetBalanceByAssetAndUserAsync(assetId, userId);
+            var balanceDTO = await _transactionRepository.GetBalanceByAssetAndUserAsync(id, userId);
             // Get the balance for the user and assetId by account
 
 
