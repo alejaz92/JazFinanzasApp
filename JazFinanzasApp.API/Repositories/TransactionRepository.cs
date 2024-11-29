@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
@@ -53,7 +54,24 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(m => m.TransactionClass)
                 .FirstOrDefaultAsync(m => m.Id == id);
         }
-        
 
+        // get balance by asset and user, group by account
+        public async Task<IEnumerable<BalanceDTO>> GetBalanceByAssetAndUserAsync(int assetId, int userId)
+        {
+            var balanceByAccount = await _context.Transactions
+                .Include(t => t.Account)
+                .Where(t => t.UserId == userId && t.AssetId == assetId)
+                .GroupBy(t => t.Account.Name)
+                .Select(g => new BalanceDTO
+                {
+                    Account = g.Key,
+                    Balance = g.Sum(t => t.Amount)
+                })
+                .Where(g => g.Balance > 0)
+                .OrderByDescending(g => g.Balance)
+                .ToListAsync();
+
+            return balanceByAccount;
+        }
     }
 }

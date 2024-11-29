@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
@@ -21,5 +22,8 @@ namespace JazFinanzasApp.API.Repositories
             return await _context.TransactionClasses
                 .FirstOrDefaultAsync(m => m.Description == Description && m.UserId == UserId);
         }
+
+
+
     }
 }
