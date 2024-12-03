@@ -9,5 +9,6 @@ namespace JazFinanzasApp.API.Interfaces
         Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize);
         Task<IEnumerable<BalanceDTO>> GetBalanceByAssetAndUserAsync(int assetId, int userId);
         Task<IEnumerable<TotalsBalanceDTO>> GetTotalsBalanceByUserAsync(int userId);
+        Task<IncExpStatsDTO> GetDollarIncExpStatsAsync(int userId, DateTime month);
     }
 }

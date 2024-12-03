@@ -156,5 +156,104 @@ namespace JazFinanzasApp.API.Repositories
             return totals;
         }
 
+        public async Task<IncExpStatsDTO> GetDollarIncExpStatsAsync(int userId, DateTime month)
+        {
+            var dollarClassIncomeStats = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .GroupBy(t => t.TransactionClass.Description)
+                .Select(g => new ClassIncomeStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => t.Amount/t.QuotePrice.Value), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToListAsync();
+            
+            var dollarClassExpenseStats = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .GroupBy(t => t.TransactionClass.Description)
+                .Select(g => new ClassExpenseStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => (-t.Amount)/t.QuotePrice.Value), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToListAsync();
+
+            var totalIncomes = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.UserId == userId)
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g => new
+                {
+                    g.Key.Year,
+                    g.Key.Month,
+                    Amount = g.Sum(t => t.Amount / t.QuotePrice.Value) // Calculando en la base de datos
+                })
+                .OrderByDescending(g => g.Month)
+                .Take(6)
+                .ToListAsync(); // Traemos los datos
+
+            // Luego, calculamos la cantidad y redondeamos en memoria
+            var totalIncomesFinal = totalIncomes
+                .Select(g => new MonthIncomeStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
+
+
+            var totalExpenses = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.UserId == userId)
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g => new
+                {
+                    g.Key.Year,
+                    g.Key.Month,
+                    Amount = g.Sum(t => -t.Amount / t.QuotePrice.Value) // Calculando en la base de datos
+                })
+                .OrderByDescending(g => g.Month)
+                .Take(6)
+                .ToListAsync(); // Traemos los datos
+
+            // Luego, calculamos la cantidad y redondeamos en memoria
+            var totalExpensesFinal = totalExpenses
+                .Select(g => new MonthExpenseStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
+
+            var incExpStatsDTO = new IncExpStatsDTO
+            {
+                ClassIncomeStats = dollarClassIncomeStats.ToArray(),
+                ClassExpenseStats = dollarClassExpenseStats.ToArray(),
+                MonthIncomeStats = totalIncomesFinal.ToArray(),
+                MonthExpenseStats = totalExpensesFinal.ToArray()
+            };
+
+            return incExpStatsDTO;
+        }
     }
 }

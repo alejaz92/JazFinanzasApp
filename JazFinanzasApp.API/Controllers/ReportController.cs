@@ -70,5 +70,19 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok(balanceDTO);
         }
+
+        [HttpGet("IncExpStatsDollar")]
+        public async Task<IActionResult> GetIncExpDollarStats([FromQuery] DateTime month)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+            var incExpStatsDTO = await _transactionRepository.GetDollarIncExpStatsAsync(userId, month);
+            return Ok(incExpStatsDTO);
+        }
     }
 }
