@@ -28,6 +28,23 @@ namespace JazFinanzasApp.API.Controllers
             _asset_UserRepository = asset_UserRepository;
         }
 
+        [HttpGet("Balance")]
+        public async Task<IActionResult> GetTotalsBalance()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+
+            // Get the balance for the user by account
+
+            var balanceDTO = await _transactionRepository.GetTotalsBalanceByUserAsync(userId);
+            return Ok(balanceDTO);
+        }
+
         [HttpGet("Balance/{id}")]
         public async Task<IActionResult> GetBalance(int id)
         {

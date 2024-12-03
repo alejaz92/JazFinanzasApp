@@ -1,4 +1,5 @@
 ﻿using JazFinanzasApp.API.Models.Domain;
+using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,8 @@ namespace JazFinanzasApp.API.Data
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
+
+            modelBuilder.Entity<TotalBalanceResult>().HasNoKey();
 
             modelBuilder.Entity<AssetType>().HasData(
                 new AssetType {Id= 1, Name = "Moneda", Environment = "FIAT" },
