@@ -36,6 +36,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(m => m.Asset)
                 .Include(m => m.TransactionClass)
                 .OrderByDescending(m => m.Date)
+                .ThenByDescending(m => m.Id)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
