@@ -170,11 +170,11 @@ namespace JazFinanzasApp.API.Repositories
                 .Select(g => new ClassIncomeStats
                 {
                     TransactionClass = g.Key,
-                    Amount = Math.Round(g.Sum(t => t.Amount/t.QuotePrice.Value), 2)
+                    Amount = Math.Round(g.Sum(t => t.Amount / t.QuotePrice.Value), 2)
                 })
                 .OrderByDescending(g => g.Amount)
                 .ToListAsync();
-            
+
             var dollarClassExpenseStats = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
@@ -186,7 +186,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Select(g => new ClassExpenseStats
                 {
                     TransactionClass = g.Key,
-                    Amount = Math.Round(g.Sum(t => (-t.Amount)/t.QuotePrice.Value), 2)
+                    Amount = Math.Round(g.Sum(t => (-t.Amount) / t.QuotePrice.Value), 2)
                 })
                 .OrderByDescending(g => g.Amount)
                 .ToListAsync();
@@ -254,7 +254,217 @@ namespace JazFinanzasApp.API.Repositories
                 MonthExpenseStats = totalExpensesFinal.ToArray()
             };
 
+
             return incExpStatsDTO;
         }
+
+        public async Task<IncExpStatsDTO> GetPesosIncExpStatsAsync(int userId, DateTime month)
+        {
+            // income in pesos by class
+
+            var incomeTransactionsInPesos = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .Select(t => new
+                {
+                    t.TransactionClass.Description,
+                    PesosAmount = t.Asset.Name == "Peso Argentino" ? t.Amount : t.Amount / t.QuotePrice.Value *
+                        _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            var pesosClassIncomeStats = incomeTransactionsInPesos
+                .GroupBy(t => t.Description)
+                .Select(g => new ClassIncomeStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => t.PesosAmount), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToList();
+
+            // expenses in pesos by class
+
+            var expensesTransactionsInPesos = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .Select(t => new
+                {
+                    t.TransactionClass.Description,
+                    PesosAmount = t.Asset.Name == "Peso Argentino" ? -t.Amount : -t.Amount / t.QuotePrice.Value *
+                        _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            var pesosClassExpenseStats = expensesTransactionsInPesos
+                .GroupBy(t => t.Description)
+                .Select(g => new ClassExpenseStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => t.PesosAmount), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToList();
+
+
+
+
+
+            var assetQuotes = await _context.AssetQuotes
+                .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE")
+                .OrderByDescending(aq => aq.Date)
+                .ToListAsync(); 
+
+            // total incomes in pesos by month
+
+            // Paso 1: Obtener transacciones relevantes desde la base de datos
+            var transactionsIncome = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Include(t => t.Asset)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.UserId == userId)
+                .ToListAsync(); // Traemos los datos a memoria
+
+            // Paso 2: Procesar los datos en memoria
+
+
+            var totalIncomes = transactionsIncome
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g =>
+                {
+                    var year = g.Key.Year;
+                    var month = g.Key.Month;
+                    var amountInPesos = g.Sum(t =>
+                    {
+
+                        if (t.Asset.Name == "Peso Argentino")
+                        {
+                            return t.Amount;
+                        }
+                        else
+                        {
+                            var quote = assetQuotes
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                            return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
+                        }
+
+                    });
+
+                    return new
+                    {
+                        Year = year,
+                        Month = month,
+                        Amount = amountInPesos
+                    };
+                })
+                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
+                .Take(6)
+                .ToList();
+
+            // Paso 3: Ajustar y redondear resultados
+            var totalIncomesFinal = totalIncomes
+                .Select(g => new MonthIncomeStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
+
+
+
+            // total expenses in pesos by month
+
+            // Paso 1: Obtener transacciones relevantes desde la base de datos
+            var transactionsExpenses = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Include(t => t.Asset)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.UserId == userId)
+                .ToListAsync(); // Traemos los datos a memoria
+
+
+            // Paso 2: Procesar los datos en memoria
+
+
+            var totalExpenses = transactionsExpenses
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g =>
+                {
+                    var year = g.Key.Year;
+                    var month = g.Key.Month;
+                    var amountInPesos = g.Sum(t =>
+                    {
+                        if (t.Asset.Name == "Peso Argentino")
+                        {
+                            return t.Amount;
+                        }
+                        else
+                        {
+                            var quote = assetQuotes
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                            return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
+                        }
+                    });
+
+                    return new
+                    {
+                        Year = year,
+                        Month = month,
+                        Amount = amountInPesos
+                    };
+                })
+                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
+                .Take(6)
+                .ToList();
+
+                // Paso 3: Ajustar y redondear resultados
+                var totalExpenesesFinal = totalExpenses
+                    .Select(g => new MonthExpenseStats
+                    {
+                        Month = new DateTime(g.Year, g.Month, 1),
+                        Amount = - Math.Round(g.Amount, 2)
+                    })
+                    .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                    .ToList();
+
+
+
+
+
+
+            // Devolvemos los resultados
+            var incExpStatsDTO = new IncExpStatsDTO
+            {
+                ClassIncomeStats = pesosClassIncomeStats.ToArray(),
+                ClassExpenseStats = pesosClassExpenseStats.ToArray(),
+                MonthIncomeStats = totalIncomesFinal.ToArray(),
+                MonthExpenseStats = totalExpenesesFinal.ToArray()
+            };
+
+            return incExpStatsDTO;
+
+        }
     }
+    
 }
