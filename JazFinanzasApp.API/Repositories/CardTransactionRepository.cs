@@ -79,9 +79,10 @@ namespace JazFinanzasApp.API.Repositories
 
         public async Task<IEnumerable<CardGraphDTO>> GetCardStats(int? cardId, string Asset, int userId)
         {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
-            var startDate = DateTime.Today.AddMonths(-7);
-            var endDate = DateTime.Today.AddMonths(5);
+            var startDate = today.AddMonths(-6);
+            var endDate = today.AddMonths(5);
 
             // Traer solo los datos necesarios desde la base de datos
             var transactions = await _context.CardTransactions
@@ -111,14 +112,20 @@ namespace JazFinanzasApp.API.Repositories
                         .Where(x => x.Month >= startDate && x.Month <= endDate);
                 });
 
-            // Agrupar y sumarizar
-            var result = expandedTransactions
-                .GroupBy(x => new { x.Month })
-                .Select(g => new CardGraphDTO
-                {
-                    Month = g.Key.Month,
-                    Amount = g.Sum(x => x.InstallmentAmount)
-                })
+            // Generar rango completo de meses
+            var allMonths = Enumerable.Range(0, GetMonthDifference(startDate, endDate) + 1)
+                .Select(i => startDate.AddMonths(i));
+
+            // Combinar datos existentes con el rango completo de meses
+            var result = allMonths
+                .GroupJoin(expandedTransactions,
+                    month => month,
+                    transaction => transaction.Month,
+                    (month, transactions) => new CardGraphDTO
+                    {
+                        Month = month,
+                        Amount = transactions.Sum(x => x.InstallmentAmount) // Si no hay transacciones, el valor será 0
+                    })
                 .ToList();
 
             return result;
