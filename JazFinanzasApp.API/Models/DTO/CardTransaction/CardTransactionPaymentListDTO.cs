@@ -3,6 +3,8 @@
     public class CardTransactionPaymentListDTO
     {
         public DateTime Date { get; set; }
+        public int CardId { get; set; } 
+        public string? Card { get; set; }
         public int TransactionClassId { get; set; }
         public string? TransactionClass { get; set; }   
         public string Detail { get; set; }

@@ -2,6 +2,7 @@
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
 using JazFinanzasApp.API.Models.DTO.CardTransaction;
+using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
@@ -60,8 +61,8 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
-                .Where(cm => cm.CardId == cardId
-                    && cm.UserId == userId
+                .Where(cm => cardId == 0 || cm.CardId == cardId)
+                .Where(cm => cm.UserId == userId
                     && (
                         (
                             cm.Repeat == "NO"
@@ -75,6 +76,63 @@ namespace JazFinanzasApp.API.Repositories
                 .ToListAsync();
         }
 
-        
+
+        public async Task<IEnumerable<CardGraphDTO>> GetCardStats(int? cardId, string Asset, int userId)
+        {
+
+            var startDate = DateTime.Today.AddMonths(-7);
+            var endDate = DateTime.Today.AddMonths(5);
+
+            // Traer solo los datos necesarios desde la base de datos
+            var transactions = await _context.CardTransactions
+                .Include(ct => ct.Asset)
+                .Where(ct => ct.Asset.Name == Asset)
+                .Where(ct => ct.UserId == userId &&
+                             (cardId == 0 || ct.CardId == cardId))
+                .ToListAsync();
+
+            // Realizar la expansión de meses en memoria
+            var expandedTransactions = transactions
+                .SelectMany(ct =>
+                {
+                    var firstMonth = ct.FirstInstallment;
+                    var lastMonth = ct.Repeat == "YES" || ct.LastInstallment == null
+                        ? endDate
+                        : ct.LastInstallment.Value;
+
+                    var totalMonths = GetMonthDifference(firstMonth, lastMonth) + 1;
+
+                    return Enumerable.Range(0, totalMonths)
+                        .Select(i => new
+                        {
+                            Month = firstMonth.AddMonths(i),
+                            InstallmentAmount = ct.InstallmentAmount
+                        })
+                        .Where(x => x.Month >= startDate && x.Month <= endDate);
+                });
+
+            // Agrupar y sumarizar
+            var result = expandedTransactions
+                .GroupBy(x => new { x.Month })
+                .Select(g => new CardGraphDTO
+                {
+                    Month = g.Key.Month,
+                    Amount = g.Sum(x => x.InstallmentAmount)
+                })
+                .ToList();
+
+            return result;
+
+        }
+
+        private int GetMonthDifference(DateTime startDate, DateTime endDate)
+        {
+            return ((endDate.Year - startDate.Year) * 12) + endDate.Month - startDate.Month;
+        }
+
+
+
+
     }
+
 }
