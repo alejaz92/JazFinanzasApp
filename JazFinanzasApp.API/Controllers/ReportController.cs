@@ -179,8 +179,37 @@ namespace JazFinanzasApp.API.Controllers
             };
 
             return Ok(cardsStatsDTO);
-        }           
+        }    
+        
+        [HttpGet("StockStats/{id}")]
+        public async Task<IActionResult> GetStockStats(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
 
+            var assetType = await _assetRepository.GetByIdAsync(id);
+            if (assetType == null)
+            {
+                return NotFound();
+            }
+
+            var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA");
+
+            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
+
+            var stockStatsDTO = new StockStatsDTO
+            {
+                StockStatsInd = stockStats.ToArray(),
+                StockStatsGral = stockStatsGral.ToArray()
+            };
+
+            return Ok(stockStatsDTO);
+        }
+       
             
     }
 }

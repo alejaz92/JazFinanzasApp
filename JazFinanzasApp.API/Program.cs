@@ -18,15 +18,13 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-//Conexion a la base de datos
+// Conexión a la base de datos
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("JazFinanzasAppConnectionString"));
 });
 
-
-
-//register the repositories
+// Registrar los repositorios
 builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
 builder.Services.AddScoped<ITransactionClassRepository, TransactionClassRepository>();
@@ -42,8 +40,6 @@ builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
 builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
 
-
-
 builder.Services.AddIdentityCore<User>()
     .AddTokenProvider<DataProtectorTokenProvider<User>>("JazFinanzasApp")
     .AddEntityFrameworkStores<ApplicationDbContext>()
@@ -54,12 +50,10 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.Password.RequireDigit = false;
     options.Password.RequireLowercase = false;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequireUppercase = false; 
+    options.Password.RequireUppercase = false;
     options.Password.RequiredLength = 6;
     options.Password.RequiredUniqueChars = 1;
-
 });
-
 
 // Configuración de JWT
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:key"]);
@@ -69,7 +63,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             AuthenticationType = "Jwt",
-            ValidateIssuerSigningKey = true,            
+            ValidateIssuerSigningKey = true,
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
@@ -79,7 +73,19 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-
+// Configuración de CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("FrontendPolicy", policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:4200",  // Dominio de desarrollo
+            "https://jazfinanzaswebapp.azurestaticapps.net" // Dominio de producción
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+    });
+});
 
 var app = builder.Build();
 
@@ -92,13 +98,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.UseCors(options =>
-{
-    options.AllowAnyHeader();
-    options.AllowAnyOrigin();
-    options.AllowAnyMethod();
-});
-
+// Aplica la política de CORS
+app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();

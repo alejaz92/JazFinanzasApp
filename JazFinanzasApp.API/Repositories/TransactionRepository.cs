@@ -4,6 +4,9 @@ using JazFinanzasApp.API.Models.Domain;
 using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.SqlServer.Server;
+using System;
+using static JazFinanzasApp.API.Models.DTO.Report.StocksGralStatsDTO;
 
 namespace JazFinanzasApp.API.Repositories
 {
@@ -464,6 +467,70 @@ namespace JazFinanzasApp.API.Repositories
 
             return incExpStatsDTO;
 
+        }
+
+        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment)
+        {
+            var query = from transaction in _context.Transactions
+                        join asset in _context.Assets on transaction.AssetId equals asset.Id
+                        join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
+                        join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
+                        where transaction.UserId == userId
+                              && assetType.Environment == environment
+                              && (assetTypeId == 0 || asset.AssetTypeId == assetTypeId)
+                              && latestQuote.Date == _context.AssetQuotes
+                                  .Where(q => q.AssetId == transaction.AssetId)
+                                  .Max(q => q.Date)
+                        group new { transaction, latestQuote } by new
+                        {
+                            AssetName = asset.Name,
+                            Symbol = asset.Symbol
+                        } into grouped
+                        select new StockStatsListDTO
+                        {
+                            AssetName = grouped.Key.AssetName,
+                            Symbol = grouped.Key.Symbol,
+                            Quantity = grouped.Sum(x => x.transaction.Amount),
+                            OriginalValue = grouped.Sum(x => x.transaction.QuotePrice > 0
+                                                                ? x.transaction.Amount / x.transaction.QuotePrice.Value
+                                                                : 0),
+                            ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
+                                                                ? x.transaction.Amount / x.latestQuote.Value
+                                                                : 0)
+                        };
+
+            return await query.ToListAsync();
+        }
+
+
+        public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment)
+        {
+
+           var query = from transaction in _context.Transactions
+                        join asset in _context.Assets on transaction.AssetId equals asset.Id
+                        join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
+                        join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
+                        where transaction.UserId == userId
+                              && assetType.Environment == environment
+                              && latestQuote.Date == _context.AssetQuotes
+                                  .Where(q => q.AssetId == transaction.AssetId)
+                                  .Max(q => q.Date)
+                        group new { transaction, latestQuote } by new
+                        {
+                            AssetType = assetType.Name
+                        } into grouped
+                        select new StocksGralStatsDTO
+                        {
+                            AssetType = grouped.Key.AssetType,
+                            OriginalValue = grouped.Sum(x => x.transaction.QuotePrice.HasValue && x.transaction.QuotePrice > 0
+                                    ? x.transaction.Amount / x.transaction.QuotePrice.Value
+                                    : 0),
+                            ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
+                                                                ? x.transaction.Amount / x.latestQuote.Value
+                                                                : 0)
+                        };
+
+            return await query.ToListAsync();
         }
     }
     
