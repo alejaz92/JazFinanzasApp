@@ -499,7 +499,7 @@ namespace JazFinanzasApp.API.Repositories
                                                                 : 0)
                         };
 
-            return await query.ToListAsync();
+            return await query.OrderByDescending(dto => dto.ActualValue).ToListAsync();
         }
 
 
@@ -530,7 +530,7 @@ namespace JazFinanzasApp.API.Repositories
                                                                 : 0)
                         };
 
-            return await query.ToListAsync();
+            return await query.OrderByDescending(dto => dto.ActualValue).ToListAsync();
         }
     }
     
