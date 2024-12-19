@@ -469,7 +469,7 @@ namespace JazFinanzasApp.API.Repositories
 
         }
 
-        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment)
+        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable)
         {
             var query = from transaction in _context.Transactions
                         join asset in _context.Assets on transaction.AssetId equals asset.Id
@@ -478,6 +478,7 @@ namespace JazFinanzasApp.API.Repositories
                         where transaction.UserId == userId
                               && assetType.Environment == environment
                               && (assetTypeId == 0 || asset.AssetTypeId == assetTypeId)
+                              && (considerStable == true || (asset.Symbol != "DAI" && asset.Symbol != "USDT"))
                               && latestQuote.Date == _context.AssetQuotes
                                   .Where(q => q.AssetId == transaction.AssetId)
                                   .Max(q => q.Date)
@@ -532,6 +533,125 @@ namespace JazFinanzasApp.API.Repositories
 
             return await query.OrderByDescending(dto => dto.ActualValue).ToListAsync();
         }
+
+        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable)
+        {
+            // Paso 1: Obtener las transacciones acumuladas por activo y fecha
+            var accumulatedTransactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Where(t => t.Asset.AssetType.Id == assetTypeId &&
+                            t.Asset.AssetType.Environment == environment &&
+                            (assetId == 0 || t.Asset.Id == assetId) && 
+                            (considerStable == true || (t.Asset.Symbol != "DAI" && t.Asset.Symbol != "USDT")))
+                .GroupBy(t => new { t.AssetId, t.Date })
+                .Select(g => new
+                {
+                    g.Key.AssetId,
+                    g.Key.Date,
+                    AccumulatedAmount = g.Sum(t => t.Amount)
+                })
+                .ToListAsync();
+
+            // Materializar los datos para evitar problemas de traducción
+            var accumulatedTransactionsLookup = accumulatedTransactions
+                .ToLookup(at => at.AssetId);
+
+            // Paso 2: Obtener las cotizaciones de los activos
+            var assetQuotes = await _context.AssetQuotes
+                .Where(q => q.Asset.AssetType.Id == assetTypeId &&
+                            q.Asset.AssetType.Environment == environment &&
+                            (assetId == 0 || q.Asset.Id == assetId) &&
+                            (considerStable == true || (q.Asset.Symbol != "DAI" && q.Asset.Symbol != "USDT")))
+                .ToListAsync();
+
+            // Paso 3: Calcular las tenencias diarias en dólares en memoria
+            var dailyHoldings = assetQuotes
+                .GroupBy(q => q.Date)
+                .Select(g => new CryptoStatsByDateDTO
+                {
+                    Date = g.Key,
+                    Value = g.Sum(q =>
+                    {
+                        var transactionsForAsset = accumulatedTransactionsLookup[q.AssetId];
+                        return transactionsForAsset
+                            .Where(at => at.Date <= q.Date)
+                            .Sum(at => at.AccumulatedAmount) / q.Value; // Division para valor en dólares
+                    })
+                })
+                .ToList();
+
+            return dailyHoldings;
+
+        }
+
+        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetCryptoStatsTransactionStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months)
+        {
+            // Calcula las fechas del rango: mes actual y los últimos 5 meses
+            DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
+            DateTime startDate = endDate.AddMonths(-(months-1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
+
+            // Generar la lista de meses en el rango
+            var monthsRange = Enumerable.Range(0, months )
+                .Select(offset => startDate.AddMonths(offset))
+                .Select(date => new { Year = date.Year, Month = date.Month })
+                .ToList();
+
+            // Consulta para obtener los movimientos agrupados por mes y tipo de comercio
+            var query = from t in _context.Transactions
+                        join it in _context.InvestmentTransactions on t.Id equals it.IncomeTransactionId into itIncome
+                        from iti in itIncome.DefaultIfEmpty()
+                        join it2 in _context.InvestmentTransactions on t.Id equals it2.ExpenseTransactionId into itExpense
+                        from ite in itExpense.DefaultIfEmpty()
+                        join a in _context.Assets on t.AssetId equals a.Id
+                        join at in _context.AssetTypes on a.AssetTypeId equals at.Id
+                        where t.UserId == userId &&
+                              t.Date >= startDate &&
+                              t.Date <= endDate &&
+                              //(assetId == 0 || a.Id == assetId) &&
+                              //(considerStable == true || (a.Symbol != "DAI" && a.Symbol != "USDT")) &&
+                              at.Environment == environment &&
+                              at.Id == assetTypeId &&
+                              (iti != null || ite != null) &&
+                              (iti == null || iti.MovementType != "EX") &&
+                              (ite == null || ite.MovementType != "EX")
+                        select new
+                        {
+                            t.Date.Year,
+                            t.Date.Month,
+                            CommerceType = iti != null ? iti.CommerceType : ite.CommerceType,
+                            Value = t.Amount / t.QuotePrice
+                        };
+
+            // Agrupar los movimientos
+            var groupedData = query.AsEnumerable()
+                .GroupBy(x => new { x.Year, x.Month, x.CommerceType })
+                .Select(g => new CryptoStatsByDateCommerceDTO
+                {
+                    Date = new DateTime(g.Key.Year, g.Key.Month, 1),
+                    CommerceType = g.Key.CommerceType,
+                    Value = (decimal)g.Sum(x => x.Value)
+                })
+                .ToList();
+
+            // Combinar con los meses en el rango para incluir los meses sin movimientos
+            var result = (from month in monthsRange
+                          from commerceType in groupedData.Select(g => g.CommerceType).Distinct().DefaultIfEmpty()
+                          join data in groupedData on new { month.Year, month.Month, CommerceType = commerceType }
+                              equals new { data.Date.Year, data.Date.Month, data.CommerceType } into joined
+                          from j in joined.DefaultIfEmpty()
+                          select new CryptoStatsByDateCommerceDTO
+                          {
+                              Date = new DateTime(month.Year, month.Month, 1),
+                              CommerceType = commerceType ?? "",
+                              Value = j?.Value ?? 0
+                          })
+                          .OrderBy(r => r.Date)
+                          .ToList();
+
+            return result;
+        }
+
+
     }
     
 }

@@ -20,20 +20,23 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAsset_UserRepository _asset_UserRepository;
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
+        private readonly IAssetTypeRepository _assetTypeRepository;
 
         public ReportController(
             ITransactionRepository transactionRepository,
             IAssetRepository assetRepository,
             IAsset_UserRepository asset_UserRepository,
             ICardTransactionRepository cardTransactionRepository,
-            IAssetQuoteRepository assetQuoteRepository
+            IAssetQuoteRepository assetQuoteRepository,
+            IAssetTypeRepository assetTypeRepository
             )
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
             _asset_UserRepository = asset_UserRepository;
             _cardTransactionRepository = cardTransactionRepository;
-            _assetQuoteRepository = assetQuoteRepository;            
+            _assetQuoteRepository = assetQuoteRepository;   
+            _assetTypeRepository = assetTypeRepository;
         }
 
         [HttpGet("Balance")]
@@ -197,7 +200,7 @@ namespace JazFinanzasApp.API.Controllers
                 return NotFound();
             }
 
-            var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA");
+            var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA", false);
 
             var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
 
@@ -208,6 +211,34 @@ namespace JazFinanzasApp.API.Controllers
             };
 
             return Ok(stockStatsDTO);
+        }
+
+        [HttpGet("CryptoGralStats")]
+        public async Task<IActionResult> GetCryptoGralStats()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+            AssetType cryptoAsset = await _assetTypeRepository.GetByName("Criptomoneda");
+
+            var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, false);
+            var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, false);    
+            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetCryptoStatsTransactionStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, false, 12);
+
+
+            var CryptoGralStatsDTO = new CryptoGralStatsDTO
+            {
+                CryptoGralStats = CryptoGralStats.ToArray(),
+                CryptoStatsByDate = CryptoStatsByDate.ToArray(),
+                CryptoPurchasesStatsByMonth = CryptoPurchasesStatsByMonth.ToArray()
+            };
+            
+            return Ok(CryptoGralStatsDTO);
+
         }
        
             
