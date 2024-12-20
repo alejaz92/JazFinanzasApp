@@ -214,7 +214,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet("CryptoGralStats")]
-        public async Task<IActionResult> GetCryptoGralStats()
+        public async Task<IActionResult> GetCryptoGralStats([FromQuery] bool includeStables)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -225,9 +225,9 @@ namespace JazFinanzasApp.API.Controllers
 
             AssetType cryptoAsset = await _assetTypeRepository.GetByName("Criptomoneda");
 
-            var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, false);
-            var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, false);    
-            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetCryptoStatsTransactionStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, false, 12);
+            var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, includeStables);
+            var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables);    
+            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetCryptoStatsTransactionStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12);
 
 
             var CryptoGralStatsDTO = new CryptoGralStatsDTO
