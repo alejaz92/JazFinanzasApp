@@ -500,7 +500,9 @@ namespace JazFinanzasApp.API.Repositories
                                                                 : 0)
                         };
 
-            return await query.OrderByDescending(dto => dto.ActualValue).ToListAsync();
+            return await query
+                .Where(dto => dto.Quantity > 0)
+                .OrderByDescending(dto => dto.ActualValue).ToListAsync();
         }
 
 

@@ -25,6 +25,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<TransactionClass> TransactionClasses { get; set; }
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
         public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
+        public DbSet<BondPayment> BondPayments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -142,6 +143,12 @@ namespace JazFinanzasApp.API.Data
                 .HasOne(im => im.ExpenseTransaction)
                 .WithMany()
                 .HasForeignKey(im => im.ExpenseTransactionId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<BondPayment>()
+                .HasOne(bp => bp.Asset)
+                .WithMany()
+                .HasForeignKey(bp => bp.AssetId)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

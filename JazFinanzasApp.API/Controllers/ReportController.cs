@@ -240,6 +240,37 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(CryptoGralStatsDTO);
 
         }
+
+        [HttpGet("CryptoStats/{id}")]
+        public async Task<IActionResult> GetCryptoStats(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+            var asset = await _assetRepository.GetByIdAsync(id);
+            if (asset == null)
+            {
+                return NotFound();
+            }
+
+            var cryptoEvolution = await _assetQuoteRepository.GetAssetEvolutionStats(id, 6);
+
+            var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(id, userId);
+            //var cryptoStats = await _transactionRepository.GetStockStatsAsync(userId, id, "CRIPTO", false);
+            var cryptoStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "CRIPTO");
+
+            var cryptoStatsDTO = new CryptoStatsDTO
+            {
+                CryptoEvolutionStats = cryptoEvolution.ToArray(),
+                CryptoBalanceStats = balance.ToArray()
+            };
+
+            return Ok(cryptoStatsDTO);
+        }
        
             
     }

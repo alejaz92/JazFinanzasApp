@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
@@ -43,6 +44,24 @@ namespace JazFinanzasApp.API.Repositories
                 .FirstOrDefaultAsync();
             }
             
+        }
+
+        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetAssetEvolutionStats(int CryptoId, int monthsQuantity)
+        { 
+            var dateThreshold = DateTime.Now.AddMonths(-monthsQuantity);
+
+            var result = await _context.AssetQuotes
+                .Where(aq => aq.Asset.Id == CryptoId)
+                .Where(aq => aq.Date >= dateThreshold)
+                .OrderBy(aq => aq.Date)
+                .Select(aq => new CryptoStatsByDateDTO
+                {
+                    Date = aq.Date,
+                    Value = 1/ aq.Value
+                })
+                .ToListAsync();
+
+            return result;
         }
     }
 }
