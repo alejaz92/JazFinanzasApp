@@ -208,7 +208,7 @@ namespace JazFinanzasApp.API.Repositories
                     Amount = g.Sum(t => t.Amount / t.QuotePrice.Value) // Calculando en la base de datos
                 })
                 .OrderByDescending(g => g.Year)
-                .OrderByDescending(g => g.Month)
+                .ThenByDescending(g => g.Month)    
                 .Take(6)
                 .ToListAsync(); // Traemos los datos
 
@@ -237,7 +237,7 @@ namespace JazFinanzasApp.API.Repositories
                     Amount = g.Sum(t => -t.Amount / t.QuotePrice.Value) // Calculando en la base de datos
                 })
                 .OrderByDescending(g => g.Year)
-                .OrderByDescending(g => g.Month)
+                .ThenByDescending(g => g.Month)
                 .Take(6)
                 .ToListAsync(); // Traemos los datos
 
