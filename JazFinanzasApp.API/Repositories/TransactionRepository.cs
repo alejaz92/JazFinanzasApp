@@ -4,6 +4,7 @@ using JazFinanzasApp.API.Models.Domain;
 using JazFinanzasApp.API.Models.DTO.Report;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.SqlServer.Server;
 using System;
 using static JazFinanzasApp.API.Models.DTO.Report.StocksGralStatsDTO;
@@ -588,7 +589,7 @@ namespace JazFinanzasApp.API.Repositories
 
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetCryptoStatsTransactionStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months)
+        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months)
         {
             // Calcula las fechas del rango: mes actual y los últimos 5 meses
             DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
@@ -653,6 +654,29 @@ namespace JazFinanzasApp.API.Repositories
                           .ToList();
 
             return result;
+        }
+
+        public async Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId)
+        {
+            var transactions = _context.InvestmentTransactions
+                .Include(it => it.IncomeTransaction)
+                .Include(it => it.ExpenseTransaction)
+                .Where(it => it.IncomeTransaction.UserId == userId || it.ExpenseTransaction.UserId == userId)
+                .Where(it => it.IncomeTransaction.AssetId == assetId || it.ExpenseTransaction.AssetId == assetId)
+                .Select(it => new InvestmentTransactionsStatsDTO
+                {
+                    Date = it.IncomeTransaction.Date,
+                    Account = it.IncomeTransaction.Account.Name,
+                    MovementType = it.MovementType,
+                    CommerceType = it.CommerceType,
+                    Quantity = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount : it.ExpenseTransaction.Amount),
+                    QuotePrice = 1/ (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value),
+                    Total = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1/(it.IncomeTransaction.QuotePrice.Value) : it.ExpenseTransaction.Amount * 1/(it.ExpenseTransaction.QuotePrice.Value))
+
+                });
+
+            return await transactions.OrderByDescending(t => t.Date).ToListAsync();
+
         }
 
 

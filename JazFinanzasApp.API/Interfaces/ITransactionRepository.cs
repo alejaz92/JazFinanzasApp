@@ -14,6 +14,7 @@ namespace JazFinanzasApp.API.Interfaces
         Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable);
         Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment);
         Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable);
-        Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetCryptoStatsTransactionStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months);
+        Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months);
+        Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId);
     }
 }

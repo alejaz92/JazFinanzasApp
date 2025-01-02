@@ -227,7 +227,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, includeStables);
             var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables);    
-            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetCryptoStatsTransactionStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12);
+            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetInvestmentsHoldingsStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12);
 
 
             var CryptoGralStatsDTO = new CryptoGralStatsDTO
@@ -260,13 +260,24 @@ namespace JazFinanzasApp.API.Controllers
             var cryptoEvolution = await _assetQuoteRepository.GetAssetEvolutionStats(id, 6);
 
             var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(id, userId);
-            //var cryptoStats = await _transactionRepository.GetStockStatsAsync(userId, id, "CRIPTO", false);
+            var cryptoTransactionsStats = await _transactionRepository.GetInvestmentsTransactionsStats(userId, id);
             var cryptoStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "CRIPTO");
+            var varCryptoStatsEvolution = await _transactionRepository.GetCryptoStatsByDateAsync(userId, asset.AssetTypeId, "CRYPTO", id, true); 
+
+            var cryptoRangeStats = new InvestmentRangeValuesStatsDTO
+            {
+                // min value that is not zero
+                MinValue = varCryptoStatsEvolution.Where(m => m.Value > 0).Min(m => m.Value),
+                MaxValue = varCryptoStatsEvolution.Max(m => m.Value),
+                CurrentValue = varCryptoStatsEvolution.Last().Value
+            };
 
             var cryptoStatsDTO = new CryptoStatsDTO
             {
                 CryptoEvolutionStats = cryptoEvolution.ToArray(),
-                CryptoBalanceStats = balance.ToArray()
+                CryptoBalanceStats = balance.ToArray(),
+                CryptoTransactionsStats = cryptoTransactionsStats.ToArray(),
+                CryptoRangeValuesStats = cryptoRangeStats
             };
 
             return Ok(cryptoStatsDTO);
