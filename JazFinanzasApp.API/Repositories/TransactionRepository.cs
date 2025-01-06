@@ -167,6 +167,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -183,6 +184,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -200,6 +202,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
                 .Where(t => t.UserId == userId)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .Select(g => new
@@ -229,6 +232,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
                 .Where(t => t.UserId == userId)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .Select(g => new
