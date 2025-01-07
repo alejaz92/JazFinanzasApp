@@ -276,6 +276,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -307,6 +308,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -350,6 +352,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where (t => t.TransactionClass.Description != "Ingreso Inversiones")
                 .Where(t => t.UserId == userId)
                 .ToListAsync(); // Traemos los datos a memoria
 
@@ -395,7 +398,7 @@ namespace JazFinanzasApp.API.Repositories
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = Math.Round(g.Amount, 2)
-                })
+                })Casa (Dorrego 90)
                 .OrderBy(g => g.Month) // Aseguramos que esté ordenado
                 .ToList();
 
@@ -410,6 +413,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
                 .Where(t => t.UserId == userId)
                 .ToListAsync(); // Traemos los datos a memoria
 
