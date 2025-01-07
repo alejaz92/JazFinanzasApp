@@ -398,7 +398,7 @@ namespace JazFinanzasApp.API.Repositories
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = Math.Round(g.Amount, 2)
-                })Casa (Dorrego 90)
+                })
                 .OrderBy(g => g.Month) // Aseguramos que esté ordenado
                 .ToList();
 
