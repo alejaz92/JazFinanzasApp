@@ -145,7 +145,7 @@ namespace JazFinanzasApp.API.Controllers
                             var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
                             await CheckAssetsAndAccounts(incomeAsset, incomeAccount);
 
-                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
+                            TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Ingreso Inversiones", userId);
                             if (investmentClass == null)
                             {
                                 return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
