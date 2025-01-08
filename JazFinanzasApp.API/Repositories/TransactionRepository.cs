@@ -480,6 +480,245 @@ namespace JazFinanzasApp.API.Repositories
 
         }
 
+        public async Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset)
+        {
+            // income in pesos by class
+
+     
+            var incomeTransactions = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .Select(t => new
+                {
+                    t.TransactionClass.Description,
+                    amount = t.Asset.Name == asset.Name ? t.Amount : asset.Name == "Peso Argentino" ? t.Amount / t.QuotePrice.Value *
+                        _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                            : 
+                            t.Amount / t.QuotePrice.Value *
+                             _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == asset.Name  && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            var classIncomeStats = incomeTransactions
+                .GroupBy(t => t.Description)
+                .Select(g => new ClassIncomeStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => t.amount), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToList();
+
+            // expenses in pesos by class
+
+            var expensesTransactions = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.UserId == userId)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+                .Select(t => new
+                {
+                    t.TransactionClass.Description,
+                    amount = t.Asset.Name == asset.Name ? -t.Amount : asset.Name == "Peso Argentino" ? -t.Amount / t.QuotePrice.Value *
+                        _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                            :
+                            -t.Amount / t.QuotePrice.Value *
+                             _context.AssetQuotes
+                            .Where(aq => aq.Asset.Name == asset.Name && aq.Date <= t.Date)
+                            .OrderByDescending(aq => aq.Date)
+                            .Select(aq => aq.Value)
+                            .FirstOrDefault()
+                })
+                .ToListAsync();
+
+            var classExpenseStats = expensesTransactions
+                .GroupBy(t => t.Description)
+                .Select(g => new ClassExpenseStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(t => t.amount), 2)
+                })
+                .OrderByDescending(g => g.Amount)
+                .ToList();
+
+
+            List<AssetQuote> assetQuotes;
+
+            if(asset.Name == "Peso Argentino")
+            {
+                assetQuotes = await _context.AssetQuotes
+                .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE")
+                .OrderByDescending(aq => aq.Date)
+                .ToListAsync();
+            } else
+            {
+                assetQuotes = await _context.AssetQuotes
+                .Where(aq => aq.Asset.Name == asset.Name)
+                .OrderByDescending(aq => aq.Date)
+                .ToListAsync();
+            }
+
+            
+
+            // total incomes by month
+
+            // Paso 1: Obtener transacciones relevantes desde la base de datos
+            var transactionsIncome = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Include(t => t.Asset)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "I")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.UserId == userId)
+                .ToListAsync(); // Traemos los datos a memoria
+
+            // Paso 2: Procesar los datos en memoria
+
+
+            var totalIncomes = transactionsIncome
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g =>
+                {
+                    var year = g.Key.Year;
+                    var month = g.Key.Month;
+                    var amountInPesos = g.Sum(t =>
+                    {
+
+                        if (t.Asset.Name == asset.Name)
+                        {
+                            return t.Amount;
+                        }
+                        else
+                        {
+                            var quote = assetQuotes
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                            return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
+                        }
+
+                    });
+
+                    return new
+                    {
+                        Year = year,
+                        Month = month,
+                        Amount = amountInPesos
+                    };
+                })
+                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
+                .Take(6)
+                .ToList();
+
+            // Paso 3: Ajustar y redondear resultados
+            var totalIncomesFinal = totalIncomes
+                .Select(g => new MonthIncomeStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
+
+
+
+            // total expenses in pesos by month
+
+            // Paso 1: Obtener transacciones relevantes desde la base de datos
+            var transactionsExpenses = await _context.Transactions
+                .Include(t => t.TransactionClass)
+                .Include(t => t.Asset)
+                .Where(t => t.TransactionClassId != null)
+                .Where(t => t.MovementType == "E")
+                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
+                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.UserId == userId)
+                .ToListAsync(); // Traemos los datos a memoria
+
+
+            // Paso 2: Procesar los datos en memoria
+
+
+            var totalExpenses = transactionsExpenses
+                .GroupBy(t => new { t.Date.Year, t.Date.Month })
+                .Select(g =>
+                {
+                    var year = g.Key.Year;
+                    var month = g.Key.Month;
+                    var amountInPesos = g.Sum(t =>
+                    {
+                        if (t.Asset.Name == asset.Name)
+                        {
+                            return t.Amount;
+                        }
+                        else
+                        {
+                            var quote = assetQuotes
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                            return t.Amount / (t.QuotePrice ?? 1) * quote;
+                        }
+                    });
+
+                    return new
+                    {
+                        Year = year,
+                        Month = month,
+                        Amount = amountInPesos
+                    };
+                })
+                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
+                .Take(6)
+                .ToList();
+
+            // Paso 3: Ajustar y redondear resultados
+            var totalExpenesesFinal = totalExpenses
+                .Select(g => new MonthExpenseStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = -Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
+
+
+
+
+
+
+            // Devolvemos los resultados
+            var incExpStatsDTO = new IncExpStatsDTO
+            {
+                ClassIncomeStats = classIncomeStats.ToArray(),
+                ClassExpenseStats = classExpenseStats.ToArray(),
+                MonthIncomeStats = totalIncomesFinal.ToArray(),
+                MonthExpenseStats = totalExpenesesFinal.ToArray()
+            };
+
+            return incExpStatsDTO;
+        }
+
+
+
+
         public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable)
         {
             var query = from transaction in _context.Transactions

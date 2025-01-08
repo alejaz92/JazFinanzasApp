@@ -110,6 +110,36 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(incExpStatsDTO);
         }
 
+        [HttpGet("IncExpStats")]
+        public async Task<IActionResult> GetIncExpStats([FromQuery] DateTime month, [FromQuery] int assetId)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+            var asset = await _assetRepository.GetByIdAsync(assetId);
+
+            if (asset == null)
+            {
+                return NotFound();
+            }
+
+            if (asset.AssetTypeId != 1)
+            {
+                return BadRequest("El activo no es una moneda");
+            }
+
+            
+            var incExpStatsDTO = await _transactionRepository.GetIncExpStatsAsync(userId, month, asset);
+            return Ok(incExpStatsDTO);
+            
+
+
+        }
+
         [HttpGet("CardStats/{id}")]
         public async Task<IActionResult> GetCardStats(int id)
         {
