@@ -39,6 +39,7 @@ namespace JazFinanzasApp.API.Repositories
                     Detail = cm.Detail,
                     Installments = cm.Repeat == "YES" ? "Recurrente" : cm.Installments.ToString(),
                     Asset = cm.Asset.Name,
+                    AssetSymbol = cm.Asset.Symbol,
                     TotalAmount = cm.TotalAmount,
                     FirstInstallment = cm.FirstInstallment,
                     LastInstallment = cm.Repeat == "YES" ? "NA" : (cm.LastInstallment.HasValue ? cm.LastInstallment.Value.ToString("MM/yyyy") : "NA"),

@@ -9,6 +9,7 @@
 
         public int AssetId { get; set; }
         public string AssetName { get; set; }
+        public string AssetSymbol { get; set; }
         public DateTime Date { get; set; }
         public string MovementType { get; set; }
         public int? TransactionClassId { get; set; }

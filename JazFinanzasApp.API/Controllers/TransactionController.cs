@@ -63,6 +63,7 @@ namespace JazFinanzasApp.API.Controllers
                 AccountName = m.Account.Name,
                 AssetId = m.AssetId,
                 AssetName = m.Asset.Name,
+                AssetSymbol = m.Asset.Symbol,
                 TransactionClassId = m.TransactionClassId,
                 TransactionClassName = m.TransactionClass.Description,
                 MovementType = m.MovementType

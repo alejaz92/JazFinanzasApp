@@ -10,6 +10,7 @@ namespace JazFinanzasApp.API.Models.DTO.CardTransaction
         public string Detail { get; set; }
         public string Installments { get; set; }
         public string Asset { get; set; }
+        public string AssetSymbol { get; set; }
         public decimal TotalAmount { get; set; }
         public DateTime FirstInstallment { get; set; }
         public string LastInstallment { get; set; }
