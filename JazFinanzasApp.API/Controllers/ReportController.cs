@@ -312,6 +312,31 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok(cryptoStatsDTO);
         }
+
+        [HttpGet("HomeStats")]
+        public async Task<IActionResult> GetHomeStats()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            var userId = int.Parse(userIdClaim.Value);
+
+            AssetType cryptoAsset = await _assetTypeRepository.GetByName("Criptomoneda");
+
+            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
+            var cryptoStatsGral = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, "CRYPTO", true);
+
+            var homeStatsDTO = new HomeStatsDTO
+            {
+                StockStatsGral = stockStatsGral.ToArray(),
+                CryptoStatsGral = cryptoStatsGral.ToArray()
+            };
+
+            return Ok(homeStatsDTO);
+        }
+
        
             
     }
