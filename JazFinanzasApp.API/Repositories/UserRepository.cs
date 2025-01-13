@@ -108,5 +108,14 @@ namespace JazFinanzasApp.API.Repositories
             return user.UserName;
         }
 
+        public async Task<User> GetByUserNameAsync(string userName) => await _userManager.FindByNameAsync(userName);
+
+
+        public async Task<IdentityResult> ResetPasswordAsync(User user)
+        {
+            var token = await _userManager.GeneratePasswordResetTokenAsync(user);
+            return await _userManager.ResetPasswordAsync(user, token, user.UserName + "123456");
+        }
+
     }
 }

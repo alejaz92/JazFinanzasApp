@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
 using JazFinanzasApp.API.Models.DTO.User;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -109,6 +110,46 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             return Ok(new { Token = token });
-        }       
+        }
+
+        [HttpPost("reset-password")]
+        [Authorize]
+        public async Task<IActionResult> ResetPassword([FromBody] string userName)
+        {
+
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            User authorizedUser = await _userRepository.GetByIdAsync(userId);
+            if (authorizedUser.UserName != "ajazmatie")
+            {
+                return Unauthorized();
+            }
+
+            User user = await _userRepository.GetByUserNameAsync(userName);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            var result = await _userRepository.ResetPasswordAsync(user);
+
+            if (result.Succeeded)
+            {
+                return Ok(new { Message = "Password reset succesfully to: " + user.UserName + "123456" });
+            }
+
+            foreach (var error in result.Errors)
+            {
+                ModelState.AddModelError(error.Code, error.Description);
+            }
+
+            return BadRequest(ModelState);
+        }
     }
 }
