@@ -152,9 +152,9 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(new { UserName = userName });
         }
 
-        [HttpPost("reset-password")]
+        [HttpPut("reset-password")]
         [Authorize]
-        public async Task<IActionResult> ResetPassword([FromHeader] string userName)
+        public async Task<IActionResult> ResetPassword(ResetPasswordDTO resetPassword)
         {
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -171,7 +171,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            User user = await _userRepository.GetByUserNameAsync(userName);
+            User user = await _userRepository.GetByUserNameAsync(resetPassword.userName);
             if (user == null)
             {
                 return NotFound();
