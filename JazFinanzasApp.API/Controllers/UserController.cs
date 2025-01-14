@@ -154,7 +154,7 @@ namespace JazFinanzasApp.API.Controllers
 
         [HttpPost("reset-password")]
         [Authorize]
-        public async Task<IActionResult> ResetPassword([FromBody] string userName)
+        public async Task<IActionResult> ResetPassword([FromHeader] string userName)
         {
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
