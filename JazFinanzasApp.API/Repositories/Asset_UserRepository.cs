@@ -56,5 +56,15 @@ namespace JazFinanzasApp.API.Repositories
             return await _context.Assets_Users
                 .FirstOrDefaultAsync(au => au.UserId == userId && au.AssetId == assetId);
         }
+
+        public async Task<IEnumerable<Asset_User>> GetReferenceAssetsAsync(int userId)
+        {
+            return await _context.Assets_Users
+                .Include(au => au.Asset)
+                .Include(au => au.Asset.AssetType)
+                .Where(au => au.UserId == userId)
+                .Where(au => au.isReference)
+                .ToListAsync();            
+        }
     }
 }

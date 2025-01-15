@@ -272,6 +272,16 @@ namespace JazFinanzasApp.API.Controllers
                 return NotFound();
             }
 
+            if (assetDTO.IsReference)
+            {
+                // only allow a max of 3 reference assets
+                var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(int.Parse(userIdClaim.Value));
+                if (referenceAssets.Count() >= 3)
+                {
+                    return BadRequest("Only 3 reference assets allowed");
+                }
+            }
+
             user_asset.isReference = assetDTO.IsReference;
             await _asset_UserRepository.UpdateAsync(user_asset);
        
