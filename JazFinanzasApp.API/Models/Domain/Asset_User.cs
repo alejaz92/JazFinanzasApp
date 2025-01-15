@@ -17,5 +17,7 @@ namespace JazFinanzasApp.API.Models.Domain
         [ForeignKey("AssetId")]
         public int AssetId { get; set; }
         public Asset Asset { get; set; }
+
+        public bool isReference { get; set; }
     }
 }

@@ -8,5 +8,7 @@ namespace JazFinanzasApp.API.Models.DTO.Asset
         public string Name { get; set; }
         public string Symbol { get; set; }
         public string AssetTypeName { get; set; }
+
+        public bool IsReference { get; set; }
     }
 }

@@ -112,7 +112,9 @@ namespace JazFinanzasApp.API.Controllers
                 Id = a.AssetId,
                 Name = a.Asset.Name,
                 Symbol = a.Asset.Symbol,
-                AssetTypeName = a.Asset.AssetType.Name
+                AssetTypeName = a.Asset.AssetType.Name,
+                IsReference = a.isReference
+
             }).ToList();
 
             return Ok(assetsDTO);
@@ -242,6 +244,38 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok(assetsDTO);
 
+        }
+
+        [HttpPut("updateReference")]
+        public async Task<IActionResult> UpdateReference([FromBody] AssetDTO assetDTO)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            if (assetDTO == null)
+            {
+                return BadRequest("No asset to update");
+            }
+
+            var asset = await _assetRepository.GetByIdAsync(assetDTO.Id);
+            if (asset == null)
+            {
+                return NotFound();
+            }
+
+            var user_asset = await _asset_UserRepository.GetUserAssetAsync(int.Parse(userIdClaim.Value), assetDTO.Id);
+            if (user_asset == null)
+            {
+                return NotFound();
+            }
+
+            user_asset.isReference = assetDTO.IsReference;
+            await _asset_UserRepository.UpdateAsync(user_asset);
+       
+            return Ok();
         }
     }
 }
