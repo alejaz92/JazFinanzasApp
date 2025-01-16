@@ -104,33 +104,6 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(balanceDTO);
         }
 
-        [HttpGet("IncExpStatsDollar")]
-        public async Task<IActionResult> GetIncExpDollarStats([FromQuery] DateTime month)
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-            var userId = int.Parse(userIdClaim.Value);
-
-            var incExpStatsDTO = await _transactionRepository.GetDollarIncExpStatsAsync(userId, month);
-            return Ok(incExpStatsDTO);
-        }
-
-        [HttpGet("IncExpStatsPesos")]
-        public async Task<IActionResult> GetIncExpPesosStats([FromQuery] DateTime month)
-        {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-            var userId = int.Parse(userIdClaim.Value);
-
-            var incExpStatsDTO = await _transactionRepository.GetPesosIncExpStatsAsync(userId, month);
-            return Ok(incExpStatsDTO);
-        }
 
         [HttpGet("IncExpStats")]
         public async Task<IActionResult> GetIncExpStats([FromQuery] DateTime month, [FromQuery] int assetId)
@@ -314,14 +287,16 @@ namespace JazFinanzasApp.API.Controllers
             var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(id, userId);
             var cryptoTransactionsStats = await _transactionRepository.GetInvestmentsTransactionsStats(userId, id);
             var cryptoStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "CRIPTO");
-            var varCryptoStatsEvolution = await _transactionRepository.GetCryptoStatsByDateAsync(userId, asset.AssetTypeId, "CRYPTO", id, true); 
+            var CryptoStatsEvolution = await _transactionRepository.GetCryptoStatsByDateAsync(userId, asset.AssetTypeId, "CRYPTO", id, true); 
+            var averageBuyValue = await _transactionRepository.GetAverageBuyValue(userId, id);
 
             var cryptoRangeStats = new InvestmentRangeValuesStatsDTO
             {
                 // min value that is not zero
-                MinValue = varCryptoStatsEvolution.Where(m => m.Value > 0).Min(m => m.Value),
-                MaxValue = varCryptoStatsEvolution.Max(m => m.Value),
-                CurrentValue = varCryptoStatsEvolution.Last().Value
+                MinValue = CryptoStatsEvolution.Where(m => m.Value > 0).Min(m => m.Value),
+                MaxValue = CryptoStatsEvolution.Max(m => m.Value),
+                CurrentValue = CryptoStatsEvolution.Last().Value,
+                AverageBuyValue = averageBuyValue
             };
 
             var cryptoStatsDTO = new CryptoStatsDTO

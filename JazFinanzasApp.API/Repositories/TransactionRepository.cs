@@ -779,9 +779,6 @@ namespace JazFinanzasApp.API.Repositories
             return incExpStatsDTO;
         }
 
-
-
-
         public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable)
         {
             var query = from transaction in _context.Transactions
@@ -817,7 +814,6 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(dto => dto.Quantity > 0)
                 .OrderByDescending(dto => dto.ActualValue).ToListAsync();
         }
-
 
         public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment)
         {
@@ -989,7 +985,18 @@ namespace JazFinanzasApp.API.Repositories
 
         }
 
+        public async Task<decimal> GetAverageBuyValue(int userId, int assetId)
+        {
+            var transactions = _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Where(t => t.AssetId == assetId)
+                .Where(t => t.QuotePrice.HasValue)
+                .Select(t => t.Amount / t.QuotePrice.Value);
+            var total = await transactions.SumAsync();
 
+            return total;
+        }
+            
     }
     
 }

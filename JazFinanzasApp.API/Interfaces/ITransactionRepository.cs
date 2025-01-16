@@ -17,5 +17,6 @@ namespace JazFinanzasApp.API.Interfaces
         Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months);
         Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId);
         Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset);
+        Task<decimal> GetAverageBuyValue(int userId, int assetId);
     }
 }

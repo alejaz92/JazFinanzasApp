@@ -28,6 +28,7 @@
         public decimal MinValue { get; set; }
         public decimal MaxValue { get; set; }
         public decimal CurrentValue { get; set; }
+        public decimal AverageBuyValue { get; set; }
     }                       
 
 }
