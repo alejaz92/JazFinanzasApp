@@ -54,17 +54,18 @@ namespace JazFinanzasApp.API.Controllers
 
 
             // Get the balance for the user by asset        
-
+            //create the ienumerable of balancedto
+            var balanceDTO = new List<TotalsBalanceDTO>();
 
             if (referenceAssets.Count() == 0)
             {
                 var asset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
                 var balance = await _transactionRepository.GetTotalsBalanceByUserAsync(userId, asset);
-                return Ok(balance);
+                balanceDTO.Add(balance);
+                return Ok(balanceDTO);
             }
 
-            //create the ienumerable of balancedto
-            var balanceDTO = new List<TotalsBalanceDTO>();
+            
 
             foreach (var asset in referenceAssets)
             {
