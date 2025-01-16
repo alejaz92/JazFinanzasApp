@@ -56,10 +56,10 @@ namespace JazFinanzasApp.API.Controllers
             // Get the balance for the user by asset        
 
 
-            if (referenceAssets == null)
+            if (referenceAssets.Count() == 0)
             {
                 var asset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
-                var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(asset.Id, userId);
+                var balance = await _transactionRepository.GetTotalsBalanceByUserAsync(userId, asset);
                 return Ok(balance);
             }
 
