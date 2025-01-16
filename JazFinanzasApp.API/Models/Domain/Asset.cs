@@ -13,6 +13,7 @@ namespace JazFinanzasApp.API.Models.Domain
         public int AssetTypeId { get; set; }
         [Required]
         public AssetType AssetType { get; set; }
+        public string Color { get; set; }
 
 
 

@@ -118,6 +118,7 @@ namespace JazFinanzasApp.API.Repositories
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
+                            Color = asset.Color,
                             Balance = totalBalancePesos
                         };
 
@@ -158,6 +159,7 @@ namespace JazFinanzasApp.API.Repositories
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
+                            Color = asset.Color,
                             Balance = totalBalanceDollars
                         };
                     return totals;
@@ -204,6 +206,7 @@ namespace JazFinanzasApp.API.Repositories
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
+                            Color = asset.Color,
                             Balance = totalBalanceOther
                         };
 

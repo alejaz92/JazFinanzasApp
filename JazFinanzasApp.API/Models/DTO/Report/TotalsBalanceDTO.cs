@@ -6,6 +6,7 @@ namespace JazFinanzasApp.API.Models.DTO.Report
     {
         public string Asset { get; set; }
         public string Symbol { get; set; }
+        public string Color { get; set; }
         public decimal Balance { get; set; }
     }
 
