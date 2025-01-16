@@ -287,5 +287,30 @@ namespace JazFinanzasApp.API.Controllers
        
             return Ok();
         }
+
+        //get reference assets
+        [HttpGet("reference")]
+        public async Task<IActionResult> GetReferenceAssets()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(int.Parse(userIdClaim.Value));
+
+            var assetsDTO = referenceAssets.Select(a => new AssetDTO
+            {
+                Id = a.AssetId,
+                Name = a.Asset.Name,
+                Symbol = a.Asset.Symbol,
+                AssetTypeName = a.Asset.AssetType.Name,
+                IsReference = a.isReference
+
+            }).ToList();
+
+            return Ok(assetsDTO);
+        }
     }
 }
