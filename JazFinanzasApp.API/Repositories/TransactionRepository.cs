@@ -80,43 +80,57 @@ namespace JazFinanzasApp.API.Repositories
             return balanceByAccount;
         }
 
-        public async Task<IEnumerable<TotalsBalanceDTO>> GetTotalsBalanceByUserAsync(int userId)
+        public async Task<TotalsBalanceDTO> GetTotalsBalanceByUserAsync(int userId, Asset asset)
         {
-            var pesosSQL = @"
-                SELECT 
-                CAST(SUM(
-                    CASE WHEN A.ID = 2 THEN T.Amount
-                    ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
-                    AS decimal(18,2))
-                    *
-                    (SELECT VALUE FROM AssetQuotes WHERE TYPE = 'BOLSA' AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
-                    ) AS TOTAL
-                FROM Transactions T
-                INNER JOIN Assets A ON T.AssetId = A.Id
-                LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
-                    AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
-                    AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
-                WHERE T.UserId = @USER
-            ";
 
-            decimal totalBalancePesos = 0;
-            decimal totalBalanceDollars = 0;
-
-            try
+            if (asset.Name == "Peso Argentino")
             {
-                var resultPesos = await _context.Set<TotalBalanceResult>()
-                    .FromSqlRaw(pesosSQL, new SqlParameter("@USER", userId))
-                    .FirstOrDefaultAsync();
+                var pesosSQL = @"
+                    SELECT 
+                    CAST(SUM(
+                        CASE WHEN A.ID = 2 THEN T.Amount
+                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
+                        AS decimal(18,2))
+                        *
+                        (SELECT VALUE FROM AssetQuotes WHERE TYPE = 'BOLSA' AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
+                        ) AS TOTAL
+                    FROM Transactions T
+                    INNER JOIN Assets A ON T.AssetId = A.Id
+                    LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
+                        AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
+                        AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                    WHERE T.UserId = @USER
+                ";
 
-                totalBalancePesos = resultPesos?.Total ?? 0;
-            }
-            catch (Exception ex)
+                decimal totalBalancePesos = 0;
+
+
+                try
+                {
+                    var resultPesos = await _context.Set<TotalBalanceResult>()
+                        .FromSqlRaw(pesosSQL, new SqlParameter("@USER", userId))
+                        .FirstOrDefaultAsync();
+
+                    totalBalancePesos = resultPesos?.Total ?? 0;
+
+                    var  totals =
+                        new TotalsBalanceDTO
+                        {
+                            Asset = asset.Name,
+                            Symbol = asset.Symbol,
+                            Balance = totalBalancePesos
+                        };
+
+                    return totals;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error en consulta de pesos: {ex.Message}");
+                    throw;
+                }
+            } else if(asset.Name == "Dolar Estadounidense")
             {
-                Console.WriteLine($"Error en consulta de pesos: {ex.Message}");
-                throw;
-            }
-
-            var dollarSQL = @"
+                var dollarSQL = @"
                 SELECT 
                 CAST(SUM(
                     CASE WHEN A.ID = 2 THEN T.Amount
@@ -128,37 +142,83 @@ namespace JazFinanzasApp.API.Repositories
                     AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
                     AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
                 WHERE T.UserId = @USER
-            ";
+                ";
+                decimal totalBalanceDollars = 0;
 
-            try
-            {
-                var resultDollars = await _context.Set<TotalBalanceResult>()
-                    .FromSqlRaw(dollarSQL, new SqlParameter("@USER", userId))
-                    .FirstOrDefaultAsync();
-
-                totalBalanceDollars = resultDollars?.Total ?? 0;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error en consulta de dólares: {ex.Message}");
-                throw;
-            }
-
-            var totals = new List<TotalsBalanceDTO>
-            {
-                new TotalsBalanceDTO
+                try
                 {
-                    Asset = "Pesos",
-                    Balance = totalBalancePesos
-                },
-                new TotalsBalanceDTO
-                {
-                    Asset = "Dólares",
-                    Balance = totalBalanceDollars
+                    var resultDollars = await _context.Set<TotalBalanceResult>()
+                        .FromSqlRaw(dollarSQL, new SqlParameter("@USER", userId))
+                        .FirstOrDefaultAsync();
+
+                    totalBalanceDollars = resultDollars?.Total ?? 0;
+
+                    var totals =
+                        new TotalsBalanceDTO
+                        {
+                            Asset = asset.Name,
+                            Symbol = asset.Symbol,
+                            Balance = totalBalanceDollars
+                        };
+                    return totals;
                 }
-            };
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error en consulta de dólares: {ex.Message}");
+                    throw;
+                }
+            } else
+            {
+                var otherSQL = @"
+                    SELECT 
+                    CAST(SUM(
+                        CASE WHEN A.ID = 2 THEN T.Amount
+                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
+                        AS decimal(18,2))
+                        *
+                        (SELECT VALUE FROM AssetQuotes WHERE assetId = @ASSETID AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
+                        ) AS TOTAL
+                    FROM Transactions T
+                    INNER JOIN Assets A ON T.AssetId = A.Id
+                    LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
+                        AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
+                        AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                    WHERE T.UserId = @USER
+                ";
 
-            return totals;
+                otherSQL = otherSQL.Replace("@ASSETID", asset.Id.ToString());
+
+                decimal totalBalanceOther = 0;
+
+
+                try
+                {
+                    var resultOther = await _context.Set<TotalBalanceResult>()
+                        .FromSqlRaw(otherSQL, new SqlParameter("@USER", userId))
+                        .FirstOrDefaultAsync();
+
+                    totalBalanceOther = resultOther?.Total ?? 0;
+
+                    var totals =
+                        new TotalsBalanceDTO
+                        {
+                            Asset = asset.Name,
+                            Symbol = asset.Symbol,
+                            Balance = totalBalanceOther
+                        };
+
+                    return totals;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error en consulta de {asset.Name}: {ex.Message}");
+                    throw;
+                }
+            }
+
+           
+
+
         }
 
         public async Task<IncExpStatsDTO> GetDollarIncExpStatsAsync(int userId, DateTime month)

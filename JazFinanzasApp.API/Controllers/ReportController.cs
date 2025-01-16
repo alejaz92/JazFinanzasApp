@@ -49,12 +49,25 @@ namespace JazFinanzasApp.API.Controllers
             }
             var userId = int.Parse(userIdClaim.Value);
 
+            // get the reference assets for the user
+            var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(userId);
+
 
             // Get the balance for the user by account
 
-            var balanceDTO = await _transactionRepository.GetTotalsBalanceByUserAsync(userId);
+            //create the ienumerable of balancedto
+            var balanceDTO = new List<TotalsBalanceDTO>();
+
+            foreach (var asset in referenceAssets)
+            {
+                var balance = await _transactionRepository.GetTotalsBalanceByUserAsync(userId, asset.Asset);
+                balanceDTO.Add(balance);
+            }
+
             return Ok(balanceDTO);
         }
+
+        
 
         [HttpGet("Balance/{id}")]
         public async Task<IActionResult> GetBalance(int id)
