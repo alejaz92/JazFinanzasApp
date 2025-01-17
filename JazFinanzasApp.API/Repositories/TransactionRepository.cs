@@ -973,7 +973,7 @@ namespace JazFinanzasApp.API.Repositories
                 {
                     Date = it.IncomeTransaction.Date,
                     Account = it.IncomeTransaction.Account.Name,
-                    MovementType = it.MovementType,
+                    MovementType = it.IncomeTransaction.AssetId == assetId ? "I" : "E",
                     CommerceType = it.CommerceType,
                     Quantity = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount : it.ExpenseTransaction.Amount),
                     QuotePrice = 1/ (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value),
