@@ -154,20 +154,16 @@ namespace JazFinanzasApp.API.Controllers
                 return BadRequest("No asset to unassign");
             }
 
-
-
-            // luego agregar chequeo de si el asset se puede borrar
-            bool hasTransactions = false;
-            if (hasTransactions)
+            // check if the asset is used in transactions
+            var isUsed = await _asset_UserRepository.IsAssetUserInUseAsync(int.Parse(userIdClaim.Value), assetId);
+            if (isUsed)
             {
-                return BadRequest("Asset has transactions, cannot be unassigned");
+                return BadRequest("Asset is used in transactions");
             }
-            else
-            {
 
-                await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
-                return Ok();
-            }
+            await _asset_UserRepository.UnassignAssetToUserAsync(int.Parse(userIdClaim.Value), assetId);
+            return Ok();
+            
 
 
 

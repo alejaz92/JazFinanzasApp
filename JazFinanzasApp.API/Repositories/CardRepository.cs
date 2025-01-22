@@ -13,6 +13,11 @@ namespace JazFinanzasApp.API.Repositories
             _context = context;
         }
 
+        // check if card is used in card transactions
+        public bool IsCardUsed(int cardId)
+        {
+            return _context.CardTransactions.Find(cardId) != null;
+        }
         
     }
 }

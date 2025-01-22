@@ -164,6 +164,12 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
+            var isTransactionClassInUse = await _transactionClassRepository.IsTransactionClassInUseAsync(id);
+            if (isTransactionClassInUse)
+            {
+                return BadRequest("Transaction Class is being used in transactions");
+            }
+
             await _transactionClassRepository.DeleteAsync(id);
 
             return Ok();

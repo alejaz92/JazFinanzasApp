@@ -8,7 +8,7 @@ namespace JazFinanzasApp.API.Interfaces
         Task<IEnumerable<Asset_User>> GetReferenceAssetsAsync(int userId);
         Task<Asset_User> GetUserAssetAsync(int userId, int assetId);
         Task<IEnumerable<Asset_User>> GetUserAssetsAsync(int userId, int assetTypeId);
-
+        Task<bool> IsAssetUserInUseAsync(int userId, int assetId);
         Task UnassignAssetToUserAsync(int userId, int assetId);
     }
 }

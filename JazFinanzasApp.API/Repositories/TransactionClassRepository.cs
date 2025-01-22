@@ -14,15 +14,18 @@ namespace JazFinanzasApp.API.Repositories
         {    
             _context = context;
         }
-
-
-
         public async Task<TransactionClass> GetTransactionClassByDescriptionAsync(string Description, int UserId)
         {
             return await _context.TransactionClasses
                 .FirstOrDefaultAsync(m => m.Description == Description && m.UserId == UserId);
         }
 
+        // check if a transaction class is being used in any transaction or card transaction
+        public async Task<bool> IsTransactionClassInUseAsync(int transactionClassId)
+        {
+            return await _context.Transactions.AnyAsync(t => t.TransactionClassId == transactionClassId) ||
+                   await _context.CardTransactions.AnyAsync(ct => ct.TransactionClassId == transactionClassId);
+        }
 
 
     }

@@ -24,5 +24,10 @@ namespace JazFinanzasApp.API.Repositories
                 .ToList();
                 
         }
+
+        //check if account used in transactions
+        public async Task<bool> IsAccountUsedInTransactions(int accountId) {
+            return await _context.Transactions.AnyAsync(t => t.AccountId == accountId);
+        }
     }
 }

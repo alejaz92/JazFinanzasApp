@@ -153,6 +153,11 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
+            if (_cardRepository.IsCardUsed(id))
+            {
+                return BadRequest("Card is used in transactions");
+            }
+
             await _cardRepository.DeleteAsync(id);
 
             return Ok();

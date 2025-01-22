@@ -150,6 +150,14 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
+            // check if account has transactions
+            var isUsed = await _accountRepository.IsAccountUsedInTransactions(id);
+            if (isUsed)
+            {
+                return BadRequest("Account is used in transactions");
+            }
+
+
             await _accountRepository.DeleteAsync(id);
             return Ok();
         }

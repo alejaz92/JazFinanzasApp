@@ -66,5 +66,16 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(au => au.isReference)
                 .ToListAsync();            
         }
+
+        // check if assset & user is used in transactions or card transactions
+        public async Task<bool> IsAssetUserInUseAsync(int userId, int assetId)
+        {
+            return await _context.Transactions
+                .AnyAsync(t => t.UserId == userId && t.AssetId == assetId) ||
+                await _context.CardTransactions
+                .AnyAsync(ct => ct.UserId == userId && ct.AssetId == assetId);
+        }
+
+
     }
 }
