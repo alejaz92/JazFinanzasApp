@@ -320,10 +320,77 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             transaction.Amount = transactionDTO.Amount;
+
+            if (transaction.TransactionClassId != transactionDTO.TransactionClassId)
+            {
+                var transactionClass = await _transactionClassRepository.GetByIdAsync(transactionDTO.TransactionClassId);
+                if (transactionClass == null)
+                {
+                    return NotFound();
+                }
+                if (transactionClass.UserId != userId)
+                {
+                    return Unauthorized();
+                }
+                transaction.TransactionClassId = transactionDTO.TransactionClassId;
+            }
+
+            if (transaction.AccountId != transactionDTO.AccountID)
+            {
+                var account = await _accountRepository.GetByIdAsync(transactionDTO.AccountID);
+                if (account == null)
+                {
+                    return NotFound();
+                }
+                if (account.UserId != userId)
+                {
+                    return Unauthorized();
+                }
+                transaction.AccountId = transactionDTO.AccountID;
+            }
+
+            // if the date and/or the asset are changed, the quote price must be recalculated
+            if (transaction.Date != transactionDTO.Date || transaction.AssetId != transactionDTO.AssetId)
+            {
+                var asset = await _assetRepository.GetByIdAsync(transactionDTO.AssetId);
+
+
+                string type;
+                
+                if (asset.Symbol == "ARS")
+                {
+                    type = "BLUE";
+                }
+                else
+                {
+                    type = "NA";
+                }
+                decimal quotePrice = 0;
+                if (asset.Symbol == "USD")
+                {
+                    quotePrice = 1;
+                }
+                else
+                {
+                    quotePrice = await _assetQuoteRepository.GetQuotePrice(asset.Id, transactionDTO.Date, type);
+                }                
+                
+
+                transaction.QuotePrice = quotePrice;
+                transaction.Date = transactionDTO.Date;
+                transaction.AssetId = transactionDTO.AssetId;
+            }
+
             if (transaction.MovementType == "E" && transaction.Amount > 0)
             {
                 transaction.Amount = -transactionDTO.Amount;
             }
+            else 
+            {
+                transaction.Amount = transactionDTO.Amount;
+            }
+
+            transaction.Detail = transactionDTO.Detail;
             transaction.UpdatedAt = DateTime.UtcNow;
 
             await _transactionRepository.UpdateAsync(transaction);
