@@ -153,7 +153,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            if (_cardRepository.IsCardUsed(id))
+            if ( await _cardRepository.IsCardUsed(id))
             {
                 return BadRequest("Card is used in transactions");
             }

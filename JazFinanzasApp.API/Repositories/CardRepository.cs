@@ -1,6 +1,7 @@
 ﻿using JazFinanzasApp.API.Data;
 using JazFinanzasApp.API.Interfaces;
 using JazFinanzasApp.API.Models.Domain;
+using Microsoft.EntityFrameworkCore;
 
 namespace JazFinanzasApp.API.Repositories
 {
@@ -12,12 +13,10 @@ namespace JazFinanzasApp.API.Repositories
         {    
             _context = context;
         }
-
-        // check if card is used in card transactions
-        public bool IsCardUsed(int cardId)
+        public async Task<bool> IsCardUsed(int cardId)
         {
-            return _context.CardTransactions.Find(cardId) != null;
+            return await _context.CardTransactions.AnyAsync(c => c.CardId == cardId);
         }
-        
+
     }
 }

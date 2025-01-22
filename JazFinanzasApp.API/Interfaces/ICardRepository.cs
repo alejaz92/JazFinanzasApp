@@ -4,6 +4,6 @@ namespace JazFinanzasApp.API.Interfaces
 {
     public interface ICardRepository : IGenericRepository<Card>
     {
-        bool IsCardUsed(int cardId);
+        Task<bool> IsCardUsed(int cardId);
     }
 }
