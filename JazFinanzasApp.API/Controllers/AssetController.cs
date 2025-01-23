@@ -276,6 +276,25 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     return BadRequest("Only 3 reference assets allowed");
                 }
+                if (referenceAssets.Count() == 0)
+                {
+                    user_asset.isMainReference = true;
+                }
+            } else
+            {
+                user_asset.isMainReference = false;
+
+                // check if there is another reference asset and assign it as main reference
+                var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(int.Parse(userIdClaim.Value));
+                if (referenceAssets.Count() > 0)
+                {
+                    var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(int.Parse(userIdClaim.Value));
+                    if (mainReferenceAsset == null)
+                    {
+                        referenceAssets.First().isMainReference = true;
+                        await _asset_UserRepository.UpdateAsync(referenceAssets.First());
+                    }
+                }
             }
 
             user_asset.isReference = assetDTO.IsReference;
@@ -302,11 +321,60 @@ namespace JazFinanzasApp.API.Controllers
                 Name = a.Asset.Name,
                 Symbol = a.Asset.Symbol,
                 AssetTypeName = a.Asset.AssetType.Name,
-                IsReference = a.isReference
-
+                IsReference = a.isReference,
+                IsMainReference = a.isMainReference
             }).ToList();
 
             return Ok(assetsDTO);
+        }
+
+        [HttpPut("updateMainReference")]
+        public async Task<IActionResult> UpdateMainReference([FromBody] AssetDTO assetDTO)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            if (assetDTO == null)
+            {
+                return BadRequest("No asset to update");
+            }
+
+            var asset = await _assetRepository.GetByIdAsync(assetDTO.Id);
+            if (asset == null)
+            {
+                return NotFound();
+            }
+
+            var user_asset = await _asset_UserRepository.GetUserAssetAsync(int.Parse(userIdClaim.Value), assetDTO.Id);
+            if (user_asset == null)
+            {
+                return NotFound();
+            }
+
+            // continue if it is reference
+            if (!user_asset.isReference)
+            {
+                return BadRequest("Asset is not a reference");
+            }
+
+            user_asset.isReference = assetDTO.IsReference;
+            await _asset_UserRepository.UpdateAsync(user_asset);
+
+            //set the main reference asset
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(int.Parse(userIdClaim.Value));
+            if (mainReferenceAsset != null)
+            {
+                mainReferenceAsset.isMainReference = false;
+                await _asset_UserRepository.UpdateAsync(mainReferenceAsset);
+            }
+
+            user_asset.isMainReference = true;
+            await _asset_UserRepository.UpdateAsync(user_asset);
+
+            return Ok();
         }
     }
 }

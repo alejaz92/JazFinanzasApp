@@ -24,8 +24,6 @@ namespace JazFinanzasApp.API.Repositories
                 .ToListAsync();
         }
 
-
-
         public async Task AssignAssetToUserAsync(int userId, int assetId)
         {
             var assetUser = new Asset_User
@@ -49,7 +47,6 @@ namespace JazFinanzasApp.API.Repositories
                 await _context.SaveChangesAsync();
             }
         }
-
         
         public async Task<Asset_User> GetUserAssetAsync(int userId, int assetId)
         {
@@ -67,13 +64,20 @@ namespace JazFinanzasApp.API.Repositories
                 .ToListAsync();            
         }
 
-        // check if assset & user is used in transactions or card transactions
         public async Task<bool> IsAssetUserInUseAsync(int userId, int assetId)
         {
             return await _context.Transactions
                 .AnyAsync(t => t.UserId == userId && t.AssetId == assetId) ||
                 await _context.CardTransactions
                 .AnyAsync(ct => ct.UserId == userId && ct.AssetId == assetId);
+        }
+
+        public async Task<Asset_User> GetMainReferenceAssetAsync(int userId)
+        {
+            return await _context.Assets_Users
+                .Include(au => au.Asset)
+                .Include(au => au.Asset.AssetType)
+                .FirstOrDefaultAsync(au => au.UserId == userId && au.isMainReference);
         }
 
 

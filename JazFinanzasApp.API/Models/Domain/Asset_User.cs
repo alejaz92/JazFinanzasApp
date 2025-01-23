@@ -19,5 +19,7 @@ namespace JazFinanzasApp.API.Models.Domain
         public Asset Asset { get; set; }
 
         public bool isReference { get; set; }
+
+        public bool isMainReference { get; set; }
     }
 }
