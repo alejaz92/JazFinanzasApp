@@ -779,41 +779,70 @@ namespace JazFinanzasApp.API.Repositories
             return incExpStatsDTO;
         }
 
-        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable)
-        {
-            var query = from transaction in _context.Transactions
-                        join asset in _context.Assets on transaction.AssetId equals asset.Id
-                        join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
-                        join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
-                        where transaction.UserId == userId
-                              && assetType.Environment == environment
-                              && (assetTypeId == 0 || asset.AssetTypeId == assetTypeId)
-                              && (considerStable == true || (asset.Symbol != "DAI" && asset.Symbol != "USDT"))
-                              && latestQuote.Date == _context.AssetQuotes
-                                  .Where(q => q.AssetId == transaction.AssetId)
-                                  .Max(q => q.Date)
-                        group new { transaction, latestQuote } by new
-                        {
-                            AssetName = asset.Name,
-                            Symbol = asset.Symbol
-                        } into grouped
-                        select new StockStatsListDTO
-                        {
-                            AssetName = grouped.Key.AssetName,
-                            Symbol = grouped.Key.Symbol,
-                            Quantity = grouped.Sum(x => x.transaction.Amount),
-                            OriginalValue = grouped.Sum(x => x.transaction.QuotePrice > 0
-                                                                ? x.transaction.Amount / x.transaction.QuotePrice.Value
-                                                                : 0),
-                            ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
-                                                                ? x.transaction.Amount / x.latestQuote.Value
-                                                                : 0)
-                        };
+        //public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
+        //    int userId, 
+        //    int assetTypeId, 
+        //    string environment, 
+        //    bool considerStable,
+        //    int ReferenceAssetId)
+        //{
+        //    var query = from transaction in _context.Transactions
+        //                join asset in _context.Assets on transaction.AssetId equals asset.Id
+        //                join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
+        //                join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
+        //                where transaction.UserId == userId
+        //                      && assetType.Environment == environment
+        //                      && (assetTypeId == 0 || asset.AssetTypeId == assetTypeId)
+        //                      && (considerStable == true || (asset.Symbol != "DAI" && asset.Symbol != "USDT"))
+        //                      && latestQuote.Date == _context.AssetQuotes
+        //                          .Where(q => q.AssetId == transaction.AssetId)
+        //                          .Max(q => q.Date)
+        //                group new { transaction, latestQuote } by new
+        //                {
+        //                    AssetName = asset.Name,
+        //                    Symbol = asset.Symbol
+        //                } into grouped
+        //                select new StockStatsListDTO
+        //                {
+        //                    AssetName = grouped.Key.AssetName,
+        //                    Symbol = grouped.Key.Symbol,
+        //                    Quantity = grouped.Sum(x => x.transaction.Amount),
+        //                    OriginalValue = grouped.Sum(x => x.transaction.QuotePrice > 0
+        //                                                        ? x.transaction.Amount / x.transaction.QuotePrice.Value
+        //                                                        : 0),
+        //                    ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
+        //                                                        ? x.transaction.Amount / x.latestQuote.Value
+        //                                                        : 0)
+        //                };
 
-            return await query
-                .Where(dto => dto.Quantity > 0)
-                .OrderByDescending(dto => dto.ActualValue).ToListAsync();
+        //    return await query
+        //        .Where(dto => dto.Quantity > 0)
+        //        .OrderByDescending(dto => dto.ActualValue).ToListAsync();
+        //}
+
+        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
+            int userId,
+            int assetTypeId,
+            string environment,
+            bool considerStable,
+            int referenceAssetId)
+        {
+            var userIdParam = new SqlParameter("@UserId", userId);
+            var assetTypeIdParam = new SqlParameter("@AssetTypeId", assetTypeId);
+            var environmentParam = new SqlParameter("@Environment", environment);
+            var considerStableParam = new SqlParameter("@ConsiderStable", considerStable);
+            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
+
+            var result = await _context.StockStatsListDTO
+                .FromSqlRaw("EXEC GetStockStats @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}",
+                            userId, assetTypeId, environment, considerStable, referenceAssetId)
+                .ToListAsync();
+
+            return (IEnumerable<StockStatsListDTO>)result;
         }
+
+
+
 
         public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment)
         {

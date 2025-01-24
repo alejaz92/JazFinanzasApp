@@ -113,14 +113,13 @@ namespace JazFinanzasApp.API.Controllers
                 Name = a.Asset.Name,
                 Symbol = a.Asset.Symbol,
                 AssetTypeName = a.Asset.AssetType.Name,
-                IsReference = a.isReference
+                IsReference = a.isReference,
+                IsMainReference = a.isMainReference
 
             }).ToList();
 
             return Ok(assetsDTO);
         }
-
-
 
         [HttpPost("assign-asset")]
         public async Task<IActionResult> AssignAsssetToUser([FromBody] int assetId)
@@ -169,7 +168,6 @@ namespace JazFinanzasApp.API.Controllers
 
         }
 
-
         [HttpGet("user-assetsByName/{assetTypeName}")]
         public async Task<IActionResult> GetUserAssetsByATName(string assetTypeName)
         {
@@ -200,7 +198,6 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok(assetsDTO);
         }
-
 
         [HttpGet("card")]
         public async Task<IActionResult> GetAssetsForCardTransactions()
@@ -282,24 +279,12 @@ namespace JazFinanzasApp.API.Controllers
                 }
             } else
             {
-                user_asset.isMainReference = false;
-
-                // check if there is another reference asset and assign it as main reference
-                var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(int.Parse(userIdClaim.Value));
-                if (referenceAssets.Count() > 0)
-                {
-                    var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(int.Parse(userIdClaim.Value));
-                    if (mainReferenceAsset == null)
-                    {
-                        referenceAssets.First().isMainReference = true;
-                        await _asset_UserRepository.UpdateAsync(referenceAssets.First());
-                    }
-                }
+                user_asset.isMainReference = false;                
             }
 
             user_asset.isReference = assetDTO.IsReference;
             await _asset_UserRepository.UpdateAsync(user_asset);
-       
+
             return Ok();
         }
 
@@ -314,6 +299,28 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             var referenceAssets = await _asset_UserRepository.GetReferenceAssetsAsync(int.Parse(userIdClaim.Value));
+
+            if (referenceAssets.Count() == 0)
+            {
+                var dollarAsset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+
+                if (dollarAsset == null)
+                {
+                    return NotFound();
+                };
+                referenceAssets.Aggregate(new List<Asset_User>(), (list, asset) =>
+                {
+                    list.Add(new Asset_User
+                    {
+                        AssetId = dollarAsset.Id,
+                        UserId = int.Parse(userIdClaim.Value),
+                        isReference = true,
+                        isMainReference = true
+                    });
+                    return list;
+                });
+
+            }
 
             var assetsDTO = referenceAssets.Select(a => new AssetDTO
             {
@@ -365,7 +372,7 @@ namespace JazFinanzasApp.API.Controllers
 
             //set the main reference asset
             var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(int.Parse(userIdClaim.Value));
-            if (mainReferenceAsset != null)
+            if (mainReferenceAsset != null && assetDTO.IsMainReference && mainReferenceAsset.AssetId != assetDTO.Id)
             {
                 mainReferenceAsset.isMainReference = false;
                 await _asset_UserRepository.UpdateAsync(mainReferenceAsset);

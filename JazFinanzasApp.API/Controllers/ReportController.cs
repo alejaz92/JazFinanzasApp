@@ -74,9 +74,7 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             return Ok(balanceDTO);
-        }
-
-        
+        }        
 
         [HttpGet("Balance/{id}")]
         public async Task<IActionResult> GetBalance(int id)
@@ -103,7 +101,6 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok(balanceDTO);
         }
-
 
         [HttpGet("IncExpStats")]
         public async Task<IActionResult> GetIncExpStats([FromQuery] DateTime month, [FromQuery] int assetId)
@@ -225,7 +222,21 @@ namespace JazFinanzasApp.API.Controllers
                 return NotFound();
             }
 
-            var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA", false);
+            // get main reference asset
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId = mainReferenceAsset.AssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                // get dolar estadouniendese as main reference asset
+                var dollarMainReferenceAsset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollarMainReferenceAsset.Id;
+            }; 
+
+
+
+
+            var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA", false, mainReferenceAssetId);
 
             var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
 
@@ -250,7 +261,20 @@ namespace JazFinanzasApp.API.Controllers
 
             AssetType cryptoAsset = await _assetTypeRepository.GetByName("Criptomoneda");
 
-            var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, includeStables);
+            // get main reference asset
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId = mainReferenceAsset.AssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                // get dolar estadouniendese as main reference asset
+                var dollarMainReferenceAsset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollarMainReferenceAsset.Id;
+            };
+
+
+
+            var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, includeStables, mainReferenceAssetId);
             var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables);    
             var CryptoPurchasesStatsByMonth = await _transactionRepository.GetInvestmentsHoldingsStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12);
 
@@ -322,8 +346,20 @@ namespace JazFinanzasApp.API.Controllers
 
             AssetType cryptoAsset = await _assetTypeRepository.GetByName("Criptomoneda");
 
+            // get main reference asset
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId = mainReferenceAsset.AssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                // get dolar estadouniendese as main reference asset
+                var dollarMainReferenceAsset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollarMainReferenceAsset.Id;
+            };
+
+
             var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
-            var cryptoStatsGral = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, "CRYPTO", true);
+            var cryptoStatsGral = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, "CRYPTO", true, mainReferenceAssetId);
 
             var homeStatsDTO = new HomeStatsDTO
             {
@@ -332,9 +368,7 @@ namespace JazFinanzasApp.API.Controllers
             };
 
             return Ok(homeStatsDTO);
-        }
-
-       
+        }      
             
     }
 }

@@ -26,12 +26,15 @@ namespace JazFinanzasApp.API.Data
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
         public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
         public DbSet<BondPayment> BondPayments { get; set; }
+        public DbSet<StockStatsListDTO> StockStatsListDTO { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
             modelBuilder.Entity<TotalBalanceResult>().HasNoKey();
+
+            modelBuilder.Entity<StockStatsListDTO>().HasNoKey();
 
             modelBuilder.Entity<AssetType>().HasData(
                 new AssetType {Id= 1, Name = "Moneda", Environment = "FIAT" },
