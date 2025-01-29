@@ -844,75 +844,75 @@ namespace JazFinanzasApp.API.Repositories
 
         public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
         {
-            //var result = await _context.CryptoStatsByDateCommerceDTO
-            //    .FromSqlRaw("EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
-            //                userId, assetTypeId, environment, considerStable, months, referenceId)
-            //    .ToListAsync();
+            var result = await _context.CryptoStatsByDateCommerceDTO
+                .FromSqlRaw("EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
+                            userId, assetTypeId, environment, considerStable, months, referenceId)
+                .ToListAsync();
 
-            //return (IEnumerable<CryptoStatsByDateCommerceDTO>)result;
-            // Calcula las fechas del rango: mes actual y los últimos 5 meses
-            DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
-            DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
+            return (IEnumerable<CryptoStatsByDateCommerceDTO>)result;
+            //// Calcula las fechas del rango: mes actual y los últimos 5 meses
+            //DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
+            //DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
 
-            // Generar la lista de meses en el rango
-            var monthsRange = Enumerable.Range(0, months)
-                .Select(offset => startDate.AddMonths(offset))
-                .Select(date => new { Year = date.Year, Month = date.Month })
-                .ToList();
+            //// Generar la lista de meses en el rango
+            //var monthsRange = Enumerable.Range(0, months)
+            //    .Select(offset => startDate.AddMonths(offset))
+            //    .Select(date => new { Year = date.Year, Month = date.Month })
+            //    .ToList();
 
-            // Consulta para obtener los movimientos agrupados por mes y tipo de comercio
-            var query = from t in _context.Transactions
-                        join it in _context.InvestmentTransactions on t.Id equals it.IncomeTransactionId into itIncome
-                        from iti in itIncome.DefaultIfEmpty()
-                        join it2 in _context.InvestmentTransactions on t.Id equals it2.ExpenseTransactionId into itExpense
-                        from ite in itExpense.DefaultIfEmpty()
-                        join a in _context.Assets on t.AssetId equals a.Id
-                        join at in _context.AssetTypes on a.AssetTypeId equals at.Id
-                        where t.UserId == userId &&
-                              t.Date >= startDate &&
-                              t.Date <= endDate &&
-                              //(assetId == 0 || a.Id == assetId) &&
-                              //(considerStable == true || (a.Symbol != "DAI" && a.Symbol != "USDT")) &&
-                              at.Environment == environment &&
-                              at.Id == assetTypeId &&
-                              (iti != null || ite != null) &&
-                              (iti == null || iti.MovementType != "EX") &&
-                              (ite == null || ite.MovementType != "EX")
-                        select new
-                        {
-                            t.Date.Year,
-                            t.Date.Month,
-                            CommerceType = iti != null ? iti.CommerceType : ite.CommerceType,
-                            Value = t.Amount / t.QuotePrice
-                        };
+            //// Consulta para obtener los movimientos agrupados por mes y tipo de comercio
+            //var query = from t in _context.Transactions
+            //            join it in _context.InvestmentTransactions on t.Id equals it.IncomeTransactionId into itIncome
+            //            from iti in itIncome.DefaultIfEmpty()
+            //            join it2 in _context.InvestmentTransactions on t.Id equals it2.ExpenseTransactionId into itExpense
+            //            from ite in itExpense.DefaultIfEmpty()
+            //            join a in _context.Assets on t.AssetId equals a.Id
+            //            join at in _context.AssetTypes on a.AssetTypeId equals at.Id
+            //            where t.UserId == userId &&
+            //                  t.Date >= startDate &&
+            //                  t.Date <= endDate &&
+            //                  //(assetId == 0 || a.Id == assetId) &&
+            //                  //(considerStable == true || (a.Symbol != "DAI" && a.Symbol != "USDT")) &&
+            //                  at.Environment == environment &&
+            //                  at.Id == assetTypeId &&
+            //                  (iti != null || ite != null) &&
+            //                  (iti == null || iti.MovementType != "EX") &&
+            //                  (ite == null || ite.MovementType != "EX")
+            //            select new
+            //            {
+            //                t.Date.Year,
+            //                t.Date.Month,
+            //                CommerceType = iti != null ? iti.CommerceType : ite.CommerceType,
+            //                Value = t.Amount / t.QuotePrice
+            //            };
 
-            // Agrupar los movimientos
-            var groupedData = query.AsEnumerable()
-                .GroupBy(x => new { x.Year, x.Month, x.CommerceType })
-                .Select(g => new CryptoStatsByDateCommerceDTO
-                {
-                    Date = new DateTime(g.Key.Year, g.Key.Month, 1),
-                    CommerceType = g.Key.CommerceType,
-                    Value = (decimal)g.Sum(x => x.Value)
-                })
-                .ToList();
+            //// Agrupar los movimientos
+            //var groupedData = query.AsEnumerable()
+            //    .GroupBy(x => new { x.Year, x.Month, x.CommerceType })
+            //    .Select(g => new CryptoStatsByDateCommerceDTO
+            //    {
+            //        Date = new DateTime(g.Key.Year, g.Key.Month, 1),
+            //        CommerceType = g.Key.CommerceType,
+            //        Value = (decimal)g.Sum(x => x.Value)
+            //    })
+            //    .ToList();
 
-            // Combinar con los meses en el rango para incluir los meses sin movimientos
-            var result = (from month in monthsRange
-                          from commerceType in groupedData.Select(g => g.CommerceType).Distinct().DefaultIfEmpty()
-                          join data in groupedData on new { month.Year, month.Month, CommerceType = commerceType }
-                              equals new { data.Date.Year, data.Date.Month, data.CommerceType } into joined
-                          from j in joined.DefaultIfEmpty()
-                          select new CryptoStatsByDateCommerceDTO
-                          {
-                              Date = new DateTime(month.Year, month.Month, 1),
-                              CommerceType = commerceType ?? "",
-                              Value = j?.Value ?? 0
-                          })
-                          .OrderBy(r => r.Date)
-                          .ToList();
+            //// Combinar con los meses en el rango para incluir los meses sin movimientos
+            //var result = (from month in monthsRange
+            //              from commerceType in groupedData.Select(g => g.CommerceType).Distinct().DefaultIfEmpty()
+            //              join data in groupedData on new { month.Year, month.Month, CommerceType = commerceType }
+            //                  equals new { data.Date.Year, data.Date.Month, data.CommerceType } into joined
+            //              from j in joined.DefaultIfEmpty()
+            //              select new CryptoStatsByDateCommerceDTO
+            //              {
+            //                  Date = new DateTime(month.Year, month.Month, 1),
+            //                  CommerceType = commerceType ?? "",
+            //                  Value = j?.Value ?? 0
+            //              })
+            //              .OrderBy(r => r.Date)
+            //              .ToList();
 
-            return result;
+            //return result;
         }
 
         public async Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
