@@ -13,11 +13,11 @@ namespace JazFinanzasApp.API.Interfaces
         Task<IncExpStatsDTO> GetPesosIncExpStatsAsync(int userId, DateTime month);
         Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable,
             int referenceAssetId);
-        Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment);
-        Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable);
-        Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months);
-        Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId);
+        Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment, int referenceAssetId);
+        Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int referenceAssetId);
+        Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId);
+        Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId);
         Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset);
-        Task<decimal> GetAverageBuyValue(int userId, int assetId);
+        Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId);
     }
 }

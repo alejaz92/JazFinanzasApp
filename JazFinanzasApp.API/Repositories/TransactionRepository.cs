@@ -779,47 +779,6 @@ namespace JazFinanzasApp.API.Repositories
             return incExpStatsDTO;
         }
 
-        //public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
-        //    int userId, 
-        //    int assetTypeId, 
-        //    string environment, 
-        //    bool considerStable,
-        //    int ReferenceAssetId)
-        //{
-        //    var query = from transaction in _context.Transactions
-        //                join asset in _context.Assets on transaction.AssetId equals asset.Id
-        //                join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
-        //                join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
-        //                where transaction.UserId == userId
-        //                      && assetType.Environment == environment
-        //                      && (assetTypeId == 0 || asset.AssetTypeId == assetTypeId)
-        //                      && (considerStable == true || (asset.Symbol != "DAI" && asset.Symbol != "USDT"))
-        //                      && latestQuote.Date == _context.AssetQuotes
-        //                          .Where(q => q.AssetId == transaction.AssetId)
-        //                          .Max(q => q.Date)
-        //                group new { transaction, latestQuote } by new
-        //                {
-        //                    AssetName = asset.Name,
-        //                    Symbol = asset.Symbol
-        //                } into grouped
-        //                select new StockStatsListDTO
-        //                {
-        //                    AssetName = grouped.Key.AssetName,
-        //                    Symbol = grouped.Key.Symbol,
-        //                    Quantity = grouped.Sum(x => x.transaction.Amount),
-        //                    OriginalValue = grouped.Sum(x => x.transaction.QuotePrice > 0
-        //                                                        ? x.transaction.Amount / x.transaction.QuotePrice.Value
-        //                                                        : 0),
-        //                    ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
-        //                                                        ? x.transaction.Amount / x.latestQuote.Value
-        //                                                        : 0)
-        //                };
-
-        //    return await query
-        //        .Where(dto => dto.Quantity > 0)
-        //        .OrderByDescending(dto => dto.ActualValue).ToListAsync();
-        //}
-
         public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
             int userId,
             int assetTypeId,
@@ -841,97 +800,62 @@ namespace JazFinanzasApp.API.Repositories
             return (IEnumerable<StockStatsListDTO>)result;
         }
 
-
-
-
-        public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment)
+        public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(
+            int userId, 
+            string environment,
+            int referenceAssetId)
         {
+            var userIdParam = new SqlParameter("@UserId", userId);
+            var environmentParam = new SqlParameter("@Environment", environment);
+            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
 
-           var query = from transaction in _context.Transactions
-                        join asset in _context.Assets on transaction.AssetId equals asset.Id
-                        join assetType in _context.AssetTypes on asset.AssetTypeId equals assetType.Id
-                        join latestQuote in _context.AssetQuotes on transaction.AssetId equals latestQuote.AssetId
-                        where transaction.UserId == userId
-                              && assetType.Environment == environment
-                              && latestQuote.Date == _context.AssetQuotes
-                                  .Where(q => q.AssetId == transaction.AssetId)
-                                  .Max(q => q.Date)
-                        group new { transaction, latestQuote } by new
-                        {
-                            AssetType = assetType.Name
-                        } into grouped
-                        select new StocksGralStatsDTO
-                        {
-                            AssetType = grouped.Key.AssetType,
-                            OriginalValue = grouped.Sum(x => x.transaction.QuotePrice.HasValue && x.transaction.QuotePrice > 0
-                                    ? x.transaction.Amount / x.transaction.QuotePrice.Value
-                                    : 0),
-                            ActualValue = grouped.Sum(x => x.latestQuote.Value > 0
-                                                                ? x.transaction.Amount / x.latestQuote.Value
-                                                                : 0)
-                        };
+            var result = await _context.StocksGralStatsDTO
+                .FromSqlRaw("EXEC GetStockGralStats @UserId = {0}, @Environment = {1}, @ReferenceAssetId = {2}",
+                            userId, environment, referenceAssetId)
+                .ToListAsync();
 
-            return await query.OrderByDescending(dto => dto.ActualValue).ToListAsync();
+            return (IEnumerable<StocksGralStatsDTO>)result;
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable)
+        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(
+            int userId, 
+            int assetTypeId, 
+            string environment, 
+            int? assetId, 
+            bool considerStable,
+            int referenceAssetId)
         {
-            // Paso 1: Obtener las transacciones acumuladas por activo y fecha
-            var accumulatedTransactions = await _context.Transactions
-                .Where(t => t.UserId == userId)
-                .Where(t => t.Asset.AssetType.Id == assetTypeId &&
-                            t.Asset.AssetType.Environment == environment &&
-                            (assetId == 0 || t.Asset.Id == assetId) && 
-                            (considerStable == true || (t.Asset.Symbol != "DAI" && t.Asset.Symbol != "USDT")))
-                .GroupBy(t => new { t.AssetId, t.Date })
-                .Select(g => new
-                {
-                    g.Key.AssetId,
-                    g.Key.Date,
-                    AccumulatedAmount = g.Sum(t => t.Amount)
-                })
+
+            var userIdParam = new SqlParameter("@UserId", userId);
+            var assetTypeIdParam = new SqlParameter("@AssetTypeId", assetTypeId);
+            var environmentParam = new SqlParameter("@Environment", environment);
+            var considerStableParam = new SqlParameter("@ConsiderStable", considerStable);
+            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
+            var assetIdParam = new SqlParameter("@AssetId", assetId.HasValue ? assetId : 0);
+
+            var result = await _context.CryptoStatsByDateDTO
+                .FromSqlRaw("EXEC GetCryptoStatsByDate @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}, @AssetId = {5}",
+                            userId, assetTypeId, environment, considerStable, referenceAssetId, assetId)
                 .ToListAsync();
 
-            // Materializar los datos para evitar problemas de traducción
-            var accumulatedTransactionsLookup = accumulatedTransactions
-                .ToLookup(at => at.AssetId);
-
-            // Paso 2: Obtener las cotizaciones de los activos
-            var assetQuotes = await _context.AssetQuotes
-                .Where(q => q.Asset.AssetType.Id == assetTypeId &&
-                            q.Asset.AssetType.Environment == environment &&
-                            (assetId == 0 || q.Asset.Id == assetId) &&
-                            (considerStable == true || (q.Asset.Symbol != "DAI" && q.Asset.Symbol != "USDT")))
-                .ToListAsync();
-
-            // Paso 3: Calcular las tenencias diarias en dólares en memoria
-            var dailyHoldings = assetQuotes
-                .GroupBy(q => q.Date)
-                .Select(g => new CryptoStatsByDateDTO
-                {
-                    Date = g.Key,
-                    Value = g.Sum(q =>
-                    {
-                        var transactionsForAsset = accumulatedTransactionsLookup[q.AssetId];
-                        return transactionsForAsset
-                            .Where(at => at.Date <= q.Date)
-                            .Sum(at => at.AccumulatedAmount) / q.Value; // Division para valor en dólares
-                    })
-                })
-                .ToList();
-
-            return dailyHoldings;
+            return (IEnumerable<CryptoStatsByDateDTO>)result;
 
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months)
+        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
         {
+            //var result = await _context.CryptoStatsByDateCommerceDTO
+            //    .FromSqlRaw("EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
+            //                userId, assetTypeId, environment, considerStable, months, referenceId)
+            //    .ToListAsync();
+
+            //return (IEnumerable<CryptoStatsByDateCommerceDTO>)result;
             // Calcula las fechas del rango: mes actual y los últimos 5 meses
             DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
-            DateTime startDate = endDate.AddMonths(-(months-1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
+            DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
 
             // Generar la lista de meses en el rango
-            var monthsRange = Enumerable.Range(0, months )
+            var monthsRange = Enumerable.Range(0, months)
                 .Select(offset => startDate.AddMonths(offset))
                 .Select(date => new { Year = date.Year, Month = date.Month })
                 .ToList();
@@ -991,7 +915,7 @@ namespace JazFinanzasApp.API.Repositories
             return result;
         }
 
-        public async Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId)
+        public async Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
         {
             var transactions = _context.InvestmentTransactions
                 .Include(it => it.IncomeTransaction)
@@ -1005,23 +929,53 @@ namespace JazFinanzasApp.API.Repositories
                     MovementType = it.IncomeTransaction.AssetId == assetId ? "I" : "E",
                     CommerceType = it.CommerceType,
                     Quantity = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount : it.ExpenseTransaction.Amount),
-                    QuotePrice = 1/ (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value),
-                    Total = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1/(it.IncomeTransaction.QuotePrice.Value) : it.ExpenseTransaction.Amount * 1/(it.ExpenseTransaction.QuotePrice.Value))
-
+                    QuotePrice = (1/ (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value)) *
+                        (
+                            _context.AssetQuotes
+                                .Where(aq => aq.Asset.Id == referenceAssetId)
+                                .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
+                                .Where(aq => aq.Date <= it.IncomeTransaction.Date)
+                                .OrderByDescending(aq => aq.Date)
+                                .Select(aq => aq.Value)
+                                .FirstOrDefault()
+                        ),
+                    Total = (Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1/(it.IncomeTransaction.QuotePrice.Value) : it.ExpenseTransaction.Amount * 1/(it.ExpenseTransaction.QuotePrice.Value))) *
+                        (
+                            _context.AssetQuotes
+                                .Where(aq => aq.Asset.Id == referenceAssetId)
+                                .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
+                                .Where(aq => aq.Date <= it.IncomeTransaction.Date)
+                                .OrderByDescending(aq => aq.Date)
+                                .Select(aq => aq.Value)
+                                .FirstOrDefault()
+                        )
+                 
                 });
 
             return await transactions.OrderByDescending(t => t.Date).ToListAsync();
 
         }
 
-        public async Task<decimal> GetAverageBuyValue(int userId, int assetId)
+        public async Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId)
         {
-            var transactions = _context.Transactions
+            var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
                 .Where(t => t.AssetId == assetId)
                 .Where(t => t.QuotePrice.HasValue)
-                .Select(t => t.Amount / t.QuotePrice.Value);
-            var total = await transactions.SumAsync();
+                .ToListAsync(); // Traer los datos a memoria antes de hacer cálculos
+
+            var total = transactions.Sum(t =>
+            {
+                var referenceValue = _context.AssetQuotes
+                    .Where(aq => aq.Asset.Id == referenceAssetId)
+                    .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
+                    .Where(aq => aq.Date <= t.Date)
+                    .OrderByDescending(aq => aq.Date)
+                    .Select(aq => aq.Value)
+                    .FirstOrDefault();
+
+                return (t.Amount / t.QuotePrice.Value) * referenceValue;
+            });
 
             return total;
         }

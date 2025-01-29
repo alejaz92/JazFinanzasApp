@@ -238,7 +238,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var stockStats = await _transactionRepository.GetStockStatsAsync(userId, id, "BOLSA", false, mainReferenceAssetId);
 
-            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
+            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA", mainReferenceAssetId);
 
             var stockStatsDTO = new StockStatsDTO
             {
@@ -275,8 +275,8 @@ namespace JazFinanzasApp.API.Controllers
 
 
             var CryptoGralStats = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, includeStables, mainReferenceAssetId);
-            var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables);    
-            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetInvestmentsHoldingsStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12);
+            var CryptoStatsByDate = await _transactionRepository.GetCryptoStatsByDateAsync(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, mainReferenceAssetId);    
+            var CryptoPurchasesStatsByMonth = await _transactionRepository.GetInvestmentsHoldingsStats(userId, cryptoAsset.Id, cryptoAsset.Environment, 0, includeStables, 12, mainReferenceAssetId);
 
 
             var CryptoGralStatsDTO = new CryptoGralStatsDTO
@@ -306,13 +306,25 @@ namespace JazFinanzasApp.API.Controllers
                 return NotFound();
             }
 
-            var cryptoEvolution = await _assetQuoteRepository.GetAssetEvolutionStats(id, 6);
+            // get main reference asset
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId = mainReferenceAsset.AssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                // get dolar estadouniendese as main reference asset
+                var dollarMainReferenceAsset = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollarMainReferenceAsset.Id;
+            };
+
+
+            var cryptoEvolution = await _assetQuoteRepository.GetAssetEvolutionStats(id, 6, mainReferenceAssetId);
 
             var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(id, userId);
-            var cryptoTransactionsStats = await _transactionRepository.GetInvestmentsTransactionsStats(userId, id);
-            var cryptoStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "CRIPTO");
-            var CryptoStatsEvolution = await _transactionRepository.GetCryptoStatsByDateAsync(userId, asset.AssetTypeId, "CRYPTO", id, true); 
-            var averageBuyValue = await _transactionRepository.GetAverageBuyValue(userId, id);
+            var cryptoTransactionsStats = await _transactionRepository.GetInvestmentsTransactionsStats(userId, id, mainReferenceAssetId);
+            //var cryptoStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "CRIPTO", mainReferenceAssetId);
+            var CryptoStatsEvolution = await _transactionRepository.GetCryptoStatsByDateAsync(userId, asset.AssetTypeId, "CRYPTO", id, true, mainReferenceAssetId); 
+            var averageBuyValue = await _transactionRepository.GetAverageBuyValue(userId, id, mainReferenceAssetId);
 
             var cryptoRangeStats = new InvestmentRangeValuesStatsDTO
             {
@@ -358,7 +370,7 @@ namespace JazFinanzasApp.API.Controllers
             };
 
 
-            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA");
+            var stockStatsGral = await _transactionRepository.GetStocksGralStatsAsync(userId, "BOLSA", mainReferenceAssetId);
             var cryptoStatsGral = await _transactionRepository.GetStockStatsAsync(userId, cryptoAsset.Id, "CRYPTO", true, mainReferenceAssetId);
 
             var homeStatsDTO = new HomeStatsDTO

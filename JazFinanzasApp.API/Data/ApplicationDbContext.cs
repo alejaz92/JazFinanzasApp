@@ -27,6 +27,9 @@ namespace JazFinanzasApp.API.Data
         public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
         public DbSet<BondPayment> BondPayments { get; set; }
         public DbSet<StockStatsListDTO> StockStatsListDTO { get; set; }
+        public DbSet<StocksGralStatsDTO> StocksGralStatsDTO { get; set; }
+        public DbSet<CryptoStatsByDateDTO> CryptoStatsByDateDTO { get; set; }
+        public DbSet<CryptoStatsByDateCommerceDTO> CryptoStatsByDateCommerceDTO { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -35,6 +38,10 @@ namespace JazFinanzasApp.API.Data
             modelBuilder.Entity<TotalBalanceResult>().HasNoKey();
 
             modelBuilder.Entity<StockStatsListDTO>().HasNoKey();
+
+            modelBuilder.Entity<StocksGralStatsDTO>().HasNoKey();
+            modelBuilder.Entity<CryptoStatsByDateDTO>().HasNoKey();
+            modelBuilder.Entity<CryptoStatsByDateCommerceDTO>().HasNoKey();
 
             modelBuilder.Entity<AssetType>().HasData(
                 new AssetType {Id= 1, Name = "Moneda", Environment = "FIAT" },

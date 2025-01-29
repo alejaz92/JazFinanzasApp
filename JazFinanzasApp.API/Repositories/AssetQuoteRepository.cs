@@ -46,7 +46,7 @@ namespace JazFinanzasApp.API.Repositories
             
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetAssetEvolutionStats(int CryptoId, int monthsQuantity)
+        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetAssetEvolutionStats(int CryptoId, int monthsQuantity, int referenceAssetId)
         { 
             var dateThreshold = DateTime.Now.AddMonths(-monthsQuantity);
 
@@ -57,7 +57,13 @@ namespace JazFinanzasApp.API.Repositories
                 .Select(aq => new CryptoStatsByDateDTO
                 {
                     Date = aq.Date,
-                    Value = 1/ aq.Value
+                    Value = (1 / aq.Value) * (_context.AssetQuotes
+                        .Where(aq2 => aq2.Asset.Id == referenceAssetId)
+                        .Where(aq2 => aq2.Type == "NA" || aq2.Type == "BLUE")
+                        .Where(aq2 => aq2.Date <= aq.Date)
+                        .OrderByDescending(aq2 => aq2.Date)
+                        .Select(aq2 => aq2.Value)
+                        .FirstOrDefault())
                 })
                 .ToListAsync();
 
