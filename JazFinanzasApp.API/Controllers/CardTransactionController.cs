@@ -253,7 +253,7 @@ namespace JazFinanzasApp.API.Controllers
                     cardTransaction.TransactionClass = transactionClass.Description;
 
 
-
+                    //aca hay que revisar
                     var transaction = CreateTransaction(cardTransactionsPaymentDTO, cardTransaction, userId, peso, dolar, quotePrice);
 
                     await _transactionRepository.AddAsyncTransaction(transaction);
@@ -325,7 +325,7 @@ namespace JazFinanzasApp.API.Controllers
                 TransactionClassId = cardTransactionsPaymentListDTO.TransactionClassId,
                 MovementType = "E",
                 UserId = userId,
-                Amount = cardTransactionsPaymentListDTO.Asset == "Dolar Estadounidense" && cardTransactionspaymentDTO.PaymentAsset == "P+D" ?
+                Amount = cardTransactionspaymentDTO.PaymentAsset == "P+D" ?
                  -cardTransactionsPaymentListDTO.InstallmentAmount : -cardTransactionsPaymentListDTO.ValueInPesos,
                 AssetId = cardTransactionsPaymentListDTO.Asset == "Dolar Estadounidense" && cardTransactionspaymentDTO.PaymentAsset == "P+D" ? dolar.Id : peso.Id,
                 QuotePrice = quotePrice
