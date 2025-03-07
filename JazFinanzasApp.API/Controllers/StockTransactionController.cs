@@ -131,8 +131,8 @@ namespace JazFinanzasApp.API.Controllers
                             MovementType = "E",
                             TransactionClassId = null,
                             Detail = stockTransactionDto.CommerceType,
-                            Amount = -(1/ stockTransactionDto.ExpenseQuantity.Value),
-                            QuotePrice = stockTransactionDto.ExpenseQuotePrice.Value,
+                            Amount = -(stockTransactionDto.ExpenseQuantity.Value),
+                            QuotePrice = 1 / stockTransactionDto.ExpenseQuotePrice.Value,
                             UserId = userId
                         };
 
