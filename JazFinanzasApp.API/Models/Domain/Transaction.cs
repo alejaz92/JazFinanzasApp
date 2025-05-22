@@ -13,6 +13,11 @@ namespace JazFinanzasApp.API.Models.Domain
         public int AccountId { get; set; }
         public Account Account { get; set; }
 
+
+        [ForeignKey("PortfolioId")]
+        public int? PortfolioId { get; set; }
+        public Portfolio? Portfolio { get; set; }
+
         [Required]
         [ForeignKey("AssetId")]
         public int AssetId { get; set; }

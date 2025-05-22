@@ -30,6 +30,7 @@ namespace JazFinanzasApp.API.Data
         public DbSet<StocksGralStatsDTO> StocksGralStatsDTO { get; set; }
         public DbSet<CryptoStatsByDateDTO> CryptoStatsByDateDTO { get; set; }
         public DbSet<CryptoStatsByDateCommerceDTO> CryptoStatsByDateCommerceDTO { get; set; }
+        public DbSet<Portfolio> Portfolios { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -127,6 +128,11 @@ namespace JazFinanzasApp.API.Data
                 .HasOne(cm => cm.Asset)
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(cm => cm.AssetId)
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+            modelBuilder.Entity<Transaction>()
+                .HasOne(cm => cm.Portfolio)
+                .WithMany() // Si no hay colección en User
+                .HasForeignKey(cm => cm.PortfolioId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.TransactionClass)
