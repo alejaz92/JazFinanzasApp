@@ -21,10 +21,12 @@ namespace JazFinanzasApp.API.Controllers
 
         private readonly IUserRepository _userRepository;
         private readonly ITransactionClassRepository _transactionClassRepository;
-        public AuthController(IUserRepository userRepository, ITransactionClassRepository transactionClassRepository)
+        private readonly IPortfolioRepository _portfolioRepository;
+        public AuthController(IUserRepository userRepository, ITransactionClassRepository transactionClassRepository, IPortfolioRepository portfolioRepository)
         {
             _userRepository = userRepository;
             _transactionClassRepository = transactionClassRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
         [HttpPost("register")]
@@ -38,6 +40,15 @@ namespace JazFinanzasApp.API.Controllers
 
             if (result.Result.Succeeded)
             {
+                // Crear el portafolio por defecto al crear un usuario
+                var portfolio = new Portfolio
+                {
+                    Name = "Default",
+                    UserId = result.UserId,
+                    IsDefault = true
+                };
+                await _portfolioRepository.AddAsync(portfolio);
+
                 // al crear un usuario se le deben crear 2 clases de movimiento al usuario "Ajuste Saldo Ingreso", "Ajuste Saldo Egreso"
 
                 var transactionClassInc = new TransactionClass

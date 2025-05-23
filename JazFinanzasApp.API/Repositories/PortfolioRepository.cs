@@ -18,5 +18,14 @@ namespace JazFinanzasApp.API.Repositories
         public async Task<bool> IsPortfolioUsedInTransactions(int portfolioId) {
             return await _context.Transactions.AnyAsync(t => t.PortfolioId == portfolioId);
         }
+
+        // get users default portfolio
+        public async Task<Portfolio> GetDefaultPortfolio(int userId)
+        {
+            return await _context.Portfolios
+                .Where(p => p.UserId == userId)
+                .Where(p => p.IsDefault)
+                .FirstOrDefaultAsync();
+        }
     }
 }
