@@ -39,6 +39,7 @@ builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
 builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository>();
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
 builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
+builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
 
 builder.Services.AddIdentityCore<User>()
     .AddTokenProvider<DataProtectorTokenProvider<User>>("JazFinanzasApp")
