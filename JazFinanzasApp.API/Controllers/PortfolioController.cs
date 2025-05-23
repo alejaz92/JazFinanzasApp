@@ -33,7 +33,8 @@ namespace JazFinanzasApp.API.Controllers
             var portfoliosDTO = portfolios.Select(p => new PortfolioDTO
             {
                 Id = p.Id,
-                Name = p.Name
+                Name = p.Name,
+                IsDefault = p.IsDefault
             }).ToList();
             return Ok(portfoliosDTO);
         }
