@@ -108,6 +108,16 @@ namespace JazFinanzasApp.API.Controllers
                 return BadRequest("Invalid income portfolio.");
             }
 
+            // validate enaugh balance in expense portfolio
+            if (transactionDTO.ExpensePortfolioID.HasValue)
+            {
+                var expenseBalance = await _transactionRepository.GetBalance(transactionDTO.AccountId, transactionDTO.AssetId, transactionDTO.ExpensePortfolioID.Value);
+                if (expenseBalance < transactionDTO.Amount)
+                {
+                    return BadRequest("Not enough balance in expense portfolio.");
+                }
+            }
+
             // get quotePrice average
             var quotePrice = await _transactionRepository.GetAverageQuotePrice(transactionDTO.AccountId, transactionDTO.AssetId, transactionDTO.ExpensePortfolioID.Value);
 
