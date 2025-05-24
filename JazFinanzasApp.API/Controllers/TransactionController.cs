@@ -22,9 +22,9 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IInvestmentTransactionRepository _investmentTransactionRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         public TransactionController(
-            ITransactionRepository transactionRepository, 
+            ITransactionRepository transactionRepository,
             IAssetRepository assetRepository,
-            IAccountRepository accountRepository, 
+            IAccountRepository accountRepository,
             ITransactionClassRepository transactionClassRepository,
             IAssetQuoteRepository assetQuoteRepository,
             IInvestmentTransactionRepository investmentTransactionRepository,
@@ -51,7 +51,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            
+
             var (transactions, totalCount) = await _transactionRepository.GetPaginatedTransactions(userId, page, pageSize);
 
 
@@ -136,7 +136,7 @@ namespace JazFinanzasApp.API.Controllers
             }
 
 
-           
+
 
 
             if (transactionDTO.movementType == "I")
@@ -164,7 +164,7 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                
+
 
                 var transaction = new Transaction
                 {
@@ -339,7 +339,7 @@ namespace JazFinanzasApp.API.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> EditTransaction(int id, TransactionEditDTO transactionDTO)
         {
-            
+
 
 
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
@@ -397,7 +397,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
                 string type;
-                
+
                 if (asset.Symbol == "ARS")
                 {
                     type = "BLUE";
@@ -414,8 +414,8 @@ namespace JazFinanzasApp.API.Controllers
                 else
                 {
                     quotePrice = await _assetQuoteRepository.GetQuotePrice(asset.Id, transactionDTO.Date, type);
-                }                
-                
+                }
+
 
                 transaction.QuotePrice = quotePrice;
                 transaction.Date = transactionDTO.Date;
@@ -426,7 +426,7 @@ namespace JazFinanzasApp.API.Controllers
             {
                 transaction.Amount = -transactionDTO.Amount;
             }
-            else 
+            else
             {
                 transaction.Amount = transactionDTO.Amount;
             }
@@ -561,11 +561,11 @@ namespace JazFinanzasApp.API.Controllers
                     MovementType = "EX",
                     TransactionClassId = null,
                     Detail = "Refund",
-                    Amount = - refundDTO.Amount,
+                    Amount = -refundDTO.Amount,
                     UserId = userId,
                     CreatedAt = time,
                     UpdatedAt = time,
-                    QuotePrice = transaction.QuotePrice                    
+                    QuotePrice = transaction.QuotePrice
                 };
                 await _transactionRepository.AddAsync(refundExpenseTransaction);
 
@@ -678,5 +678,7 @@ namespace JazFinanzasApp.API.Controllers
             }
         }
 
-    }
+        // get balance by asset, account and portfolio
+
+    }       
 }

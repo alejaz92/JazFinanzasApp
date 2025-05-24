@@ -114,7 +114,7 @@ namespace JazFinanzasApp.API.Repositories
 
                     totalBalancePesos = resultPesos?.Total ?? 0;
 
-                    var  totals =
+                    var totals =
                         new TotalsBalanceDTO
                         {
                             Asset = asset.Name,
@@ -130,7 +130,8 @@ namespace JazFinanzasApp.API.Repositories
                     Console.WriteLine($"Error en consulta de pesos: {ex.Message}");
                     throw;
                 }
-            } else if(asset.Name == "Dolar Estadounidense")
+            }
+            else if (asset.Name == "Dolar Estadounidense")
             {
                 var dollarSQL = @"
                 SELECT 
@@ -170,7 +171,8 @@ namespace JazFinanzasApp.API.Repositories
                     Console.WriteLine($"Error en consulta de dólares: {ex.Message}");
                     throw;
                 }
-            } else
+            }
+            else
             {
                 var otherSQL = @"
                     SELECT 
@@ -220,7 +222,7 @@ namespace JazFinanzasApp.API.Repositories
                 }
             }
 
-           
+
 
 
         }
@@ -276,7 +278,7 @@ namespace JazFinanzasApp.API.Repositories
                     Amount = g.Sum(t => t.Amount / t.QuotePrice.Value) // Calculando en la base de datos
                 })
                 .OrderByDescending(g => g.Year)
-                .ThenByDescending(g => g.Month)    
+                .ThenByDescending(g => g.Month)
                 .Take(6)
                 .ToListAsync(); // Traemos los datos
 
@@ -405,7 +407,7 @@ namespace JazFinanzasApp.API.Repositories
             var assetQuotes = await _context.AssetQuotes
                 .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE")
                 .OrderByDescending(aq => aq.Date)
-                .ToListAsync(); 
+                .ToListAsync();
 
             // total incomes in pesos by month
 
@@ -416,7 +418,7 @@ namespace JazFinanzasApp.API.Repositories
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where (t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
                 .Where(t => t.UserId == userId)
                 .ToListAsync(); // Traemos los datos a memoria
 
@@ -516,15 +518,15 @@ namespace JazFinanzasApp.API.Repositories
                 .Take(6)
                 .ToList();
 
-                // Paso 3: Ajustar y redondear resultados
-                var totalExpenesesFinal = totalExpenses
-                    .Select(g => new MonthExpenseStats
-                    {
-                        Month = new DateTime(g.Year, g.Month, 1),
-                        Amount = - Math.Round(g.Amount, 2)
-                    })
-                    .OrderBy(g => g.Month) // Aseguramos que esté ordenado
-                    .ToList();
+            // Paso 3: Ajustar y redondear resultados
+            var totalExpenesesFinal = totalExpenses
+                .Select(g => new MonthExpenseStats
+                {
+                    Month = new DateTime(g.Year, g.Month, 1),
+                    Amount = -Math.Round(g.Amount, 2)
+                })
+                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .ToList();
 
 
 
@@ -548,7 +550,7 @@ namespace JazFinanzasApp.API.Repositories
         {
             // income in pesos by class
 
-     
+
             var incomeTransactions = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
@@ -566,10 +568,10 @@ namespace JazFinanzasApp.API.Repositories
                             .OrderByDescending(aq => aq.Date)
                             .Select(aq => aq.Value)
                             .FirstOrDefault()
-                            : 
+                            :
                             t.Amount / t.QuotePrice.Value *
                              _context.AssetQuotes
-                            .Where(aq => aq.Asset.Name == asset.Name  && aq.Date <= t.Date)
+                            .Where(aq => aq.Asset.Name == asset.Name && aq.Date <= t.Date)
                             .OrderByDescending(aq => aq.Date)
                             .Select(aq => aq.Value)
                             .FirstOrDefault()
@@ -628,13 +630,14 @@ namespace JazFinanzasApp.API.Repositories
 
             List<AssetQuote> assetQuotes;
 
-            if(asset.Name == "Peso Argentino")
+            if (asset.Name == "Peso Argentino")
             {
                 assetQuotes = await _context.AssetQuotes
                 .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE")
                 .OrderByDescending(aq => aq.Date)
                 .ToListAsync();
-            } else
+            }
+            else
             {
                 assetQuotes = await _context.AssetQuotes
                 .Where(aq => aq.Asset.Name == asset.Name)
@@ -642,7 +645,7 @@ namespace JazFinanzasApp.API.Repositories
                 .ToListAsync();
             }
 
-            
+
 
             // total incomes by month
 
@@ -802,7 +805,7 @@ namespace JazFinanzasApp.API.Repositories
         }
 
         public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(
-            int userId, 
+            int userId,
             string environment,
             int referenceAssetId)
         {
@@ -819,10 +822,10 @@ namespace JazFinanzasApp.API.Repositories
         }
 
         public async Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(
-            int userId, 
-            int assetTypeId, 
-            string environment, 
-            int? assetId, 
+            int userId,
+            int assetTypeId,
+            string environment,
+            int? assetId,
             bool considerStable,
             int referenceAssetId)
         {
@@ -930,7 +933,7 @@ namespace JazFinanzasApp.API.Repositories
                     MovementType = it.IncomeTransaction.AssetId == assetId ? "I" : "E",
                     CommerceType = it.CommerceType,
                     Quantity = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount : it.ExpenseTransaction.Amount),
-                    QuotePrice = (1/ (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value)) *
+                    QuotePrice = (1 / (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value)) *
                         (
                             _context.AssetQuotes
                                 .Where(aq => aq.Asset.Id == referenceAssetId)
@@ -940,7 +943,7 @@ namespace JazFinanzasApp.API.Repositories
                                 .Select(aq => aq.Value)
                                 .FirstOrDefault()
                         ),
-                    Total = (Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1/(it.IncomeTransaction.QuotePrice.Value) : it.ExpenseTransaction.Amount * 1/(it.ExpenseTransaction.QuotePrice.Value))) *
+                    Total = (Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1 / (it.IncomeTransaction.QuotePrice.Value) : it.ExpenseTransaction.Amount * 1 / (it.ExpenseTransaction.QuotePrice.Value))) *
                         (
                             _context.AssetQuotes
                                 .Where(aq => aq.Asset.Id == referenceAssetId)
@@ -950,7 +953,7 @@ namespace JazFinanzasApp.API.Repositories
                                 .Select(aq => aq.Value)
                                 .FirstOrDefault()
                         )
-                 
+
                 });
 
             return await transactions.OrderByDescending(t => t.Date).ToListAsync();
@@ -992,6 +995,20 @@ namespace JazFinanzasApp.API.Repositories
             return balance;
         }
 
+
+        // get average buy value for the asset in the account and portfolio combination
+        public async Task<decimal> GetAverageQuotePrice(int accountId, int assetId, int portfolioId)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.AccountId == accountId)
+                .Where(t => t.AssetId == assetId)
+                .Where(t => t.PortfolioId == portfolioId)
+                .Where(t => t.QuotePrice.HasValue)
+                .ToListAsync(); // Traer los datos a memoria antes de hacer cálculos
+            if (transactions.Count == 0) return 0;
+            var total = transactions.Average(t => t.QuotePrice.Value);
+
+            return total;
+        }
     }
-    
 }
