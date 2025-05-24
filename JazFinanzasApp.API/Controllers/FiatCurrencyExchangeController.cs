@@ -58,11 +58,11 @@ namespace JazFinanzasApp.API.Controllers
                     Date = m.Date,
                     ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
                     ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
-                    ExpensePortafolio = m.ExpenseTransaction?.Portfolio?.Name,
+                    ExpensePortfolio = m.ExpenseTransaction?.Portfolio?.Name,
                     ExpenseAmount = m.ExpenseTransaction?.Amount,
                     IncomeAsset = m.IncomeTransaction?.Asset?.Name,
                     IncomeAccount = m.IncomeTransaction?.Account?.Name,
-                    IncomePortafolio = m.IncomeTransaction?.Portfolio?.Name,
+                    IncomePortfolio = m.IncomeTransaction?.Portfolio?.Name,
                     IncomeAmount = m.IncomeTransaction?.Amount
                 });
 

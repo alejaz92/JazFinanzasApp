@@ -64,7 +64,7 @@ namespace JazFinanzasApp.API.Controllers
 
                         var incomeAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAssetId.Value);
                         var incomeAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAccountId.Value);
-                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortafolioID.Value);
+                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortfolioID.Value);
                         await CheckAssetsAndAccounts(incomeAsset,incomeAccount, incomePortfolio);   
 
 
@@ -94,7 +94,7 @@ namespace JazFinanzasApp.API.Controllers
                         {
                             var expenseAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAssetId.Value);
                             var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
-                            var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortafolioID.Value);
+                            var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                             await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
 
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
@@ -136,7 +136,7 @@ namespace JazFinanzasApp.API.Controllers
 
                         var expenseAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAssetId.Value);
                         var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
-                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortafolioID.Value);
+                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
 
                         var expenseTransaction = new Transaction
@@ -163,7 +163,7 @@ namespace JazFinanzasApp.API.Controllers
                         {
                             var incomeAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAssetId.Value);
                             var incomeAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAccountId.Value);
-                            var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortafolioID.Value);
+                            var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortfolioID.Value);
                             await CheckAssetsAndAccounts(incomeAsset,incomeAccount, incomePortfolio);
 
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Ingreso Inversiones", userId);
@@ -208,12 +208,12 @@ namespace JazFinanzasApp.API.Controllers
 
                         var incomeAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAssetId.Value);
                         var incomeAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.IncomeAccountId.Value);
-                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortafolioID.Value);
+                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.IncomePortfolioID.Value);
                         await CheckAssetsAndAccounts(incomeAsset,incomeAccount, incomePortfolio);
 
                         var expenseAsset = await _assetRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAssetId.Value);
                         var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
-                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortafolioID.Value);
+                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
 
                         var incomeTransaction = new Transaction
@@ -338,12 +338,12 @@ namespace JazFinanzasApp.API.Controllers
                 CommerceType = m.CommerceType,
                 ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
                 ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
-                ExpensePortafolio = m.ExpenseTransaction?.Portfolio?.Name,
+                ExpensePortfolio = m.ExpenseTransaction?.Portfolio?.Name,
                 ExpenseAmount = m.ExpenseTransaction?.Amount,
                 ExpenseQuote = m.ExpenseTransaction?.QuotePrice,
                 IncomeAsset = m.IncomeTransaction?.Asset?.Name,
                 IncomeAccount = m.IncomeTransaction?.Account?.Name,
-                IncomePortafolio = m.IncomeTransaction?.Portfolio?.Name,
+                IncomePortfolio = m.IncomeTransaction?.Portfolio?.Name,
                 IncomeAmount = m.IncomeTransaction?.Amount,
                 IncomeQuote = m.IncomeTransaction?.QuotePrice
             }).ToList();

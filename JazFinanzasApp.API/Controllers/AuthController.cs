@@ -40,7 +40,7 @@ namespace JazFinanzasApp.API.Controllers
 
             if (result.Result.Succeeded)
             {
-                // Crear el portafolio por defecto al crear un usuario
+                // Crear el portfolio por defecto al crear un usuario
                 var portfolio = new Portfolio
                 {
                     Name = "Default",

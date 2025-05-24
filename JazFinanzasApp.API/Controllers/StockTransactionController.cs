@@ -60,7 +60,7 @@ namespace JazFinanzasApp.API.Controllers
                     {
                         var incomeAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.IncomeAssetId.Value);
                         var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
-                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.IncomePortafolioID.Value);
+                        var incomePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.IncomePortfolioID.Value);
                         await CheckAssetsAndAccounts(incomeAsset, incomeAccount, incomePortfolio);
 
                         var incomeTransaction = new Transaction
@@ -87,7 +87,7 @@ namespace JazFinanzasApp.API.Controllers
                         {
                             var expenseAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.ExpenseAssetId.Value);
                             var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
-                            var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortafolioID.Value);
+                            var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortfolioID.Value);
                             await CheckAssetsAndAccounts(expenseAsset, expenseAccount, expensePortfolio);
 
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
@@ -128,7 +128,7 @@ namespace JazFinanzasApp.API.Controllers
                     {
                         var expenseAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.ExpenseAssetId.Value);
                         var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
-                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortafolioID.Value);
+                        var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset, expenseAccount, expensePortfolio);
 
                         var expenseTransaction = new Transaction
@@ -155,7 +155,7 @@ namespace JazFinanzasApp.API.Controllers
                         {
                             var incomeAsset = await _assetRepository.GetByIdAsync(stockTransactionDto.IncomeAssetId.Value);
                             var incomeAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.IncomeAccountId.Value);
-                            var incomePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.IncomePortafolioID.Value);
+                            var incomePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.IncomePortfolioID.Value);
                             await CheckAssetsAndAccounts(incomeAsset, incomeAccount, incomePortfolio);
 
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Ingreso Inversiones", userId);
@@ -271,14 +271,14 @@ namespace JazFinanzasApp.API.Controllers
                         : m.ExpenseTransaction.Asset.AssetType.Name,
                     ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
                     ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
-                    ExpensePortafolio = m.ExpenseTransaction?.Portfolio?.Name,
+                    ExpensePortfolio = m.ExpenseTransaction?.Portfolio?.Name,
                     ExpenseQuantity = m.ExpenseTransaction?.Amount,
                     ExpenseQuotePrice = m.ExpenseTransaction?.Asset.Name == "Peso Argentino"
                         ? m.ExpenseTransaction?.QuotePrice
                         : 1 / m.ExpenseTransaction?.QuotePrice,
                     IncomeAsset = m.IncomeTransaction?.Asset?.Name,
                     IncomeAccount = m.IncomeTransaction?.Account?.Name,
-                    IncomePortafolio = m.IncomeTransaction?.Portfolio?.Name,
+                    IncomePortfolio = m.IncomeTransaction?.Portfolio?.Name,
                     IncomeQuantity = m.IncomeTransaction?.Amount,
                     IncomeQuotePrice = m.IncomeTransaction?.Asset.Name == "Peso Argentino"
                         ? m.IncomeTransaction?.QuotePrice
