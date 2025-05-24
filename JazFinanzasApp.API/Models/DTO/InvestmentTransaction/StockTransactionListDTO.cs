@@ -9,10 +9,12 @@
         public string CommerceType { get; set; }
         public string? ExpenseAsset { get; set; }
         public string? ExpenseAccount { get; set; }
+        public string? ExpensePortafolio { get; set; }
         public decimal? ExpenseQuantity { get; set; }
         public decimal? ExpenseQuotePrice { get; set; }
         public string? IncomeAsset { get; set; }
         public string? IncomeAccount { get; set; }
+        public string? IncomePortafolio { get; set; }
         public decimal? IncomeQuantity { get; set; }
         public decimal? IncomeQuotePrice { get; set; }
     }

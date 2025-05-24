@@ -90,6 +90,12 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
+            var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+            if (defaultPortfolio == null)
+            {
+                return NotFound("Default portfolio not found");
+            }
+
 
             var asset = await _assetRepository.GetByIdAsync(transactionDTO.assetId);
             if (asset == null)
@@ -158,18 +164,14 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var incomePortfolio = await _portfolioRepository.GetByIdAsync(transactionDTO.incomePortfolioId.Value);
-                if (incomePortfolio == null)
-                {
-                    return NotFound();
-                }
+                
 
                 var transaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
-                    PortfolioId = incomePortfolio.Id,
-                    Portfolio = incomePortfolio,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -211,18 +213,13 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var expensePortfolio = await _portfolioRepository.GetByIdAsync(transactionDTO.expensePortfolioId.Value);
-                if (expensePortfolio == null)
-                {
-                    return NotFound();
-                }
 
                 var transaction = new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
-                    PortfolioId = expensePortfolio.Id,
-                    Portfolio = expensePortfolio,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -260,23 +257,13 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
-                var incomePortfolio = await _portfolioRepository.GetByIdAsync(transactionDTO.incomePortfolioId.Value);
-                if (incomePortfolio == null)
-                {
-                    return NotFound();
-                }
-                var expensePortfolio = await _portfolioRepository.GetByIdAsync(transactionDTO.expensePortfolioId.Value);
-                if (expensePortfolio == null)
-                {
-                    return NotFound();
-                }
 
                 var incomeTransaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
-                    PortfolioId = incomePortfolio.Id,
-                    Portfolio = incomePortfolio,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -298,8 +285,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
-                    PortfolioId = expensePortfolio.Id,
-                    Portfolio = expensePortfolio,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,

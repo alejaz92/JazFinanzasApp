@@ -19,14 +19,22 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
+        private readonly IPortfolioRepository _portfolioRepository;
 
-        public FiatCurrencyExchangeController(ITransactionRepository transactionRepository, IInvestmentTransactionRepository investmentTransactionRepository, IAssetRepository assetRepository, IAccountRepository accountRepository, IAssetQuoteRepository assetQuoteRepository)
+        public FiatCurrencyExchangeController(
+            ITransactionRepository transactionRepository, 
+            IInvestmentTransactionRepository investmentTransactionRepository, 
+            IAssetRepository assetRepository, 
+            IAccountRepository accountRepository, 
+            IAssetQuoteRepository assetQuoteRepository,
+            IPortfolioRepository portfolioRepository)
         {
             _transactionRepository = transactionRepository;
             _investmentTransactionRepository = investmentTransactionRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _assetQuoteRepository = assetQuoteRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
         [HttpGet]
@@ -50,9 +58,11 @@ namespace JazFinanzasApp.API.Controllers
                     Date = m.Date,
                     ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
                     ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
+                    ExpensePortafolio = m.ExpenseTransaction?.Portfolio?.Name,
                     ExpenseAmount = m.ExpenseTransaction?.Amount,
                     IncomeAsset = m.IncomeTransaction?.Asset?.Name,
                     IncomeAccount = m.IncomeTransaction?.Account?.Name,
+                    IncomePortafolio = m.IncomeTransaction?.Portfolio?.Name,
                     IncomeAmount = m.IncomeTransaction?.Amount
                 });
 
@@ -84,16 +94,18 @@ namespace JazFinanzasApp.API.Controllers
             {
 
                 // assign assets and accounts
-                var expenseAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAssetId.Value);     
-                var expenseAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAccountId.Value);              
+                var expenseAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAssetId.Value);
+                var expenseAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAccountId.Value);
+                var expensePortfolio = await _portfolioRepository.GetByIdAsync(exchangeTransactionDTO.ExpensePortfolioID.Value);
 
 
-                var incomeAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAssetId.Value);             
+                var incomeAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAssetId.Value);
                 var incomeAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAccountId.Value);
+                var incomePortfolio = await _portfolioRepository.GetByIdAsync(exchangeTransactionDTO.IncomePortfolioID.Value);
 
-                if (expenseAsset == null || expenseAccount == null || incomeAsset == null || incomeAccount == null)
+                if (expenseAsset == null || expenseAccount == null || incomeAsset == null || incomeAccount == null || expensePortfolio == null || incomePortfolio == null)
                 {
-                    return BadRequest("Invalid Asset or Account");
+                    return BadRequest("Invalid Asset or Account or Portfolio");
                 }
 
 
@@ -118,6 +130,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.ExpenseAccountId.Value,
                     Account = expenseAccount,
+                    PortfolioId = exchangeTransactionDTO.ExpensePortfolioID.Value,
+                    Portfolio = expensePortfolio,
                     AssetId = exchangeTransactionDTO.ExpenseAssetId.Value,
                     Asset = expenseAsset,
                     Date = exchangeTransactionDTO.Date,
@@ -133,6 +147,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.IncomeAccountId.Value,
                     Account = incomeAccount,
+                    PortfolioId = exchangeTransactionDTO.IncomePortfolioID.Value,
+                    Portfolio = incomePortfolio,
                     AssetId = exchangeTransactionDTO.IncomeAssetId.Value,
                     Asset = incomeAsset,
                     Date = exchangeTransactionDTO.Date,
@@ -173,6 +189,7 @@ namespace JazFinanzasApp.API.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
             }
         }
+
 
 
         [HttpDelete("{id}")]
