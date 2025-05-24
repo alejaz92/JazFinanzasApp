@@ -4,6 +4,9 @@
     {
         public int? incomeAccountId { get; set; }
         public int? expenseAccountId { get; set; }
+
+        public int? incomePortfolioId { get; set; }
+        public int? expensePortfolioId { get; set; }
         public int assetId { get; set; }
         public DateTime date { get; set; }
         public string movementType { get; set; }

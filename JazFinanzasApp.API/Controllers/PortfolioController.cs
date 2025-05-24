@@ -84,6 +84,16 @@ namespace JazFinanzasApp.API.Controllers
                 return BadRequest("Portfolio with this name already exists.");
             }
 
+            // Check if user has a default portfolio
+            if (portfolioDTO.IsDefault)
+            {
+                var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+                if (defaultPortfolio != null)
+                {
+                    return BadRequest("User already has a default portfolio.");
+                }
+            }
+
             var portfolio = new Portfolio
             {
                 Name = portfolioDTO.Name,

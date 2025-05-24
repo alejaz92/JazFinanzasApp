@@ -6,7 +6,8 @@
 
         public int AccountId { get; set; }
         public string AccountName { get; set; }
-
+        public int PortfolioId { get; set; }
+        public string PortfolioName { get; set; }
         public int AssetId { get; set; }
         public string AssetName { get; set; }
         public string AssetSymbol { get; set; }
