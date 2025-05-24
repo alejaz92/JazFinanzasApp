@@ -108,6 +108,13 @@ namespace JazFinanzasApp.API.Controllers
                     return BadRequest("Invalid Asset or Account or Portfolio");
                 }
 
+                //check if there is enaugh balance in the expense account
+                var expenseBalance = await _transactionRepository.GetBalance(expenseAccount.Id, expenseAsset.Id, expensePortfolio.Id);
+                if (expenseBalance < exchangeTransactionDTO.ExpenseAmount)
+                {
+                    return BadRequest("Not enough balance in the expense account");
+                }
+
 
                 //assign quotes
                 string assetQuoteType = null;
@@ -189,8 +196,6 @@ namespace JazFinanzasApp.API.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
             }
         }
-
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteExchangeTransaction(int id)

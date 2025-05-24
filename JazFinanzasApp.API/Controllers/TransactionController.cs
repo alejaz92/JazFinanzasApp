@@ -213,6 +213,15 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
+                // check if there is eneugh balance in the account
+                var balance = await _transactionRepository.GetBalance(transactionDTO.expenseAccountId.Value, asset.Id, defaultPortfolio.Id);
+
+                if (balance < transactionDTO.amount)
+                {
+                    return BadRequest("No hay suficiente saldo en la cuenta");
+                }
+
+
 
                 var transaction = new Transaction
                 {
@@ -255,6 +264,13 @@ namespace JazFinanzasApp.API.Controllers
                 if (expenseAccount.UserId != userId)
                 {
                     return Unauthorized();
+                }
+
+                // check if there is eneugh balance in the account
+                var balance = await _transactionRepository.GetBalance(transactionDTO.expenseAccountId.Value, asset.Id, defaultPortfolio.Id);
+                if (balance < transactionDTO.amount)
+                {
+                    return BadRequest("No hay suficiente saldo en la cuenta");
                 }
 
 
@@ -320,10 +336,12 @@ namespace JazFinanzasApp.API.Controllers
             return Ok();
         }
 
-
         [HttpPut("{id}")]
         public async Task<IActionResult> EditTransaction(int id, TransactionEditDTO transactionDTO)
         {
+            
+
+
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
             {
@@ -420,7 +438,6 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok();
         }
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteTransaction(int id)

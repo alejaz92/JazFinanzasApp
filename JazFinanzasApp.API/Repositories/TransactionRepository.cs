@@ -980,7 +980,18 @@ namespace JazFinanzasApp.API.Repositories
 
             return total;
         }
-            
+
+        // get the balance for the account, asset and portfolio combination
+        public async Task<decimal> GetBalance(int accountId, int assetId, int portfolioId)
+        {
+            var balance = await _context.Transactions
+                .Where(t => t.AccountId == accountId)
+                .Where(t => t.AssetId == assetId)
+                .Where(t => t.PortfolioId == portfolioId)
+                .SumAsync(t => t.Amount);
+            return balance;
+        }
+
     }
     
 }

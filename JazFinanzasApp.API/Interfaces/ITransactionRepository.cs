@@ -19,5 +19,6 @@ namespace JazFinanzasApp.API.Interfaces
         Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId);
         Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset);
         Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId);
+        Task<decimal> GetBalance(int accountId, int assetId, int portfolioId);
     }
 }

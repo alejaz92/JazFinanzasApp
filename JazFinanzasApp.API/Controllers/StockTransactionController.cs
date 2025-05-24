@@ -90,6 +90,13 @@ namespace JazFinanzasApp.API.Controllers
                             var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortfolioID.Value);
                             await CheckAssetsAndAccounts(expenseAsset, expenseAccount, expensePortfolio);
 
+                            // check if there is enaugh balance in the account
+                            var balance = await _transactionRepository.GetBalance(stockTransactionDto.ExpenseAccountId.Value, stockTransactionDto.ExpenseAssetId.Value, stockTransactionDto.ExpensePortfolioID.Value);
+                            if (balance < stockTransactionDto.ExpenseQuantity.Value)
+                            {
+                                return BadRequest("Not enough balance in the account");
+                            }
+
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
@@ -130,6 +137,12 @@ namespace JazFinanzasApp.API.Controllers
                         var expenseAccount = await _accountRepository.GetByIdAsync(stockTransactionDto.ExpenseAccountId.Value);
                         var expensePortfolio = await _portfolioRepository.GetByIdAsync(stockTransactionDto.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset, expenseAccount, expensePortfolio);
+
+                        //get default portfolio
+                        var portfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+                        if (portfolio == null) return BadRequest("Default portfolio not found");
+
+
 
                         var expenseTransaction = new Transaction
                         {
@@ -349,3 +362,4 @@ namespace JazFinanzasApp.API.Controllers
         }
     }
 }
+

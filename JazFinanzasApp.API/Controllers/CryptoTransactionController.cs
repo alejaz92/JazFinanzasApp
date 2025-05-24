@@ -97,6 +97,13 @@ namespace JazFinanzasApp.API.Controllers
                             var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                             await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
 
+                            // check if there is enaugh balance
+                            var balance = await _transactionRepository.GetBalance(expenseAccount.Id, expenseAsset.Id, expensePortfolio.Id);
+                            if (balance < -cryptoTransactionDTO.ExpenseQuantity.Value)
+                            {
+                                return BadRequest("Not enough balance");
+                            }
+
                             TransactionClass investmentClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Inversiones", userId);
                             if (investmentClass == null)
                             {
@@ -138,6 +145,13 @@ namespace JazFinanzasApp.API.Controllers
                         var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
                         var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
+
+                        // check if there is enaugh balance
+                        var balance = await _transactionRepository.GetBalance(expenseAccount.Id, expenseAsset.Id, expensePortfolio.Id);
+                        if (balance < -cryptoTransactionDTO.ExpenseQuantity.Value)
+                        {
+                            return BadRequest("Not enough balance");
+                        }
 
                         var expenseTransaction = new Transaction
                         {
@@ -215,6 +229,15 @@ namespace JazFinanzasApp.API.Controllers
                         var expenseAccount = await _accountRepository.GetByIdAsync(cryptoTransactionDTO.ExpenseAccountId.Value);
                         var expensePortfolio = await _portfolioRepository.GetByIdAsync(cryptoTransactionDTO.ExpensePortfolioID.Value);
                         await CheckAssetsAndAccounts(expenseAsset,expenseAccount, expensePortfolio);
+
+
+                        // check if there is enaugh balance
+
+                        var balance = await _transactionRepository.GetBalance(expenseAccount.Id, expenseAsset.Id, expensePortfolio.Id);
+                        if (balance < -cryptoTransactionDTO.ExpenseQuantity.Value)
+                        {
+                            return BadRequest("Not enough balance");
+                        }
 
                         var incomeTransaction = new Transaction
                         {
@@ -366,48 +389,6 @@ namespace JazFinanzasApp.API.Controllers
 
 
         }
-
-        //[HttpGet("{id}")]
-        //public async Task<IActionResult> GetCryptoTransactionById(int id)
-        //{
-        //    var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-        //    if (userIdClaim == null)
-        //    {
-        //        return Unauthorized();
-        //    }
-
-        //    int userId = int.Parse(userIdClaim.Value);
-
-        //    var transaction = await _investmentTransactionRepository.GetInvestmentTransactionById(id);
-
-        //    if (transaction == null)
-        //    {
-        //        return NotFound();
-        //    }
-
-        //    if (transaction.UserId != userId)
-        //    {
-        //        return Unauthorized();
-        //    }
-
-        //    var transactionDTO = new CryptoTransactionListDTO
-        //    {
-        //        Id = transaction.Id,
-        //        Date = transaction.Date,
-        //        MovementType = transaction.MovementType,
-        //        CommerceType = transaction.CommerceType,
-        //        ExpenseAsset = transaction.ExpenseTransaction?.Asset?.Name,
-        //        ExpenseAccount = transaction.ExpenseTransaction?.Account?.Name,
-        //        ExpenseAmount = transaction.ExpenseTransaction?.Amount,
-        //        ExpenseQuote = transaction.ExpenseTransaction?.QuotePrice,
-        //        IncomeAsset = transaction.IncomeTransaction?.Asset?.Name,
-        //        IncomeAccount = transaction.IncomeTransaction?.Account?.Name,
-        //        IncomeAmount = transaction.IncomeTransaction?.Amount,
-        //        IncomeQuote = transaction.IncomeTransaction?.QuotePrice
-        //    };
-
-        //    return Ok(transactionDTO);
-        //}
 
         // delete
         [HttpDelete("{id}")]

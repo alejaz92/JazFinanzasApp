@@ -232,15 +232,29 @@ namespace JazFinanzasApp.API.Controllers
             var quotePrice = await _assetQuoteRepository
                 .GetQuotePrice(peso.Id, cardTransactionsPaymentDTO.PaymentDate, "BLUE");
 
+            //get default portfolio
+            var portfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+            if (portfolio == null) return BadRequest("Default portfolio not found");
+
+
+            // check if there is enaugh pesos balance in the account
+            var balance = await _transactionRepository.GetBalance(account.Id, peso.Id, portfolio.Id);
+            if (balance < cardTransactionsPaymentDTO.PesosAmount) return BadRequest("Not enough balance in account");
+
+            // check if there is enaugh dolar balance in the account
+            if (cardTransactionsPaymentDTO.DolarAmount != null)
+            {
+                var balanceDolar = await _transactionRepository.GetBalance(account.Id, dolar.Id, portfolio.Id);
+                if (balanceDolar < cardTransactionsPaymentDTO.DolarAmount) return BadRequest("Not enough balance in account");
+            }
+
+
 
             await _transactionRepository.BeginTransactionAsync();
 
             try
             {
-                //get default portfolio
-                var portfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
-                if (portfolio == null) return BadRequest("Default portfolio not found");
-
+                
                 foreach (var cardTransaction in cardTransactionsPaymentDTO.CardTransactions)
                 {
 
