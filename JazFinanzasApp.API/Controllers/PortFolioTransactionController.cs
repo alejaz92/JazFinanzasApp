@@ -195,5 +195,55 @@ namespace JazFinanzasApp.API.Controllers
 
             }
         }
+
+        [HttpDelete]
+        public async Task<IActionResult> DeletePortfolioTransaction(int id)
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+
+            int userId = int.Parse(userIdClaim.Value);
+
+            var transaction = await _investmentTransactionRepository.GetInvestmentTransactionById(id);
+
+            if (transaction == null)
+            {
+                return NotFound();
+            }
+
+            if (transaction.UserId != userId)
+            {
+                return Unauthorized();
+            }
+
+            try
+            {
+                _investmentTransactionRepository.BeginTransactionAsync();
+
+                if (transaction.IncomeTransaction != null)
+                {
+                    await _transactionRepository.DeleteAsync(transaction.IncomeTransaction.Id);
+                }
+
+                if (transaction.ExpenseTransaction != null)
+                {
+                    await _transactionRepository.DeleteAsync(transaction.ExpenseTransaction.Id);
+                }
+
+                await _investmentTransactionRepository.DeleteAsync(transaction.Id);
+
+                await _investmentTransactionRepository.CommitTransactionAsync();
+
+                return Ok();
+            }
+            catch
+            {
+                await _investmentTransactionRepository.RollbackTransactionAsync();
+                return StatusCode(StatusCodes.Status500InternalServerError, "Database failure");
+            }
+        }
     }
 }
