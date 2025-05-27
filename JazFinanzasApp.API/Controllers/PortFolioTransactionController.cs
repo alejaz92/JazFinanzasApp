@@ -196,7 +196,7 @@ namespace JazFinanzasApp.API.Controllers
             }
         }
 
-        [HttpDelete]
+        [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePortfolioTransaction(int id)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
