@@ -1,9 +1,6 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.CardTransaction;
-using JazFinanzasApp.API.Models.DTO.CardTransaction;
-using JazFinanzasApp.API.Repositories;
+﻿using JazFinanzasApp.API.Business.DTO.CardTransaction;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -323,17 +320,6 @@ namespace JazFinanzasApp.API.Controllers
 
         }
 
-        private async Task<bool> ValidateTransaction(CardTransactionPaymentListDTO cardTransaction, int userId)
-        {
-            var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
-            if (asset == null || (asset.Name != "Peso Argentino" && asset.Name != "Dolar Estadounidense")) return false;
-
-            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransaction.AssetId);
-            if (assetUser == null) return false;
-
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransaction.TransactionClassId);
-            return transactionClass != null;
-        }
 
         private Transaction CreateTransaction(CardTransactionPaymentDTO cardTransactionspaymentDTO, CardTransactionPaymentListDTO cardTransactionsPaymentListDTO, int userId, Asset peso, Asset dolar, decimal quotePrice, int portfolioID)
         {

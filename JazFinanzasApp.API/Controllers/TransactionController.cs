@@ -1,7 +1,7 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.InvestmentTransaction;
-using JazFinanzasApp.API.Models.DTO.Transaction;
+﻿using JazFinanzasApp.API.Business.DTO.InvestmentTransaction;
+using JazFinanzasApp.API.Business.DTO.Transaction;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
