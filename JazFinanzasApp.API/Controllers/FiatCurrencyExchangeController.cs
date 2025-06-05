@@ -89,18 +89,21 @@ namespace JazFinanzasApp.API.Controllers
             var incomeId = 0;
             var expenseId = 0;
 
+            // get default portfolio
+            var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId); 
+
             try
             {
 
                 // assign assets and accounts
                 var expenseAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAssetId.Value);
                 var expenseAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAccountId.Value);
-                var expensePortfolio = await _portfolioRepository.GetByIdAsync(exchangeTransactionDTO.ExpensePortfolioID.Value);
+                var expensePortfolio = defaultPortfolio;
 
 
                 var incomeAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAssetId.Value);
                 var incomeAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAccountId.Value);
-                var incomePortfolio = await _portfolioRepository.GetByIdAsync(exchangeTransactionDTO.IncomePortfolioID.Value);
+                var incomePortfolio = defaultPortfolio;
 
                 if (expenseAsset == null || expenseAccount == null || incomeAsset == null || incomeAccount == null || expensePortfolio == null || incomePortfolio == null)
                 {
@@ -136,7 +139,7 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.ExpenseAccountId.Value,
                     Account = expenseAccount,
-                    PortfolioId = exchangeTransactionDTO.ExpensePortfolioID.Value,
+                    PortfolioId = expensePortfolio.Id,
                     Portfolio = expensePortfolio,
                     AssetId = exchangeTransactionDTO.ExpenseAssetId.Value,
                     Asset = expenseAsset,
@@ -153,7 +156,7 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.IncomeAccountId.Value,
                     Account = incomeAccount,
-                    PortfolioId = exchangeTransactionDTO.IncomePortfolioID.Value,
+                    PortfolioId = incomePortfolio.Id,
                     Portfolio = incomePortfolio,
                     AssetId = exchangeTransactionDTO.IncomeAssetId.Value,
                     Asset = incomeAsset,
