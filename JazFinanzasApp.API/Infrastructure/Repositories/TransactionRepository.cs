@@ -547,241 +547,454 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         }
 
-        public async Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset)
+        public async Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset /* asset destino a visualizar */)
         {
-            // income in pesos by class
+            // Rango del mes seleccionado
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
 
+            // Constantes (si las tenés como enums, mejor)
+            const string MOV_INCOME = "I";
+            const string MOV_EXPENSE = "E";
+            const string CLASS_ADJ_IN = "Ajuste Saldos Ingreso";
+            const string CLASS_INV_IN = "Ingreso Inversiones";
+            const string CLASS_ADJ_EX = "Ajuste Saldos Egreso";
+            const string CLASS_INV_EX = "Inversiones";
+            const string ARS_NAME = "Peso Argentino";
+            const string BLUE = "BLUE";
 
-            var incomeTransactions = await _context.Transactions
-                .Include(t => t.TransactionClass)
-                .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
-                .Where(t => t.UserId == userId)
-                .Where(t => t.MovementType == "I")
-                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
+            // === 1) Precarga de series de cotizaciones a MEMORIA ===
+            // Política: si el asset destino es ARS → usar ARS/BLUE;
+            //           si el destino es otro asset → usar su propia serie.
+            var isTargetARS = string.Equals(asset.Name, ARS_NAME, StringComparison.OrdinalIgnoreCase);
+
+            var blueQuotes = new List<(DateTime Date, decimal Value)>();
+            if (isTargetARS)
+            {
+                blueQuotes = await _context.AssetQuotes
+                    .AsNoTracking()
+                    .Where(aq => aq.Asset.Name == ARS_NAME && aq.Type == BLUE)
+                    .OrderBy(aq => aq.Date) // asc para binary search de "última <= date"
+                    .Select(aq => new { aq.Date, aq.Value })
+                    .Select(x => (x.Date, x.Value))
+                    .ToListAsync();
+            }
+
+            var targetQuotes = new List<(DateTime Date, decimal Value)>();
+            if (!isTargetARS)
+            {
+                targetQuotes = await _context.AssetQuotes
+                    .AsNoTracking()
+                    .Where(aq => aq.Asset.Name == asset.Name)
+                    .OrderBy(aq => aq.Date)
+                    .Select(aq => new { aq.Date, aq.Value })
+                    .Select(x => (x.Date, x.Value))
+                    .ToListAsync();
+            }
+
+            // Helpers: obtienen la última cotización <= fecha, con fallback nunca 0.
+            decimal GetBlueAt(DateTime date)
+            {
+                if (blueQuotes.Count == 0) return 1m;
+                // binary search manual (última <= date)
+                int lo = 0, hi = blueQuotes.Count - 1, best = -1;
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    if (blueQuotes[mid].Date <= date) { best = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                if (best >= 0) return blueQuotes[best].Value;
+                // si no hay <= date, usamos la primera disponible (evita 0)
+                return blueQuotes[0].Value;
+            }
+
+            decimal GetTargetAt(DateTime date)
+            {
+                if (targetQuotes.Count == 0) return 1m;
+                int lo = 0, hi = targetQuotes.Count - 1, best = -1;
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    if (targetQuotes[mid].Date <= date) { best = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                if (best >= 0) return targetQuotes[best].Value;
+                return targetQuotes[0].Value;
+            }
+
+            // Conversión genérica a asset destino
+            decimal ConvertToTarget(int transactionAssetId, decimal amount, decimal? quotePrice, DateTime date)
+            {
+                // Si ya está en el asset destino, no convertir
+                if (transactionAssetId == asset.Id) return amount;
+
+                var srcQuote = quotePrice ?? 0m;
+                if (srcQuote <= 0m) return 0m; // sin precio de origen válido → lo ignoramos
+
+                if (isTargetARS)
+                {
+                    var blue = GetBlueAt(date);
+                    return amount / srcQuote * blue;
+                }
+                else
+                {
+                    var tgt = GetTargetAt(date);
+                    return amount / srcQuote * tgt;
+                }
+            }
+
+            // === 2) Datos del MES por clase ===
+            // Cargamos los campos mínimos y convertimos en memoria (evitamos FirstOrDefault()=0 en SQL)
+            var incomesMonthRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= monthStart && t.Date < monthEnd &&
+                            t.TransactionClass.Description != CLASS_ADJ_IN &&
+                            t.TransactionClass.Description != CLASS_INV_IN)
                 .Select(t => new
                 {
-                    t.TransactionClass.Description,
-                    amount = t.Asset.Name == asset.Name ? t.Amount : asset.Name == "Peso Argentino" ? t.Amount / t.QuotePrice.Value *
-                        _context.AssetQuotes
-                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
-                            .OrderByDescending(aq => aq.Date)
-                            .Select(aq => aq.Value)
-                            .FirstOrDefault()
-                            :
-                            t.Amount / t.QuotePrice.Value *
-                             _context.AssetQuotes
-                            .Where(aq => aq.Asset.Name == asset.Name && aq.Date <= t.Date)
-                            .OrderByDescending(aq => aq.Date)
-                            .Select(aq => aq.Value)
-                            .FirstOrDefault()
+                    ClassDesc = t.TransactionClass.Description,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
                 })
                 .ToListAsync();
 
-            var classIncomeStats = incomeTransactions
-                .GroupBy(t => t.Description)
+            var expensesMonthRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= monthStart && t.Date < monthEnd &&
+                            t.TransactionClass.Description != CLASS_ADJ_EX &&
+                            t.TransactionClass.Description != CLASS_INV_EX)
+                .Select(t => new
+                {
+                    ClassDesc = t.TransactionClass.Description,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
+                })
+                .ToListAsync();
+
+            var classIncomeStats = incomesMonthRaw
+                .GroupBy(x => x.ClassDesc)
                 .Select(g => new ClassIncomeStats
                 {
                     TransactionClass = g.Key,
-                    Amount = Math.Round(g.Sum(t => t.amount), 2)
+                    Amount = Math.Round(g.Sum(x =>
+                        ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date)
+                    ), 2)
                 })
-                .OrderByDescending(g => g.Amount)
+                .OrderByDescending(x => x.Amount)
                 .ToList();
 
-            // expenses in pesos by class
-
-            var expensesTransactions = await _context.Transactions
-                .Include(t => t.TransactionClass)
-                .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
-                .Where(t => t.UserId == userId)
-                .Where(t => t.MovementType == "E")
-                .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
-                .Select(t => new
-                {
-                    t.TransactionClass.Description,
-                    amount = t.Asset.Name == asset.Name ? -t.Amount : asset.Name == "Peso Argentino" ? -t.Amount / t.QuotePrice.Value *
-                        _context.AssetQuotes
-                            .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE" && aq.Date <= t.Date)
-                            .OrderByDescending(aq => aq.Date)
-                            .Select(aq => aq.Value)
-                            .FirstOrDefault()
-                            :
-                            -t.Amount / t.QuotePrice.Value *
-                             _context.AssetQuotes
-                            .Where(aq => aq.Asset.Name == asset.Name && aq.Date <= t.Date)
-                            .OrderByDescending(aq => aq.Date)
-                            .Select(aq => aq.Value)
-                            .FirstOrDefault()
-                })
-                .ToListAsync();
-
-            var classExpenseStats = expensesTransactions
-                .GroupBy(t => t.Description)
+            // Para egresos devolvemos magnitud positiva (como en tus gráficos)
+            var classExpenseStats = expensesMonthRaw
+                .GroupBy(x => x.ClassDesc)
                 .Select(g => new ClassExpenseStats
                 {
                     TransactionClass = g.Key,
-                    Amount = Math.Round(g.Sum(t => t.amount), 2)
+                    Amount = Math.Round(g.Sum(x =>
+                        Math.Abs(ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date))
+                    ), 2)
                 })
-                .OrderByDescending(g => g.Amount)
+                .OrderByDescending(x => x.Amount)
                 .ToList();
 
+            // === 3) Series últimos 6 meses (limitamos lectura a ~18 meses para eficiencia) ===
+            var cutoff = monthStart.AddMonths(-18);
 
-            List<AssetQuote> assetQuotes;
-
-            if (asset.Name == "Peso Argentino")
-            {
-                assetQuotes = await _context.AssetQuotes
-                .Where(aq => aq.Asset.Name == "Peso Argentino" && aq.Type == "BLUE")
-                .OrderByDescending(aq => aq.Date)
+            var incomesSeriesRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= cutoff &&
+                            t.TransactionClass.Description != CLASS_ADJ_IN &&
+                            t.TransactionClass.Description != CLASS_INV_IN)
+                .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
                 .ToListAsync();
-            }
-            else
-            {
-                assetQuotes = await _context.AssetQuotes
-                .Where(aq => aq.Asset.Name == asset.Name)
-                .OrderByDescending(aq => aq.Date)
+
+            var expensesSeriesRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= cutoff &&
+                            t.TransactionClass.Description != CLASS_ADJ_EX &&
+                            t.TransactionClass.Description != CLASS_INV_EX)
+                .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
                 .ToListAsync();
-            }
 
-
-
-            // total incomes by month
-
-            // Paso 1: Obtener transacciones relevantes desde la base de datos
-            var transactionsIncome = await _context.Transactions
-                .Include(t => t.TransactionClass)
-                .Include(t => t.Asset)
-                .Where(t => t.TransactionClassId != null)
-                .Where(t => t.MovementType == "I")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
-                .Where(t => t.UserId == userId)
-                .ToListAsync(); // Traemos los datos a memoria
-
-            // Paso 2: Procesar los datos en memoria
-
-
-            var totalIncomes = transactionsIncome
-                .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g =>
-                {
-                    var year = g.Key.Year;
-                    var month = g.Key.Month;
-                    var amountInPesos = g.Sum(t =>
-                    {
-
-                        if (t.Asset.Name == asset.Name)
-                        {
-                            return t.Amount;
-                        }
-                        else
-                        {
-                            var quote = assetQuotes
-                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
-                            return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
-                        }
-
-                    });
-
-                    return new
-                    {
-                        Year = year,
-                        Month = month,
-                        Amount = amountInPesos
-                    };
-                })
-                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
-                .Take(6)
-                .ToList();
-
-            // Paso 3: Ajustar y redondear resultados
-            var totalIncomesFinal = totalIncomes
+            var monthIncomeStats = incomesSeriesRaw
+                .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
                 .Select(g => new MonthIncomeStats
                 {
-                    Month = new DateTime(g.Year, g.Month, 1),
-                    Amount = Math.Round(g.Amount, 2)
+                    Month = g.Key,
+                    Amount = Math.Round(g.Sum(x =>
+                        ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date)
+                    ), 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
-                .ToList();
-
-
-
-            // total expenses in pesos by month
-
-            // Paso 1: Obtener transacciones relevantes desde la base de datos
-            var transactionsExpenses = await _context.Transactions
-                .Include(t => t.TransactionClass)
-                .Include(t => t.Asset)
-                .Where(t => t.TransactionClassId != null)
-                .Where(t => t.MovementType == "E")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
-                .Where(t => t.UserId == userId)
-                .ToListAsync(); // Traemos los datos a memoria
-
-
-            // Paso 2: Procesar los datos en memoria
-
-
-            var totalExpenses = transactionsExpenses
-                .GroupBy(t => new { t.Date.Year, t.Date.Month })
-                .Select(g =>
-                {
-                    var year = g.Key.Year;
-                    var month = g.Key.Month;
-                    var amountInPesos = g.Sum(t =>
-                    {
-                        if (t.Asset.Name == asset.Name)
-                        {
-                            return t.Amount;
-                        }
-                        else
-                        {
-                            var quote = assetQuotes
-                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
-                            return t.Amount / (t.QuotePrice ?? 1) * quote;
-                        }
-                    });
-
-                    return new
-                    {
-                        Year = year,
-                        Month = month,
-                        Amount = amountInPesos
-                    };
-                })
-                .OrderByDescending(g => new DateTime(g.Year, g.Month, 1)) // Ordenamos por DateTime generado
+                .OrderByDescending(x => x.Month)
                 .Take(6)
+                .OrderBy(x => x.Month)
                 .ToList();
 
-            // Paso 3: Ajustar y redondear resultados
-            var totalExpenesesFinal = totalExpenses
+            var monthExpenseStats = expensesSeriesRaw
+                .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
                 .Select(g => new MonthExpenseStats
                 {
-                    Month = new DateTime(g.Year, g.Month, 1),
-                    Amount = -Math.Round(g.Amount, 2)
+                    Month = g.Key,
+                    // magnitud positiva para egresos
+                    Amount = Math.Round(g.Sum(x =>
+                        Math.Abs(ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date))
+                    ), 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .OrderByDescending(x => x.Month)
+                .Take(6)
+                .OrderBy(x => x.Month)
                 .ToList();
 
-
-
-
-
-
-            // Devolvemos los resultados
-            var incExpStatsDTO = new IncExpStatsDTO
+            // === 4) DTO final ===
+            return new IncExpStatsDTO
             {
                 ClassIncomeStats = classIncomeStats.ToArray(),
                 ClassExpenseStats = classExpenseStats.ToArray(),
-                MonthIncomeStats = totalIncomesFinal.ToArray(),
-                MonthExpenseStats = totalExpenesesFinal.ToArray()
+                MonthIncomeStats = monthIncomeStats.ToArray(),
+                MonthExpenseStats = monthExpenseStats.ToArray()
             };
+        }
 
-            return incExpStatsDTO;
+        public async Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset /* asset destino a visualizar */)
+        {
+            // Rango del mes seleccionado
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+
+            // Constantes (si las tenés como enums, mejor)
+            const string MOV_INCOME = "I";
+            const string MOV_EXPENSE = "E";
+            const string CLASS_ADJ_IN = "Ajuste Saldos Ingreso";
+            const string CLASS_INV_IN = "Ingreso Inversiones";
+            const string CLASS_ADJ_EX = "Ajuste Saldos Egreso";
+            const string CLASS_INV_EX = "Inversiones";
+            const string ARS_NAME = "Peso Argentino";
+            const string BLUE = "BLUE";
+
+            // === 1) Precarga de series de cotizaciones a MEMORIA ===
+            // Política: si el asset destino es ARS → usar ARS/BLUE;
+            //           si el destino es otro asset → usar su propia serie.
+            var isTargetARS = string.Equals(asset.Name, ARS_NAME, StringComparison.OrdinalIgnoreCase);
+
+            var blueQuotes = new List<(DateTime Date, decimal Value)>();
+            if (isTargetARS)
+            {
+                blueQuotes = (await _context.AssetQuotes
+                    .AsNoTracking()
+                    .Where(aq => aq.Asset.Name == ARS_NAME && aq.Type == BLUE)
+                    .OrderBy(aq => aq.Date)
+                    .Select(aq => new { aq.Date, aq.Value })   // ✅ proyectamos a objeto anónimo
+                    .ToListAsync())
+                    .Select(x => (x.Date, x.Value))            // ✅ convertimos a tupla en memoria
+                    .ToList();
+            }
+
+            var targetQuotes = new List<(DateTime Date, decimal Value)>();
+            if (!isTargetARS)
+            {
+                targetQuotes = (await _context.AssetQuotes
+                    .AsNoTracking()
+                    .Where(aq => aq.Asset.Name == asset.Name)
+                    .OrderBy(aq => aq.Date)
+                    .Select(aq => new { aq.Date, aq.Value })
+                    .ToListAsync())
+                    .Select(x => (x.Date, x.Value))
+                    .ToList();
+            }
+
+            // Helpers: obtienen la última cotización <= fecha, con fallback nunca 0.
+            decimal GetBlueAt(DateTime date)
+            {
+                if (blueQuotes.Count == 0) return 1m;
+                // binary search manual (última <= date)
+                int lo = 0, hi = blueQuotes.Count - 1, best = -1;
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    if (blueQuotes[mid].Date <= date) { best = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                if (best >= 0) return blueQuotes[best].Value;
+                // si no hay <= date, usamos la primera disponible (evita 0)
+                return blueQuotes[0].Value;
+            }
+
+            decimal GetTargetAt(DateTime date)
+            {
+                if (targetQuotes.Count == 0) return 1m;
+                int lo = 0, hi = targetQuotes.Count - 1, best = -1;
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    if (targetQuotes[mid].Date <= date) { best = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                if (best >= 0) return targetQuotes[best].Value;
+                return targetQuotes[0].Value;
+            }
+
+            // Conversión genérica a asset destino
+            decimal ConvertToTarget(int transactionAssetId, decimal amount, decimal? quotePrice, DateTime date)
+            {
+                // Si ya está en el asset destino, no convertir
+                if (transactionAssetId == asset.Id) return amount;
+
+                var srcQuote = quotePrice ?? 0m;
+                if (srcQuote <= 0m) return 0m; // sin precio de origen válido → lo ignoramos
+
+                if (isTargetARS)
+                {
+                    var blue = GetBlueAt(date);
+                    return amount / srcQuote * blue;
+                }
+                else
+                {
+                    var tgt = GetTargetAt(date);
+                    return amount / srcQuote * tgt;
+                }
+            }
+
+            // === 2) Datos del MES por clase ===
+            // Cargamos los campos mínimos y convertimos en memoria (evitamos FirstOrDefault()=0 en SQL)
+            var incomesMonthRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= monthStart && t.Date < monthEnd &&
+                            t.TransactionClass.Description != CLASS_ADJ_IN &&
+                            t.TransactionClass.Description != CLASS_INV_IN)
+                .Select(t => new
+                {
+                    ClassDesc = t.TransactionClass.Description,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
+                })
+                .ToListAsync();
+
+            var expensesMonthRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= monthStart && t.Date < monthEnd &&
+                            t.TransactionClass.Description != CLASS_ADJ_EX &&
+                            t.TransactionClass.Description != CLASS_INV_EX)
+                .Select(t => new
+                {
+                    ClassDesc = t.TransactionClass.Description,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
+                })
+                .ToListAsync();
+
+            var classIncomeStats = incomesMonthRaw
+                .GroupBy(x => x.ClassDesc)
+                .Select(g => new ClassIncomeStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(x =>
+                        ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date)
+                    ), 2)
+                })
+                .OrderByDescending(x => x.Amount)
+                .ToList();
+
+            // Para egresos devolvemos magnitud positiva (como en tus gráficos)
+            var classExpenseStats = expensesMonthRaw
+                .GroupBy(x => x.ClassDesc)
+                .Select(g => new ClassExpenseStats
+                {
+                    TransactionClass = g.Key,
+                    Amount = Math.Round(g.Sum(x =>
+                        Math.Abs(ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date))
+                    ), 2)
+                })
+                .OrderByDescending(x => x.Amount)
+                .ToList();
+
+            // === 3) Series últimos 6 meses (limitamos lectura a ~18 meses para eficiencia) ===
+            var cutoff = monthStart.AddMonths(-18);
+
+            var incomesSeriesRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= cutoff &&
+                            t.TransactionClass.Description != CLASS_ADJ_IN &&
+                            t.TransactionClass.Description != CLASS_INV_IN)
+                .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
+                .ToListAsync();
+
+            var expensesSeriesRaw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= cutoff &&
+                            t.TransactionClass.Description != CLASS_ADJ_EX &&
+                            t.TransactionClass.Description != CLASS_INV_EX)
+                .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
+                .ToListAsync();
+
+            var monthIncomeStats = incomesSeriesRaw
+                .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
+                .Select(g => new MonthIncomeStats
+                {
+                    Month = g.Key,
+                    Amount = Math.Round(g.Sum(x =>
+                        ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date)
+                    ), 2)
+                })
+                .OrderByDescending(x => x.Month)
+                .Take(6)
+                .OrderBy(x => x.Month)
+                .ToList();
+
+            var monthExpenseStats = expensesSeriesRaw
+                .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
+                .Select(g => new MonthExpenseStats
+                {
+                    Month = g.Key,
+                    // magnitud positiva para egresos
+                    Amount = Math.Round(g.Sum(x =>
+                        Math.Abs(ConvertToTarget(x.AssetId, x.Amount, x.QuotePrice, x.Date))
+                    ), 2)
+                })
+                .OrderByDescending(x => x.Month)
+                .Take(6)
+                .OrderBy(x => x.Month)
+                .ToList();
+
+            // === 4) DTO final ===
+            return new IncExpStatsDTO
+            {
+                ClassIncomeStats = classIncomeStats.ToArray(),
+                ClassExpenseStats = classExpenseStats.ToArray(),
+                MonthIncomeStats = monthIncomeStats.ToArray(),
+                MonthExpenseStats = monthExpenseStats.ToArray()
+            };
         }
 
         public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
