@@ -58,6 +58,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.Transactions
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
+                .Include(m => m.Portfolio)
                 .Include(m => m.TransactionClass)
                 .FirstOrDefaultAsync(m => m.Id == id);
         }
