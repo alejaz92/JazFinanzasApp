@@ -1,6 +1,6 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.Portfolio;
+﻿using JazFinanzasApp.API.Business.DTO.Portfolio;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -33,7 +33,8 @@ namespace JazFinanzasApp.API.Controllers
             var portfoliosDTO = portfolios.Select(p => new PortfolioDTO
             {
                 Id = p.Id,
-                Name = p.Name
+                Name = p.Name,
+                IsDefault = p.IsDefault
             }).ToList();
             return Ok(portfoliosDTO);
         }
@@ -60,7 +61,8 @@ namespace JazFinanzasApp.API.Controllers
             var portfolioDTO = new PortfolioDTO
             {
                 Id = portfolio.Id,
-                Name = portfolio.Name
+                Name = portfolio.Name,
+                IsDefault = portfolio.IsDefault
             };
             return Ok(portfolioDTO);
         }
@@ -82,10 +84,21 @@ namespace JazFinanzasApp.API.Controllers
                 return BadRequest("Portfolio with this name already exists.");
             }
 
+            // Check if user has a default portfolio
+            if (portfolioDTO.IsDefault)
+            {
+                var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+                if (defaultPortfolio != null)
+                {
+                    return BadRequest("User already has a default portfolio.");
+                }
+            }
+
             var portfolio = new Portfolio
             {
                 Name = portfolioDTO.Name,
-                UserId = userId
+                UserId = userId,
+                IsDefault = portfolioDTO.IsDefault
             };
 
             await _portfolioRepository.AddAsync(portfolio);
@@ -140,6 +153,10 @@ namespace JazFinanzasApp.API.Controllers
             {
                 return Unauthorized();
             }
+
+            // Check if portfolio is default
+            if (portfolio.IsDefault) return BadRequest("Default portfolio cannot be deleted.");
+
             // Check if portfolio is used in transactions
             if (await _portfolioRepository.IsPortfolioUsedInTransactions(id))
             {
@@ -148,5 +165,32 @@ namespace JazFinanzasApp.API.Controllers
             await _portfolioRepository.DeleteAsync(portfolio.Id);
             return Ok();
         }
+
+        // get default portfolio
+        [HttpGet("default")]
+        public async Task<IActionResult> GetDefaultPortfolio()
+        {
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim == null)
+            {
+                return Unauthorized();
+            }
+            int userId = int.Parse(userIdClaim.Value);
+            var portfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+            if (portfolio == null)
+            {
+                return NotFound();
+            }
+            // convert to DTO
+            var portfolioDTO = new PortfolioDTO
+            {
+                Id = portfolio.Id,
+                Name = portfolio.Name,
+                IsDefault = portfolio.IsDefault
+            };
+            return Ok(portfolioDTO);
+        }
+
+
     }
 }

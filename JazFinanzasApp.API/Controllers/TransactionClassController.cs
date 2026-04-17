@@ -1,6 +1,6 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.transactionClass;
+﻿using JazFinanzasApp.API.Business.DTO.TransactionClass;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -50,7 +50,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
         [HttpPost]
-        public async Task<IActionResult> CreateTransactionClass(Models.DTO.transactionClass.TransactionClassDTO transactionClassDTO)
+        public async Task<IActionResult> CreateTransactionClass(TransactionClassDTO transactionClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
@@ -103,7 +103,7 @@ namespace JazFinanzasApp.API.Controllers
                 return Unauthorized();
             }
 
-            var transactionClassDTO = new Models.DTO.transactionClass.TransactionClassDTO
+            var transactionClassDTO = new TransactionClassDTO
             {
                 Description = transactionClass.Description,
                 IncExp = transactionClass.IncExp
@@ -113,7 +113,7 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateTransactionClass(int id, Models.DTO.transactionClass.TransactionClassDTO transactionClassDTO)
+        public async Task<IActionResult> UpdateTransactionClass(int id, TransactionClassDTO transactionClassDTO)
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)

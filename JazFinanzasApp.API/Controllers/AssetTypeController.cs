@@ -1,5 +1,5 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.DTO.AssetType;
+﻿using JazFinanzasApp.API.Business.DTO.AssetType;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

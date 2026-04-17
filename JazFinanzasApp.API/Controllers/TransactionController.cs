@@ -1,7 +1,7 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.InvestmentTransaction;
-using JazFinanzasApp.API.Models.DTO.Transaction;
+﻿using JazFinanzasApp.API.Business.DTO.InvestmentTransaction;
+using JazFinanzasApp.API.Business.DTO.Transaction;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -20,13 +20,15 @@ namespace JazFinanzasApp.API.Controllers
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IInvestmentTransactionRepository _investmentTransactionRepository;
+        private readonly IPortfolioRepository _portfolioRepository;
         public TransactionController(
-            ITransactionRepository transactionRepository, 
+            ITransactionRepository transactionRepository,
             IAssetRepository assetRepository,
-            IAccountRepository accountRepository, 
+            IAccountRepository accountRepository,
             ITransactionClassRepository transactionClassRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IInvestmentTransactionRepository investmentTransactionRepository
+            IInvestmentTransactionRepository investmentTransactionRepository,
+            IPortfolioRepository portfolioRepository
             )
         {
             _transactionRepository = transactionRepository;
@@ -35,6 +37,7 @@ namespace JazFinanzasApp.API.Controllers
             _transactionClassRepository = transactionClassRepository;
             _assetQuoteRepository = assetQuoteRepository;
             _investmentTransactionRepository = investmentTransactionRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
         [HttpGet]
@@ -48,7 +51,7 @@ namespace JazFinanzasApp.API.Controllers
 
             var userId = int.Parse(userIdClaim.Value);
 
-            
+
             var (transactions, totalCount) = await _transactionRepository.GetPaginatedTransactions(userId, page, pageSize);
 
 
@@ -61,6 +64,8 @@ namespace JazFinanzasApp.API.Controllers
                 Detail = m.Detail,
                 AccountId = m.AccountId,
                 AccountName = m.Account.Name,
+                PortfolioId = m.PortfolioId,
+                PortfolioName = m.Portfolio.Name,
                 AssetId = m.AssetId,
                 AssetName = m.Asset.Name,
                 AssetSymbol = m.Asset.Symbol,
@@ -84,6 +89,12 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             var userId = int.Parse(userIdClaim.Value);
+
+            var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+            if (defaultPortfolio == null)
+            {
+                return NotFound("Default portfolio not found");
+            }
 
 
             var asset = await _assetRepository.GetByIdAsync(transactionDTO.assetId);
@@ -125,7 +136,7 @@ namespace JazFinanzasApp.API.Controllers
             }
 
 
-           
+
 
 
             if (transactionDTO.movementType == "I")
@@ -153,10 +164,14 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
+
+
                 var transaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -198,10 +213,22 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
+                // check if there is eneugh balance in the account
+                var balance = await _transactionRepository.GetBalance(transactionDTO.expenseAccountId.Value, asset.Id, defaultPortfolio.Id);
+
+                if (balance < transactionDTO.amount)
+                {
+                    return BadRequest("No hay suficiente saldo en la cuenta");
+                }
+
+
+
                 var transaction = new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -239,10 +266,20 @@ namespace JazFinanzasApp.API.Controllers
                     return Unauthorized();
                 }
 
+                // check if there is eneugh balance in the account
+                var balance = await _transactionRepository.GetBalance(transactionDTO.expenseAccountId.Value, asset.Id, defaultPortfolio.Id);
+                if (balance < transactionDTO.amount)
+                {
+                    return BadRequest("No hay suficiente saldo en la cuenta");
+                }
+
+
                 var incomeTransaction = new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -264,6 +301,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
+                    PortfolioId = defaultPortfolio.Id,
+                    Portfolio = defaultPortfolio,
                     AssetId = asset.Id,
                     Asset = asset,
                     Date = transactionDTO.date,
@@ -297,10 +336,12 @@ namespace JazFinanzasApp.API.Controllers
             return Ok();
         }
 
-
         [HttpPut("{id}")]
         public async Task<IActionResult> EditTransaction(int id, TransactionEditDTO transactionDTO)
         {
+
+
+
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
             if (userIdClaim == null)
             {
@@ -356,7 +397,7 @@ namespace JazFinanzasApp.API.Controllers
 
 
                 string type;
-                
+
                 if (asset.Symbol == "ARS")
                 {
                     type = "BLUE";
@@ -373,8 +414,8 @@ namespace JazFinanzasApp.API.Controllers
                 else
                 {
                     quotePrice = await _assetQuoteRepository.GetQuotePrice(asset.Id, transactionDTO.Date, type);
-                }                
-                
+                }
+
 
                 transaction.QuotePrice = quotePrice;
                 transaction.Date = transactionDTO.Date;
@@ -385,7 +426,7 @@ namespace JazFinanzasApp.API.Controllers
             {
                 transaction.Amount = -transactionDTO.Amount;
             }
-            else 
+            else
             {
                 transaction.Amount = transactionDTO.Amount;
             }
@@ -397,7 +438,6 @@ namespace JazFinanzasApp.API.Controllers
 
             return Ok();
         }
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteTransaction(int id)
@@ -455,6 +495,8 @@ namespace JazFinanzasApp.API.Controllers
                 Detail = transaction.Detail,
                 AccountId = transaction.AccountId,
                 AccountName = transaction.Account.Name,
+                PortfolioId = transaction.PortfolioId,
+                PortfolioName = transaction.Portfolio.Name,
                 AssetId = transaction.AssetId,
                 AssetName = transaction.Asset.Name,
                 TransactionClassId = transaction.TransactionClassId,
@@ -511,17 +553,19 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = transaction.AccountId,
                     Account = transaction.Account,
+                    PortfolioId = transaction.PortfolioId,
+                    Portfolio = transaction.Portfolio,
                     AssetId = transaction.AssetId,
                     Asset = transaction.Asset,
                     Date = refundDTO.Date,
                     MovementType = "EX",
                     TransactionClassId = null,
                     Detail = "Refund",
-                    Amount = - refundDTO.Amount,
+                    Amount = -refundDTO.Amount,
                     UserId = userId,
                     CreatedAt = time,
                     UpdatedAt = time,
-                    QuotePrice = transaction.QuotePrice                    
+                    QuotePrice = transaction.QuotePrice
                 };
                 await _transactionRepository.AddAsync(refundExpenseTransaction);
 
@@ -529,6 +573,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = refundAccount.Id,
                     Account = refundAccount,
+                    PortfolioId = transaction.PortfolioId,
+                    Portfolio = transaction.Portfolio,
                     AssetId = transaction.AssetId,
                     Asset = transaction.Asset,
                     Date = refundDTO.Date,
@@ -632,5 +678,7 @@ namespace JazFinanzasApp.API.Controllers
             }
         }
 
-    }
+        // get balance by asset, account and portfolio
+
+    }       
 }

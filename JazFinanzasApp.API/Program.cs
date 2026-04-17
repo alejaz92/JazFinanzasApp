@@ -1,7 +1,7 @@
-using JazFinanzasApp.API.Data;
-using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Repositories;
+using JazFinanzasApp.API.Infrastructure.Data;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
+using JazFinanzasApp.API.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +39,7 @@ builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
 builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository>();
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
 builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
+builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
 
 builder.Services.AddIdentityCore<User>()
     .AddTokenProvider<DataProtectorTokenProvider<User>>("JazFinanzasApp")

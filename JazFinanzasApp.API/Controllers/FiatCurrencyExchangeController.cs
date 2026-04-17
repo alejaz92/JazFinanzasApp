@@ -1,7 +1,6 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO;
-using JazFinanzasApp.API.Models.DTO.InvestmentTransaction;
+﻿using JazFinanzasApp.API.Business.DTO.InvestmentTransaction;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,14 +18,22 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAssetRepository _assetRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
+        private readonly IPortfolioRepository _portfolioRepository;
 
-        public FiatCurrencyExchangeController(ITransactionRepository transactionRepository, IInvestmentTransactionRepository investmentTransactionRepository, IAssetRepository assetRepository, IAccountRepository accountRepository, IAssetQuoteRepository assetQuoteRepository)
+        public FiatCurrencyExchangeController(
+            ITransactionRepository transactionRepository, 
+            IInvestmentTransactionRepository investmentTransactionRepository, 
+            IAssetRepository assetRepository, 
+            IAccountRepository accountRepository, 
+            IAssetQuoteRepository assetQuoteRepository,
+            IPortfolioRepository portfolioRepository)
         {
             _transactionRepository = transactionRepository;
             _investmentTransactionRepository = investmentTransactionRepository;
             _assetRepository = assetRepository;
             _accountRepository = accountRepository;
             _assetQuoteRepository = assetQuoteRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
         [HttpGet]
@@ -50,9 +57,11 @@ namespace JazFinanzasApp.API.Controllers
                     Date = m.Date,
                     ExpenseAsset = m.ExpenseTransaction?.Asset?.Name,
                     ExpenseAccount = m.ExpenseTransaction?.Account?.Name,
+                    ExpensePortfolio = m.ExpenseTransaction?.Portfolio?.Name,
                     ExpenseAmount = m.ExpenseTransaction?.Amount,
                     IncomeAsset = m.IncomeTransaction?.Asset?.Name,
                     IncomeAccount = m.IncomeTransaction?.Account?.Name,
+                    IncomePortfolio = m.IncomeTransaction?.Portfolio?.Name,
                     IncomeAmount = m.IncomeTransaction?.Amount
                 });
 
@@ -80,20 +89,32 @@ namespace JazFinanzasApp.API.Controllers
             var incomeId = 0;
             var expenseId = 0;
 
+            // get default portfolio
+            var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId); 
+
             try
             {
 
                 // assign assets and accounts
-                var expenseAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAssetId.Value);     
-                var expenseAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAccountId.Value);              
+                var expenseAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAssetId.Value);
+                var expenseAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.ExpenseAccountId.Value);
+                var expensePortfolio = defaultPortfolio;
 
 
-                var incomeAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAssetId.Value);             
+                var incomeAsset = await _assetRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAssetId.Value);
                 var incomeAccount = await _accountRepository.GetByIdAsync(exchangeTransactionDTO.IncomeAccountId.Value);
+                var incomePortfolio = defaultPortfolio;
 
-                if (expenseAsset == null || expenseAccount == null || incomeAsset == null || incomeAccount == null)
+                if (expenseAsset == null || expenseAccount == null || incomeAsset == null || incomeAccount == null || expensePortfolio == null || incomePortfolio == null)
                 {
-                    return BadRequest("Invalid Asset or Account");
+                    return BadRequest("Invalid Asset or Account or Portfolio");
+                }
+
+                //check if there is enaugh balance in the expense account
+                var expenseBalance = await _transactionRepository.GetBalance(expenseAccount.Id, expenseAsset.Id, expensePortfolio.Id);
+                if (expenseBalance < exchangeTransactionDTO.ExpenseAmount)
+                {
+                    return BadRequest("Not enough balance in the expense account");
                 }
 
 
@@ -118,6 +139,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.ExpenseAccountId.Value,
                     Account = expenseAccount,
+                    PortfolioId = expensePortfolio.Id,
+                    Portfolio = expensePortfolio,
                     AssetId = exchangeTransactionDTO.ExpenseAssetId.Value,
                     Asset = expenseAsset,
                     Date = exchangeTransactionDTO.Date,
@@ -133,6 +156,8 @@ namespace JazFinanzasApp.API.Controllers
                 {
                     AccountId = exchangeTransactionDTO.IncomeAccountId.Value,
                     Account = incomeAccount,
+                    PortfolioId = incomePortfolio.Id,
+                    Portfolio = incomePortfolio,
                     AssetId = exchangeTransactionDTO.IncomeAssetId.Value,
                     Asset = incomeAsset,
                     Date = exchangeTransactionDTO.Date,
@@ -173,7 +198,6 @@ namespace JazFinanzasApp.API.Controllers
                 return StatusCode(StatusCodes.Status500InternalServerError, "Database Failure");
             }
         }
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteExchangeTransaction(int id)

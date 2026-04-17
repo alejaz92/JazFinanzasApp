@@ -1,9 +1,6 @@
-﻿using JazFinanzasApp.API.Interfaces;
-using JazFinanzasApp.API.Models;
-using JazFinanzasApp.API.Models.Domain;
-using JazFinanzasApp.API.Models.DTO.CardTransaction;
-using JazFinanzasApp.API.Models.DTO.CardTransaction;
-using JazFinanzasApp.API.Repositories;
+﻿using JazFinanzasApp.API.Business.DTO.CardTransaction;
+using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +23,7 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAccountRepository _accountRepository;
         private readonly IAccount_AssetTypeRepository _account_AssetTypeRepository;
         private readonly ITransactionRepository _transactionRepository;
+        private readonly IPortfolioRepository _portfolioRepository;
 
 
         public CardTransactionController(ICardTransactionRepository cardTransactionRepository,
@@ -37,7 +35,8 @@ namespace JazFinanzasApp.API.Controllers
             ICardPaymentRepository cardPaymentRepository,
             IAccountRepository accountRepository,
             IAccount_AssetTypeRepository account_AssetTypeRepository,
-            ITransactionRepository transactionRepository)
+            ITransactionRepository transactionRepository,
+            IPortfolioRepository portfolioRepository)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -49,6 +48,7 @@ namespace JazFinanzasApp.API.Controllers
             _accountRepository = accountRepository;
             _account_AssetTypeRepository = account_AssetTypeRepository;
             _transactionRepository = transactionRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
 
@@ -229,11 +229,29 @@ namespace JazFinanzasApp.API.Controllers
             var quotePrice = await _assetQuoteRepository
                 .GetQuotePrice(peso.Id, cardTransactionsPaymentDTO.PaymentDate, "BLUE");
 
+            //get default portfolio
+            var portfolio = await _portfolioRepository.GetDefaultPortfolio(userId);
+            if (portfolio == null) return BadRequest("Default portfolio not found");
+
+
+            // check if there is enaugh pesos balance in the account
+            var balance = await _transactionRepository.GetBalance(account.Id, peso.Id, portfolio.Id);
+            if (balance < cardTransactionsPaymentDTO.PesosAmount) return BadRequest("Not enough balance in account");
+
+            // check if there is enaugh dolar balance in the account
+            if (cardTransactionsPaymentDTO.DolarAmount != null)
+            {
+                var balanceDolar = await _transactionRepository.GetBalance(account.Id, dolar.Id, portfolio.Id);
+                if (balanceDolar < cardTransactionsPaymentDTO.DolarAmount) return BadRequest("Not enough balance in account");
+            }
+
+
 
             await _transactionRepository.BeginTransactionAsync();
 
             try
             {
+                
                 foreach (var cardTransaction in cardTransactionsPaymentDTO.CardTransactions)
                 {
 
@@ -251,10 +269,8 @@ namespace JazFinanzasApp.API.Controllers
                     if (transactionClass == null) return BadRequest("Error in Validation");
 
                     cardTransaction.TransactionClass = transactionClass.Description;
-
-
-                    //aca hay que revisar
-                    var transaction = CreateTransaction(cardTransactionsPaymentDTO, cardTransaction, userId, peso, dolar, quotePrice);
+  
+                    var transaction = CreateTransaction(cardTransactionsPaymentDTO, cardTransaction, userId, peso, dolar, quotePrice, portfolio.Id);
 
                     await _transactionRepository.AddAsyncTransaction(transaction);
 
@@ -269,6 +285,7 @@ namespace JazFinanzasApp.API.Controllers
                     Date = cardTransactionsPaymentDTO.PaymentDate,
                     Detail = $"Gastos Tarjeta - {card.Name}",
                     AccountId = cardTransactionsPaymentDTO.accountId,
+                    PortfolioId = portfolio.Id,
                     TransactionClassId = cardExpensesClass.Id,
                     MovementType = "E",
                     UserId = userId,
@@ -303,25 +320,15 @@ namespace JazFinanzasApp.API.Controllers
 
         }
 
-        private async Task<bool> ValidateTransaction(CardTransactionPaymentListDTO cardTransaction, int userId)
-        {
-            var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
-            if (asset == null || (asset.Name != "Peso Argentino" && asset.Name != "Dolar Estadounidense")) return false;
 
-            var assetUser = await _assetUserRepository.GetUserAssetAsync(userId, cardTransaction.AssetId);
-            if (assetUser == null) return false;
-
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(cardTransaction.TransactionClassId);
-            return transactionClass != null;
-        }
-
-        private Transaction CreateTransaction(CardTransactionPaymentDTO cardTransactionspaymentDTO, CardTransactionPaymentListDTO cardTransactionsPaymentListDTO, int userId, Asset peso, Asset dolar, decimal quotePrice)
+        private Transaction CreateTransaction(CardTransactionPaymentDTO cardTransactionspaymentDTO, CardTransactionPaymentListDTO cardTransactionsPaymentListDTO, int userId, Asset peso, Asset dolar, decimal quotePrice, int portfolioID)
         {
             var transaction = new Transaction
             {
                 Date = cardTransactionspaymentDTO.PaymentMonth,
                 Detail = $"(Tarjeta | {cardTransactionsPaymentListDTO.Installment}) {cardTransactionsPaymentListDTO.Detail}",
                 AccountId = cardTransactionspaymentDTO.accountId,
+                PortfolioId = portfolioID,
                 TransactionClassId = cardTransactionsPaymentListDTO.TransactionClassId,
                 MovementType = "E",
                 UserId = userId,
