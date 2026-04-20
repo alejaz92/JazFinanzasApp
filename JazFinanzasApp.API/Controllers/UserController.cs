@@ -45,7 +45,7 @@ namespace JazFinanzasApp.API.Controllers
         public async Task<IActionResult> GetUserName()
         {
             var result = await _userService.GetUserNameAsync(GetUserId());
-            return Ok(result);
+            return Ok(new { userName = result });
         }
 
         [HttpPut("reset-password")]
