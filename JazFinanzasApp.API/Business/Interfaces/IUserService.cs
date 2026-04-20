@@ -8,6 +8,6 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task UpdateUserAsync(int userId, EditUserDTO dto);
         Task UpdatePasswordAsync(int userId, UpdatePasswordDTO dto);
         Task<string> GetUserNameAsync(int userId);
-        Task ResetPasswordAsync(int adminUserId, ResetPasswordDTO dto);
+        Task<string> ResetPasswordAsync(int adminUserId, ResetPasswordDTO dto);
     }
 }

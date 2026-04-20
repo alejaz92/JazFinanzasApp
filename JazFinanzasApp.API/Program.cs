@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Middleware;
@@ -67,11 +69,11 @@ builder.Services.AddIdentityCore<User>()
 
 builder.Services.Configure<IdentityOptions>(options =>
 {
-    options.Password.RequireDigit = false;
-    options.Password.RequireLowercase = false;
+    options.Password.RequireDigit = true;
+    options.Password.RequireLowercase = true;
     options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequireUppercase = false;
-    options.Password.RequiredLength = 6;
+    options.Password.RequireUppercase = true;
+    options.Password.RequiredLength = 8;
     options.Password.RequiredUniqueChars = 1;
 });
 
@@ -108,6 +110,19 @@ builder.Services.AddCors(options =>
     });
 });
 
+// Rate limiting para login
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("login", cfg =>
+    {
+        cfg.Window = TimeSpan.FromMinutes(1);
+        cfg.PermitLimit = 10;
+        cfg.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        cfg.QueueLimit = 0;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -126,6 +141,7 @@ app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapControllers();
 

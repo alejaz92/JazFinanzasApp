@@ -188,15 +188,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     WHERE T.UserId = @USER
                 ";
 
-                otherSQL = otherSQL.Replace("@ASSETID", asset.Id.ToString());
-
                 decimal totalBalanceOther = 0;
 
 
                 try
                 {
                     var resultOther = await _context.Set<TotalBalanceResult>()
-                        .FromSqlRaw(otherSQL, new SqlParameter("@USER", userId))
+                        .FromSqlRaw(otherSQL, new SqlParameter("@ASSETID", asset.Id), new SqlParameter("@USER", userId))
                         .FirstOrDefaultAsync();
 
                     totalBalanceOther = resultOther?.Total ?? 0;

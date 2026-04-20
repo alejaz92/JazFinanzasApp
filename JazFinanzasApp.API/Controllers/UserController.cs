@@ -52,8 +52,8 @@ namespace JazFinanzasApp.API.Controllers
         [HttpPut("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordDTO resetPasswordDTO)
         {
-            await _userService.ResetPasswordAsync(GetUserId(), resetPasswordDTO);
-            return Ok(new { Message = "Password reset successfully" });
+            var tempPassword = await _userService.ResetPasswordAsync(GetUserId(), resetPasswordDTO);
+            return Ok(new { Message = "Password reset successfully", TempPassword = tempPassword });
         }
     }
 }

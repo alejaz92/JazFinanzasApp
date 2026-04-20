@@ -54,7 +54,7 @@ namespace JazFinanzasApp.API.Business.Services
             return userName;
         }
 
-        public async Task ResetPasswordAsync(int adminUserId, ResetPasswordDTO dto)
+        public async Task<string> ResetPasswordAsync(int adminUserId, ResetPasswordDTO dto)
         {
             var authorizedUser = await _userRepository.GetByIdAsync(adminUserId)
                 ?? throw new NotFoundException("User not found");
@@ -64,9 +64,11 @@ namespace JazFinanzasApp.API.Business.Services
             var user = await _userRepository.GetByUserNameAsync(dto.userName)
                 ?? throw new NotFoundException("Target user not found");
 
-            var result = await _userRepository.ResetPasswordAsync(user);
+            var (result, tempPassword) = await _userRepository.ResetPasswordAsync(user);
             if (!result.Succeeded)
                 throw new BusinessRuleException(string.Join("; ", result.Errors.Select(e => e.Description)));
+
+            return tempPassword;
         }
     }
 }

@@ -1,6 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.User;
 using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace JazFinanzasApp.API.Controllers
 {
@@ -30,6 +31,7 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(new { Message = "User created succesfully" });
         }
 
+        [EnableRateLimiting("login")]
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginUserDTO loginUserDTO)
         {

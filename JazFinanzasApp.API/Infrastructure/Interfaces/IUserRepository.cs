@@ -12,7 +12,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IList<string>> GetRolesAsync(User user);
         Task<string> LoginUserAsync(string userName, string password);
         Task<(IdentityResult Result, int UserId)> RegisterUserAsync(string name, string lastName, string userName, string email, string password);
-        Task<IdentityResult> ResetPasswordAsync(User user);
+        Task<(IdentityResult Result, string TempPassword)> ResetPasswordAsync(User user);
         Task<IdentityResult> UpdatePasswordAsync(User user, string oldPassword, string newPassword);
         Task<IdentityResult> UpdateUserAsync(User user);
     }

@@ -110,10 +110,35 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         public async Task<User> GetByUserNameAsync(string userName) => await _userManager.FindByNameAsync(userName);
 
 
-        public async Task<IdentityResult> ResetPasswordAsync(User user)
+        public async Task<(IdentityResult Result, string TempPassword)> ResetPasswordAsync(User user)
         {
+            var tempPassword = GenerateSecurePassword();
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
-            return await _userManager.ResetPasswordAsync(user, token, user.UserName + "123456");
+            var result = await _userManager.ResetPasswordAsync(user, token, tempPassword);
+            return (result, tempPassword);
+        }
+
+        private static string GenerateSecurePassword()
+        {
+            const string upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+            const string lower = "abcdefghijklmnopqrstuvwxyz";
+            const string digits = "0123456789";
+            const string special = "!@#$%^&*";
+            const string all = upper + lower + digits + special;
+
+            var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+            var bytes = new byte[16];
+            rng.GetBytes(bytes);
+
+            var chars = new char[12];
+            chars[0] = upper[bytes[0] % upper.Length];
+            chars[1] = digits[bytes[1] % digits.Length];
+            chars[2] = special[bytes[2] % special.Length];
+            chars[3] = lower[bytes[3] % lower.Length];
+            for (int i = 4; i < 12; i++)
+                chars[i] = all[bytes[i] % all.Length];
+
+            return new string(chars.OrderBy(_ => System.Security.Cryptography.RandomNumberGenerator.GetInt32(100)).ToArray());
         }
 
         public async Task<IList<string>> GetRolesAsync(User user)
