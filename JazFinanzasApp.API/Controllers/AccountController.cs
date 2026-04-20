@@ -1,8 +1,6 @@
-﻿using JazFinanzasApp.API.Business.DTO.Account;
-using JazFinanzasApp.API.Infrastructure.Domain;
-using JazFinanzasApp.API.Infrastructure.Interfaces;
+using JazFinanzasApp.API.Business.DTO.Account;
+using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -13,219 +11,62 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class AccountController : ControllerBase
     {
-        private readonly IAccountRepository _accountRepository;
-        private readonly IAssetTypeRepository _assetTypeRepository;
-        public AccountController(IAccountRepository accountRepository, IAssetTypeRepository assetTypeRepository)
+        private readonly IAccountService _accountService;
+
+        public AccountController(IAccountService accountService)
         {
-            _accountRepository = accountRepository;
-            _assetTypeRepository = assetTypeRepository;
+            _accountService = accountService;
         }
+
+        private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         [HttpGet]
         public async Task<IActionResult> GetAllForUser()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var accounts = await _accountRepository.GetByUserIdAsync(userId);
-
-            // convert to DTO
-
-            var accountsDTO = accounts.Select(a => new AccountDTO
-            {
-                Id = a.Id,
-                Name = a.Name
-            }).ToList();
-            return Ok(accountsDTO);
+            var result = await _accountService.GetAllForUserAsync(GetUserId());
+            return Ok(result);
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var account = await _accountRepository.GetByIdAsync(id);
-            if (account == null)
-            {
-                return NotFound();
-            }
-            if(account.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            var accountDTO = new AccountDTO
-            {
-                Name = account.Name
-            };
-            return Ok(accountDTO);
+            var result = await _accountService.GetByIdAsync(GetUserId(), id);
+            return Ok(result);
         }
-
 
         [HttpPost]
         public async Task<IActionResult> CreateAccount(AccountDTO accountDTO)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var checkExists = await _accountRepository.FindAsync(a => a.Name == accountDTO.Name && a.UserId == userId);
-            if(checkExists.Any())
-            {
-                return BadRequest("Account already exists");
-            }
-
-            var account = new Account
-            {
-                Name = accountDTO.Name,
-                UserId = userId
-            };
-
-            await _accountRepository.AddAsync(account);
-
+            await _accountService.CreateAccountAsync(GetUserId(), accountDTO);
             return Ok();
         }
 
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateAccount(int id, AccountDTO accountDTO)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var account = await _accountRepository.GetByIdAsync(id);
-            if (account == null)
-            {
-                return NotFound();
-            }
-            if(account.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            account.UpdatedAt = DateTime.UtcNow;
-            account.Name = accountDTO.Name;
-            await _accountRepository.UpdateAsync(account);
+            await _accountService.UpdateAccountAsync(GetUserId(), id, accountDTO);
             return Ok();
         }
-        
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAccount(int id)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var account = await _accountRepository.GetByIdAsync(id);
-            if (account == null)
-            {
-                return NotFound();
-            }
-            if(account.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            // check if account has transactions
-            var isUsed = await _accountRepository.IsAccountUsedInTransactions(id);
-            if (isUsed)
-            {
-                return BadRequest("Account is used in transactions");
-            }
-
-
-            await _accountRepository.DeleteAsync(id);
+            await _accountService.DeleteAccountAsync(GetUserId(), id);
             return Ok();
         }
-
 
         [HttpGet("byAssetType/{assetTypeName}")]
         public async Task<IActionResult> GetByAssetType(string assetTypeName)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var assetType = await _assetTypeRepository.GetByName(assetTypeName);
-            if (assetType == null)
-            {
-                return NotFound();
-            }
-            
-
-            var accounts = await _accountRepository.GetByAssetType(assetType.Id,userId);
-            if (accounts == null)
-            {
-                return NotFound();
-            }
-
-            var accountsDTO = accounts.Select( a => new AccountDTO
-            {
-                Id = a.Id,
-                Name = a.Name
-            }).ToList();
-            return Ok(accountsDTO);
+            var result = await _accountService.GetByAssetTypeNameAsync(GetUserId(), assetTypeName);
+            return Ok(result);
         }
 
-        //get account by asset type Id
         [HttpGet("byAssetTypeId/{assetTypeId}")]
         public async Task<IActionResult> GetByAssetTypeId(int assetTypeId)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var assetType = await _assetTypeRepository.GetByIdAsync(assetTypeId);
-            if (assetType == null)
-            {
-                return NotFound();
-            }
-
-            var accounts = await _accountRepository.GetByAssetType(assetTypeId, userId);
-            if (accounts == null)
-            {
-                return NotFound();
-            }
-
-            var accountsDTO = accounts.Select(a => new AccountDTO
-            {
-                Id = a.Id,
-                Name = a.Name
-            }).ToList();
-            return Ok(accountsDTO);
+            var result = await _accountService.GetByAssetTypeAsync(GetUserId(), assetTypeId);
+            return Ok(result);
         }
-        
     }
 }

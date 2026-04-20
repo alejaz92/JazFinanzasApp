@@ -1,5 +1,5 @@
-﻿using JazFinanzasApp.API.Business.DTO.Report;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
+using JazFinanzasApp.API.Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -26,10 +26,10 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
         public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
         public DbSet<BondPayment> BondPayments { get; set; }
-        public DbSet<StockStatsListDTO> StockStatsListDTO { get; set; }
-        public DbSet<StocksGralStatsDTO> StocksGralStatsDTO { get; set; }
-        public DbSet<CryptoStatsByDateDTO> CryptoStatsByDateDTO { get; set; }
-        public DbSet<CryptoStatsByDateCommerceDTO> CryptoStatsByDateCommerceDTO { get; set; }
+        public DbSet<StockStatsListResult> StockStatsListResult { get; set; }
+        public DbSet<StocksGralStatsResult> StocksGralStatsResult { get; set; }
+        public DbSet<CryptoStatsByDateResult> CryptoStatsByDateResult { get; set; }
+        public DbSet<CryptoStatsByDateCommerceResult> CryptoStatsByDateCommerceResult { get; set; }
         public DbSet<Portfolio> Portfolios { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -37,12 +37,10 @@ namespace JazFinanzasApp.API.Infrastructure.Data
             base.OnModelCreating(modelBuilder);
 
             modelBuilder.Entity<TotalBalanceResult>().HasNoKey();
-
-            modelBuilder.Entity<StockStatsListDTO>().HasNoKey();
-
-            modelBuilder.Entity<StocksGralStatsDTO>().HasNoKey();
-            modelBuilder.Entity<CryptoStatsByDateDTO>().HasNoKey();
-            modelBuilder.Entity<CryptoStatsByDateCommerceDTO>().HasNoKey();
+            modelBuilder.Entity<StockStatsListResult>().HasNoKey();
+            modelBuilder.Entity<StocksGralStatsResult>().HasNoKey();
+            modelBuilder.Entity<CryptoStatsByDateResult>().HasNoKey();
+            modelBuilder.Entity<CryptoStatsByDateCommerceResult>().HasNoKey();
 
             modelBuilder.Entity<AssetType>().HasData(
                 new AssetType {Id= 1, Name = "Moneda", Environment = "FIAT" },
@@ -62,93 +60,93 @@ namespace JazFinanzasApp.API.Infrastructure.Data
 
             modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.Card)
-                .WithMany() // Si no hay colección en Card
+                .WithMany() // Si no hay colecci�n en Card
                 .HasForeignKey(cm => cm.CardId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
 
             modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.TransactionClass)
-                .WithMany() // Si no hay colección en TransactionClass
+                .WithMany() // Si no hay colecci�n en TransactionClass
                 .HasForeignKey(cm => cm.TransactionClassId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
 
             modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.Asset)
-                .WithMany() // Si no hay colección en Asset
+                .WithMany() // Si no hay colecci�n en Asset
                 .HasForeignKey(cm => cm.AssetId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
 
             modelBuilder.Entity<CardTransaction>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
 
             modelBuilder.Entity<Account>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Asset>()
                 .HasOne(cm => cm.AssetType)
-                .WithMany(at => at.Assets) // Si no hay colección en User
+                .WithMany(at => at.Assets) // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AssetTypeId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Asset_User>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Asset_User>()
                 .HasOne(cm => cm.Asset)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AssetId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<AssetQuote>()
                 .HasOne(cm => cm.Asset)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AssetId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Card>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<CardPayment>()
                 .HasOne(cm => cm.Card)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.CardId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.Account)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AccountId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.Asset)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AssetId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.Portfolio)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.PortfolioId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.TransactionClass)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.TransactionClassId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<Transaction>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<TransactionClass>()
                 .HasOne(cm => cm.User)
-                .WithMany() // Si no hay colección en User
+                .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
-                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
             modelBuilder.Entity<InvestmentTransaction>()
             .HasOne(im => im.IncomeTransaction)
             .WithMany()

@@ -1,5 +1,4 @@
-﻿using JazFinanzasApp.API.Business.DTO.User;
-using JazFinanzasApp.API.Infrastructure.Domain;
+﻿using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
@@ -26,33 +25,33 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             this.configuration = configuration;
         }
 
-        public async Task<(IdentityResult Result, int UserId)> RegisterUserAsync(RegisterUserDTO model)
+        public async Task<(IdentityResult Result, int UserId)> RegisterUserAsync(string name, string lastName, string userName, string email, string password)
         {
             var user = new User
             {
-                Name = model.Name,
-                LastName = model.LastName,
-                UserName = model.UserName,
-                Email = model.Email
+                Name = name,
+                LastName = lastName,
+                UserName = userName,
+                Email = email
             };
 
-            var result =  await _userManager.CreateAsync(user, model.Password);
+            var result = await _userManager.CreateAsync(user, password);
 
             return (result, user.Id);
         }
 
-        public async Task<string> LoginUserAsync(LoginUserDTO model)
+        public async Task<string> LoginUserAsync(string userName, string password)
         {
-            var result = await _userManager.FindByNameAsync(model.UserName);
+            var result = await _userManager.FindByNameAsync(userName);
             if (result ==null)
             {
                 return null; // usuario no encontrado
             }
 
-            var passwordCheck = await _userManager.CheckPasswordAsync(result, model.Password);
+            var passwordCheck = await _userManager.CheckPasswordAsync(result, password);
             if(!passwordCheck)
             {
-                return null; //contraseña incorrecta
+                return null; //contrase�a incorrecta
             }
             return GenerateJwtToken(result);
         }

@@ -1,5 +1,5 @@
-﻿using JazFinanzasApp.API.Business.DTO.Report;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
+using JazFinanzasApp.API.Domain;
 
 namespace JazFinanzasApp.API.Infrastructure.Interfaces
 {
@@ -7,17 +7,17 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     {
         Task<Transaction> GetTransactionByIdAsync(int id);
         Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize);
-        Task<IEnumerable<BalanceDTO>> GetBalanceByAssetAndUserAsync(int assetId, int userId);
-        Task<TotalsBalanceDTO> GetTotalsBalanceByUserAsync(int userId, Asset asset);
-        Task<IncExpStatsDTO> GetDollarIncExpStatsAsync(int userId, DateTime month);
-        Task<IncExpStatsDTO> GetPesosIncExpStatsAsync(int userId, DateTime month);
-        Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable,
+        Task<IEnumerable<BalanceResult>> GetBalanceByAssetAndUserAsync(int assetId, int userId);
+        Task<TotalsBalanceResult> GetTotalsBalanceByUserAsync(int userId, Asset asset);
+        Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month);
+        Task<IncExpResult> GetPesosIncExpStatsAsync(int userId, DateTime month);
+        Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(int userId, int assetTypeId, string environment, bool considerStable,
             int referenceAssetId);
-        Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(int userId, string environment, int referenceAssetId);
-        Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int referenceAssetId);
-        Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId);
-        Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId);
-        Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset);
+        Task<IEnumerable<StocksGralStatsResult>> GetStocksGralStatsAsync(int userId, string environment, int referenceAssetId);
+        Task<IEnumerable<CryptoStatsByDateResult>> GetCryptoStatsByDateAsync(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int referenceAssetId);
+        Task<IEnumerable<CryptoStatsByDateCommerceResult>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId);
+        Task<IEnumerable<InvestmentTransactionsResult>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId);
+        Task<IncExpResult> GetIncExpStatsAsync(int userId, DateTime month, Asset asset);
         Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId);
         Task<decimal> GetBalance(int accountId, int assetId, int portfolioId);
         Task<decimal> GetAverageQuotePrice(int accountId, int assetId, int portfolioId);

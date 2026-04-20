@@ -1,5 +1,4 @@
-﻿using JazFinanzasApp.API.Business.DTO.User;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 using Microsoft.AspNetCore.Identity;
 
 namespace JazFinanzasApp.API.Infrastructure.Interfaces
@@ -10,8 +9,8 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<User> GetByIdAsync(int id);
         Task<User> GetByUserNameAsync(string userName);
         Task<string> GetUserNameByIdAsync(int id);
-        Task<string> LoginUserAsync(LoginUserDTO model);
-        Task<(IdentityResult Result, int UserId)> RegisterUserAsync(RegisterUserDTO model);
+        Task<string> LoginUserAsync(string userName, string password);
+        Task<(IdentityResult Result, int UserId)> RegisterUserAsync(string name, string lastName, string userName, string email, string password);
         Task<IdentityResult> ResetPasswordAsync(User user);
         Task<IdentityResult> UpdatePasswordAsync(User user, string oldPassword, string newPassword);
         Task<IdentityResult> UpdateUserAsync(User user);

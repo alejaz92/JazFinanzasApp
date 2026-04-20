@@ -1,4 +1,4 @@
-﻿using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 
 namespace JazFinanzasApp.API.Infrastructure.Interfaces
 {
@@ -6,5 +6,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     {
         Task<IEnumerable<Account>> GetByAssetType(int assetTypeId, int userId);
         Task<bool> IsAccountUsedInTransactions(int accountId);
+        Task<IEnumerable<Account>> GetByUserIdAsync(int userId);
     }
 }

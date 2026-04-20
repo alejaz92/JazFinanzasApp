@@ -1,8 +1,6 @@
-﻿using JazFinanzasApp.API.Business.DTO.Card;
-using JazFinanzasApp.API.Infrastructure.Domain;
-using JazFinanzasApp.API.Infrastructure.Interfaces;
+using JazFinanzasApp.API.Business.DTO.Card;
+using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -13,153 +11,48 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class CardController : ControllerBase
     {
-        private readonly ICardRepository _cardRepository;
-        public CardController(ICardRepository cardRepository)
+        private readonly ICardService _cardService;
+
+        public CardController(ICardService cardService)
         {
-            _cardRepository = cardRepository;
-        }          
+            _cardService = cardService;
+        }
+
+        private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         [HttpGet]
         public async Task<IActionResult> GetAllForUser()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var cards = await _cardRepository.GetByUserIdAsync(userId);
-
-            // convert to DTO
-
-            var cardsDTO = cards.Select(c => new CardDTO
-            {
-                Id = c.Id,
-                Name = c.Name
-            }).ToList();
-            return Ok(cardsDTO);
+            var result = await _cardService.GetAllForUserAsync(GetUserId());
+            return Ok(result);
         }
 
         [HttpPost]
         public async Task<IActionResult> CreateCard(CardDTO cardDTO)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var checkExists = await _cardRepository.FindAsync(c => c.Name == cardDTO.Name && c.UserId == userId);
-            if(checkExists.Any())
-            {
-                return BadRequest("Card already exists");
-            }
-
-            var card = new Card
-            {
-                Name = cardDTO.Name,
-                UserId = userId
-            };
-
-            await _cardRepository.AddAsync(card);
-            return Ok();
+            await _cardService.CreateCardAsync(GetUserId(), cardDTO);
+            return Ok(cardDTO);
         }
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var card = await _cardRepository.GetByIdAsync(id);
-            if (card == null)
-            {
-                return NotFound();
-            }
-
-            if (card.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            var cardDTO = new CardDTO
-            {
-                Name = card.Name
-            };
-
-            return Ok(cardDTO);
+            var result = await _cardService.GetByIdAsync(GetUserId(), id);
+            return Ok(result);
         }
 
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateCard(int id, CardDTO cardDTO)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var card = await _cardRepository.GetByIdAsync(id);
-            if (card == null)
-            {
-                return NotFound();
-            }
-
-            if (card.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            card.Name = cardDTO.Name;
-            card.UpdatedAt = DateTime.UtcNow;
-
-            await _cardRepository.UpdateAsync(card);
-
-            return Ok(cardDTO);
+            await _cardService.UpdateCardAsync(GetUserId(), id, cardDTO);
+            return Ok();
         }
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCard(int id)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var card = await _cardRepository.GetByIdAsync(id);
-            if (card == null)
-            {
-                return NotFound();
-            }
-
-            if (card.UserId != userId)
-            {
-                return Unauthorized();
-            }
-
-            if ( await _cardRepository.IsCardUsed(id))
-            {
-                return BadRequest("Card is used in transactions");
-            }
-
-            await _cardRepository.DeleteAsync(id);
-
+            await _cardService.DeleteCardAsync(GetUserId(), id);
             return Ok();
         }
-
     }
 }

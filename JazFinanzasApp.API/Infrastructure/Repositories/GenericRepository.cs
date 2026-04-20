@@ -1,7 +1,6 @@
 ﻿using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 using System.Linq.Expressions;
 
 namespace JazFinanzasApp.API.Infrastructure.Repositories
@@ -10,8 +9,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
     {
         private readonly ApplicationDbContext _context;
         private readonly DbSet<T> _dbSet;
-        private IDbContextTransaction _transaction;
-        private bool _isTransactionActive = false;
 
         public GenericRepository(ApplicationDbContext context)
         {
@@ -67,10 +64,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             if (entity != null)
             {
                 _dbSet.Remove(entity);
-                if (!_isTransactionActive) // Solo guarda cambios si no hay una transacción activa
-                {
-                    await _context.SaveChangesAsync();
-                }
+                await _context.SaveChangesAsync();
             }
         }
 
@@ -84,36 +78,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.Set<T>()
                 .Where(entity => EF.Property<int>(entity, "UserId") == userId)
                 .ToListAsync();
-        }
-
-
-        public async Task BeginTransactionAsync()
-        {
-            _transaction = await _context.Database.BeginTransactionAsync();
-            _isTransactionActive = true;
-        }
-
-        public async Task CommitTransactionAsync()
-        {
-            if(_transaction != null)
-            {
-                await _context.SaveChangesAsync();
-                await _transaction.CommitAsync();
-                await _transaction.DisposeAsync();
-                _transaction = null;
-                _isTransactionActive = false;
-            }
-        }
-
-        public async Task RollbackTransactionAsync()
-        {
-            if(_transaction != null)
-            {
-                await _transaction.RollbackAsync();
-                await _transaction.DisposeAsync();
-                _transaction = null;
-                _isTransactionActive = false;
-            }
         }
     }
 }

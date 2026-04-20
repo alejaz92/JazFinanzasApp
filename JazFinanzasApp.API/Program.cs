@@ -1,7 +1,10 @@
 using JazFinanzasApp.API.Infrastructure.Data;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
+using JazFinanzasApp.API.Middleware;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Infrastructure.Repositories;
+using JazFinanzasApp.API.Business.Interfaces;
+using JazFinanzasApp.API.Business.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +21,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Conexión a la base de datos
+// Conexiï¿½n a la base de datos
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
     options.UseSqlServer(builder.Configuration.GetConnectionString("JazFinanzasAppConnectionString"));
@@ -40,6 +43,21 @@ builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository
 builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
 builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
 builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+
+// Registrar los servicios
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ITransactionService, TransactionService>();
+builder.Services.AddScoped<IInvestmentTransactionService, InvestmentTransactionService>();
+builder.Services.AddScoped<IFiatCurrencyExchangeService, FiatCurrencyExchangeService>();
+builder.Services.AddScoped<ICardTransactionService, CardTransactionService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddScoped<IAccountService, AccountService>();
+builder.Services.AddScoped<IAssetService, AssetService>();
+builder.Services.AddScoped<IPortfolioService, PortfolioService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
+builder.Services.AddScoped<ICardService, CardService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddTokenProvider<DataProtectorTokenProvider<User>>("JazFinanzasApp")
@@ -56,7 +74,7 @@ builder.Services.Configure<IdentityOptions>(options =>
     options.Password.RequiredUniqueChars = 1;
 });
 
-// Configuración de JWT
+// Configuraciï¿½n de JWT
 var key = Encoding.UTF8.GetBytes(builder.Configuration["Jwt:key"]);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -74,14 +92,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-// Configuración de CORS
+// Configuraciï¿½n de CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("FrontendPolicy", policy =>
     {
         policy.WithOrigins(
             "http://localhost:4200",  // Dominio de desarrollo
-            "https://jazfinanzaswebapp.azurestaticapps.net" // Dominio de producción
+            "https://jazfinanzaswebapp.azurestaticapps.net" // Dominio de producciï¿½n
         )
         .AllowAnyHeader()
         .AllowAnyMethod();
@@ -97,9 +115,11 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
 app.UseHttpsRedirection();
 
-// Aplica la política de CORS
+// Aplica la polï¿½tica de CORS
 app.UseCors("FrontendPolicy");
 
 app.UseAuthentication();
