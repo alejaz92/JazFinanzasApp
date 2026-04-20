@@ -1,10 +1,12 @@
 using JazFinanzasApp.API.Business.DTO.InvestmentTransaction;
 using JazFinanzasApp.API.Business.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
 namespace JazFinanzasApp.API.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class PortFolioTransactionController : ControllerBase
