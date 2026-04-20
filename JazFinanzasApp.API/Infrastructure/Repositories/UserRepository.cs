@@ -116,5 +116,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _userManager.ResetPasswordAsync(user, token, user.UserName + "123456");
         }
 
+        public async Task<IList<string>> GetRolesAsync(User user)
+        {
+            return await _userManager.GetRolesAsync(user);
+        }
+
     }
 }

@@ -48,6 +48,7 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(new { userName = result });
         }
 
+        [Authorize(Roles = "Admin")]
         [HttpPut("reset-password")]
         public async Task<IActionResult> ResetPassword(ResetPasswordDTO resetPasswordDTO)
         {

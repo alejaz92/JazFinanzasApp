@@ -60,6 +60,7 @@ builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
 builder.Services.AddScoped<ICardService, CardService>();
 
 builder.Services.AddIdentityCore<User>()
+    .AddRoles<IdentityRole<int>>()
     .AddTokenProvider<DataProtectorTokenProvider<User>>("JazFinanzasApp")
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
@@ -88,7 +89,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ValidIssuer = builder.Configuration["Jwt:Issuer"],
             ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(key)
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            RoleClaimType = "role"
         };
     });
 
@@ -126,5 +128,19 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Seed: crear rol Admin y asignarlo al usuario administrador
+using (var scope = app.Services.CreateScope())
+{
+    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
+    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+
+    if (!await roleManager.RoleExistsAsync("Admin"))
+        await roleManager.CreateAsync(new IdentityRole<int>("Admin"));
+
+    var adminUser = await userManager.FindByNameAsync("ajazmatie");
+    if (adminUser != null && !await userManager.IsInRoleAsync(adminUser, "Admin"))
+        await userManager.AddToRoleAsync(adminUser, "Admin");
+}
 
 app.Run();

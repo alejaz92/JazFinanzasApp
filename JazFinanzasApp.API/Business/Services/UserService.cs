@@ -58,7 +58,8 @@ namespace JazFinanzasApp.API.Business.Services
         {
             var authorizedUser = await _userRepository.GetByIdAsync(adminUserId)
                 ?? throw new NotFoundException("User not found");
-            if (authorizedUser.UserName != "ajazmatie") throw new UnauthorizedDomainException();
+            var roles = await _userRepository.GetRolesAsync(authorizedUser);
+            if (!roles.Contains("Admin")) throw new UnauthorizedDomainException();
 
             var user = await _userRepository.GetByUserNameAsync(dto.userName)
                 ?? throw new NotFoundException("Target user not found");
