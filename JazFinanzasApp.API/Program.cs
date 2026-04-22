@@ -146,8 +146,9 @@ app.UseRateLimiter();
 app.MapControllers();
 
 // Seed: crear rol Admin y asignarlo al usuario administrador
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<int>>>();
     var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
 
@@ -157,6 +158,11 @@ using (var scope = app.Services.CreateScope())
     var adminUser = await userManager.FindByNameAsync("ajazmatie");
     if (adminUser != null && !await userManager.IsInRoleAsync(adminUser, "Admin"))
         await userManager.AddToRoleAsync(adminUser, "Admin");
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogWarning(ex, "Seed de roles no pudo ejecutarse. Verifique la conexión a la base de datos.");
 }
 
 app.Run();
