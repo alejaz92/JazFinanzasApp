@@ -1,4 +1,4 @@
-﻿using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 
 namespace JazFinanzasApp.API.Infrastructure.Interfaces
 {

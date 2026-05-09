@@ -1,13 +1,9 @@
-﻿using JazFinanzasApp.API.Business.DTO.Report;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Data;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
-using Microsoft.SqlServer.Server;
-using System;
-using static JazFinanzasApp.API.Business.DTO.Report.StocksGralStatsDTO;
 
 namespace JazFinanzasApp.API.Infrastructure.Repositories
 {
@@ -64,13 +60,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         }
 
         // get balance by asset and user, group by account
-        public async Task<IEnumerable<BalanceDTO>> GetBalanceByAssetAndUserAsync(int assetId, int userId)
+        public async Task<IEnumerable<BalanceResult>> GetBalanceByAssetAndUserAsync(int assetId, int userId)
         {
             var balanceByAccount = await _context.Transactions
                 .Include(t => t.Account)
                 .Where(t => t.UserId == userId && t.AssetId == assetId)
                 .GroupBy(t => t.Account.Name)
-                .Select(g => new BalanceDTO
+                .Select(g => new BalanceResult
                 {
                     Account = g.Key,
                     Balance = g.Sum(t => t.Amount)
@@ -82,7 +78,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return balanceByAccount;
         }
 
-        public async Task<TotalsBalanceDTO> GetTotalsBalanceByUserAsync(int userId, Asset asset)
+        public async Task<TotalsBalanceResult> GetTotalsBalanceByUserAsync(int userId, Asset asset)
         {
 
             if (asset.Name == "Peso Argentino")
@@ -116,7 +112,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     totalBalancePesos = resultPesos?.Total ?? 0;
 
                     var totals =
-                        new TotalsBalanceDTO
+                        new TotalsBalanceResult
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
@@ -158,7 +154,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     totalBalanceDollars = resultDollars?.Total ?? 0;
 
                     var totals =
-                        new TotalsBalanceDTO
+                        new TotalsBalanceResult
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
@@ -169,7 +165,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error en consulta de dólares: {ex.Message}");
+                    Console.WriteLine($"Error en consulta de d?lares: {ex.Message}");
                     throw;
                 }
             }
@@ -192,21 +188,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     WHERE T.UserId = @USER
                 ";
 
-                otherSQL = otherSQL.Replace("@ASSETID", asset.Id.ToString());
-
                 decimal totalBalanceOther = 0;
 
 
                 try
                 {
                     var resultOther = await _context.Set<TotalBalanceResult>()
-                        .FromSqlRaw(otherSQL, new SqlParameter("@USER", userId))
+                        .FromSqlRaw(otherSQL, new SqlParameter("@ASSETID", asset.Id), new SqlParameter("@USER", userId))
                         .FirstOrDefaultAsync();
 
                     totalBalanceOther = resultOther?.Total ?? 0;
 
                     var totals =
-                        new TotalsBalanceDTO
+                        new TotalsBalanceResult
                         {
                             Asset = asset.Name,
                             Symbol = asset.Symbol,
@@ -228,7 +222,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         }
 
-        public async Task<IncExpStatsDTO> GetDollarIncExpStatsAsync(int userId, DateTime month)
+        public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)
         {
             var dollarClassIncomeStats = await _context.Transactions
                 .Include(t => t.TransactionClass)
@@ -239,7 +233,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
                 .GroupBy(t => t.TransactionClass.Description)
-                .Select(g => new ClassIncomeStats
+                .Select(g => new ClassIncomeResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(t => t.Amount / t.QuotePrice.Value), 2)
@@ -256,7 +250,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
                 .GroupBy(t => t.TransactionClass.Description)
-                .Select(g => new ClassExpenseStats
+                .Select(g => new ClassExpenseResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(t => -t.Amount / t.QuotePrice.Value), 2)
@@ -285,12 +279,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             // Luego, calculamos la cantidad y redondeamos en memoria
             var totalIncomesFinal = totalIncomes
-                .Select(g => new MonthIncomeStats
+                .Select(g => new MonthIncomeResult
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = Math.Round(g.Amount, 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .OrderBy(g => g.Month) // Aseguramos que est? ordenado
                 .ToList();
 
 
@@ -315,15 +309,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             // Luego, calculamos la cantidad y redondeamos en memoria
             var totalExpensesFinal = totalExpenses
-                .Select(g => new MonthExpenseStats
+                .Select(g => new MonthExpenseResult
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = Math.Round(g.Amount, 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .OrderBy(g => g.Month) // Aseguramos que est? ordenado
                 .ToList();
 
-            var incExpStatsDTO = new IncExpStatsDTO
+            var incExpStatsDTO = new IncExpResult
             {
                 ClassIncomeStats = dollarClassIncomeStats.ToArray(),
                 ClassExpenseStats = dollarClassExpenseStats.ToArray(),
@@ -335,7 +329,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return incExpStatsDTO;
         }
 
-        public async Task<IncExpStatsDTO> GetPesosIncExpStatsAsync(int userId, DateTime month)
+        public async Task<IncExpResult> GetPesosIncExpStatsAsync(int userId, DateTime month)
         {
             // income in pesos by class
 
@@ -361,7 +355,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var pesosClassIncomeStats = incomeTransactionsInPesos
                 .GroupBy(t => t.Description)
-                .Select(g => new ClassIncomeStats
+                .Select(g => new ClassIncomeResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(t => t.PesosAmount), 2)
@@ -393,7 +387,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var pesosClassExpenseStats = expensesTransactionsInPesos
                 .GroupBy(t => t.Description)
-                .Select(g => new ClassExpenseStats
+                .Select(g => new ClassExpenseResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(t => t.PesosAmount), 2)
@@ -442,7 +436,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         else
                         {
                             var quote = assetQuotes
-                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotizaci?n m?s reciente
                             return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
                         }
 
@@ -461,12 +455,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             // Paso 3: Ajustar y redondear resultados
             var totalIncomesFinal = totalIncomes
-                .Select(g => new MonthIncomeStats
+                .Select(g => new MonthIncomeResult
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = Math.Round(g.Amount, 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .OrderBy(g => g.Month) // Aseguramos que est? ordenado
                 .ToList();
 
 
@@ -503,7 +497,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         else
                         {
                             var quote = assetQuotes
-                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotización más reciente
+                                .FirstOrDefault(aq => aq.Date <= t.Date)?.Value ?? 1; // Cotizaci?n m?s reciente
                             return t.Amount / (t.QuotePrice ?? 1) * quote; // Calcular en pesos
                         }
                     });
@@ -521,12 +515,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             // Paso 3: Ajustar y redondear resultados
             var totalExpenesesFinal = totalExpenses
-                .Select(g => new MonthExpenseStats
+                .Select(g => new MonthExpenseResult
                 {
                     Month = new DateTime(g.Year, g.Month, 1),
                     Amount = -Math.Round(g.Amount, 2)
                 })
-                .OrderBy(g => g.Month) // Aseguramos que esté ordenado
+                .OrderBy(g => g.Month) // Aseguramos que est? ordenado
                 .ToList();
 
 
@@ -535,7 +529,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
 
             // Devolvemos los resultados
-            var incExpStatsDTO = new IncExpStatsDTO
+            var incExpStatsDTO = new IncExpResult
             {
                 ClassIncomeStats = pesosClassIncomeStats.ToArray(),
                 ClassExpenseStats = pesosClassExpenseStats.ToArray(),
@@ -548,13 +542,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         }
 
 
-        public async Task<IncExpStatsDTO> GetIncExpStatsAsync(int userId, DateTime month, Asset asset /* asset destino a visualizar */)
+        public async Task<IncExpResult> GetIncExpStatsAsync(int userId, DateTime month, Asset asset /* asset destino a visualizar */)
         {
             // Rango del mes seleccionado
             var monthStart = new DateTime(month.Year, month.Month, 1);
             var monthEnd = monthStart.AddMonths(1);
 
-            // Constantes (si las tenés como enums, mejor)
+            // Constantes (si las ten?s como enums, mejor)
             const string MOV_INCOME = "I";
             const string MOV_EXPENSE = "E";
             const string CLASS_ADJ_IN = "Ajuste Saldos Ingreso";
@@ -565,8 +559,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             const string BLUE = "BLUE";
 
             // === 1) Precarga de series de cotizaciones a MEMORIA ===
-            // Política: si el asset destino es ARS → usar ARS/BLUE;
-            //           si el destino es otro asset → usar su propia serie.
+            // Pol?tica: si el asset destino es ARS ? usar ARS/BLUE;
+            //           si el destino es otro asset ? usar su propia serie.
             var isTargetARS = string.Equals(asset.Name, ARS_NAME, StringComparison.OrdinalIgnoreCase);
 
             var blueQuotes = new List<(DateTime Date, decimal Value)>();
@@ -576,9 +570,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     .AsNoTracking()
                     .Where(aq => aq.Asset.Name == ARS_NAME && aq.Type == BLUE)
                     .OrderBy(aq => aq.Date)
-                    .Select(aq => new { aq.Date, aq.Value })   // ✅ proyectamos a objeto anónimo
+                    .Select(aq => new { aq.Date, aq.Value })   // ? proyectamos a objeto an?nimo
                     .ToListAsync())
-                    .Select(x => (x.Date, x.Value))            // ✅ convertimos a tupla en memoria
+                    .Select(x => (x.Date, x.Value))            // ? convertimos a tupla en memoria
                     .ToList();
             }
 
@@ -595,11 +589,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     .ToList();
             }
 
-            // Helpers: obtienen la última cotización <= fecha, con fallback nunca 0.
+            // Helpers: obtienen la ?ltima cotizaci?n <= fecha, con fallback nunca 0.
             decimal GetBlueAt(DateTime date)
             {
                 if (blueQuotes.Count == 0) return 1m;
-                // binary search manual (última <= date)
+                // binary search manual (?ltima <= date)
                 int lo = 0, hi = blueQuotes.Count - 1, best = -1;
                 while (lo <= hi)
                 {
@@ -626,14 +620,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 return targetQuotes[0].Value;
             }
 
-            // Conversión genérica a asset destino
+            // Conversi?n gen?rica a asset destino
             decimal ConvertToTarget(int transactionAssetId, decimal amount, decimal? quotePrice, DateTime date)
             {
-                // Si ya está en el asset destino, no convertir
+                // Si ya est? en el asset destino, no convertir
                 if (transactionAssetId == asset.Id) return amount;
 
                 var srcQuote = quotePrice ?? 0m;
-                if (srcQuote <= 0m) return 0m; // sin precio de origen válido → lo ignoramos
+                if (srcQuote <= 0m) return 0m; // sin precio de origen v?lido ? lo ignoramos
 
                 if (isTargetARS)
                 {
@@ -648,7 +642,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             }
 
             // === 2) Datos del MES por clase ===
-            // Cargamos los campos mínimos y convertimos en memoria (evitamos FirstOrDefault()=0 en SQL)
+            // Cargamos los campos m?nimos y convertimos en memoria (evitamos FirstOrDefault()=0 en SQL)
             var incomesMonthRaw = await _context.Transactions
                 .AsNoTracking()
                 .Where(t => t.UserId == userId &&
@@ -687,7 +681,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var classIncomeStats = incomesMonthRaw
                 .GroupBy(x => x.ClassDesc)
-                .Select(g => new ClassIncomeStats
+                .Select(g => new ClassIncomeResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(x =>
@@ -697,10 +691,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .OrderByDescending(x => x.Amount)
                 .ToList();
 
-            // Para egresos devolvemos magnitud positiva (como en tus gráficos)
+            // Para egresos devolvemos magnitud positiva (como en tus gr?ficos)
             var classExpenseStats = expensesMonthRaw
                 .GroupBy(x => x.ClassDesc)
-                .Select(g => new ClassExpenseStats
+                .Select(g => new ClassExpenseResult
                 {
                     TransactionClass = g.Key,
                     Amount = Math.Round(g.Sum(x =>
@@ -710,7 +704,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .OrderByDescending(x => x.Amount)
                 .ToList();
 
-            // === 3) Series últimos 6 meses (limitamos lectura a ~18 meses para eficiencia) ===
+            // === 3) Series ?ltimos 6 meses (limitamos lectura a ~18 meses para eficiencia) ===
             var cutoff = monthStart.AddMonths(-18);
 
             var incomesSeriesRaw = await _context.Transactions
@@ -737,7 +731,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var monthIncomeStats = incomesSeriesRaw
                 .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
-                .Select(g => new MonthIncomeStats
+                .Select(g => new MonthIncomeResult
                 {
                     Month = g.Key,
                     Amount = Math.Round(g.Sum(x =>
@@ -751,7 +745,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var monthExpenseStats = expensesSeriesRaw
                 .GroupBy(x => new DateTime(x.Date.Year, x.Date.Month, 1))
-                .Select(g => new MonthExpenseStats
+                .Select(g => new MonthExpenseResult
                 {
                     Month = g.Key,
                     // magnitud positiva para egresos
@@ -765,7 +759,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
 
             // === 4) DTO final ===
-            return new IncExpStatsDTO
+            return new IncExpResult
             {
                 ClassIncomeStats = classIncomeStats.ToArray(),
                 ClassExpenseStats = classExpenseStats.ToArray(),
@@ -774,7 +768,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             };
         }
 
-        public async Task<IEnumerable<StockStatsListDTO>> GetStockStatsAsync(
+        public async Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(
             int userId,
             int assetTypeId,
             string environment,
@@ -787,7 +781,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var considerStableParam = new SqlParameter("@ConsiderStable", considerStable);
             var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
 
-            var result = await _context.StockStatsListDTO
+            var result = await _context.StockStatsListResult
                 .FromSqlRaw("EXEC GetStockStats @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}",
                             userId, assetTypeId, environment, considerStable, referenceAssetId)
                 .ToListAsync();
@@ -795,7 +789,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result;
         }
 
-        public async Task<IEnumerable<StocksGralStatsDTO>> GetStocksGralStatsAsync(
+        public async Task<IEnumerable<StocksGralStatsResult>> GetStocksGralStatsAsync(
             int userId,
             string environment,
             int referenceAssetId)
@@ -804,7 +798,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var environmentParam = new SqlParameter("@Environment", environment);
             var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
 
-            var result = await _context.StocksGralStatsDTO
+            var result = await _context.StocksGralStatsResult
                 .FromSqlRaw("EXEC GetStockGralStats @UserId = {0}, @Environment = {1}, @ReferenceAssetId = {2}",
                             userId, environment, referenceAssetId)
                 .ToListAsync();
@@ -812,7 +806,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result;
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateDTO>> GetCryptoStatsByDateAsync(
+        public async Task<IEnumerable<CryptoStatsByDateResult>> GetCryptoStatsByDateAsync(
             int userId,
             int assetTypeId,
             string environment,
@@ -828,7 +822,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
             var assetIdParam = new SqlParameter("@AssetId", assetId.HasValue ? assetId : 0);
 
-            var result = await _context.CryptoStatsByDateDTO
+            var result = await _context.CryptoStatsByDateResult
                 .FromSqlRaw("EXEC GetCryptoStatsByDate @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}, @AssetId = {5}",
                             userId, assetTypeId, environment, considerStable, referenceAssetId, assetId)
                 .ToListAsync();
@@ -837,17 +831,17 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         }
 
-        public async Task<IEnumerable<CryptoStatsByDateCommerceDTO>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
+        public async Task<IEnumerable<CryptoStatsByDateCommerceResult>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
         {
-            var result = await _context.CryptoStatsByDateCommerceDTO
+            var result = await _context.CryptoStatsByDateCommerceResult
                 .FromSqlRaw("EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
                             userId, assetTypeId, environment, considerStable, months, referenceId)
                 .ToListAsync();
 
             return result;
-            //// Calcula las fechas del rango: mes actual y los últimos 5 meses
-            //DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // Último segundo del día actual
-            //DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer día del mes de hace x meses
+            //// Calcula las fechas del rango: mes actual y los ?ltimos 5 meses
+            //DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // ?ltimo segundo del d?a actual
+            //DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer d?a del mes de hace x meses
 
             //// Generar la lista de meses en el rango
             //var monthsRange = Enumerable.Range(0, months)
@@ -910,14 +904,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             //return result;
         }
 
-        public async Task<IEnumerable<InvestmentTransactionsStatsDTO>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
+        public async Task<IEnumerable<InvestmentTransactionsResult>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
         {
             var transactions = _context.InvestmentTransactions
                 .Include(it => it.IncomeTransaction)
                 .Include(it => it.ExpenseTransaction)
                 .Where(it => it.IncomeTransaction.UserId == userId || it.ExpenseTransaction.UserId == userId)
                 .Where(it => it.IncomeTransaction.AssetId == assetId || it.ExpenseTransaction.AssetId == assetId)
-                .Select(it => new InvestmentTransactionsStatsDTO
+                .Select(it => new InvestmentTransactionsResult
                 {
                     Date = it.IncomeTransaction.Date,
                     Account = it.IncomeTransaction.Account.Name,
@@ -957,7 +951,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.UserId == userId)
                 .Where(t => t.AssetId == assetId)
                 .Where(t => t.QuotePrice.HasValue)
-                .ToListAsync(); // Traer los datos a memoria antes de hacer cálculos
+                .ToListAsync(); // Traer los datos a memoria antes de hacer c?lculos
 
             var total = transactions.Sum(t =>
             {
@@ -995,7 +989,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.AssetId == assetId)
                 .Where(t => t.PortfolioId == portfolioId)
                 .Where(t => t.QuotePrice.HasValue)
-                .ToListAsync(); // Traer los datos a memoria antes de hacer cálculos
+                .ToListAsync(); // Traer los datos a memoria antes de hacer c?lculos
             if (transactions.Count == 0) return 0;
             var total = transactions.Average(t => t.QuotePrice.Value);
 

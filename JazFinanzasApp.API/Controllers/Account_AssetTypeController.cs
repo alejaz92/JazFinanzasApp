@@ -1,7 +1,6 @@
-﻿using JazFinanzasApp.API.Business.DTO.Account_AssetType;
-using JazFinanzasApp.API.Infrastructure.Interfaces;
+using JazFinanzasApp.API.Business.DTO.Account_AssetType;
+using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -12,68 +11,27 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class Account_AssetTypeController : ControllerBase
     {
-        private readonly IAccount_AssetTypeRepository _account_AssetTypeRepository;
-        private readonly IAccountRepository _accountRepository;
-        private readonly IAssetTypeRepository _assetTypeRepository;
-        public Account_AssetTypeController(IAccount_AssetTypeRepository account_AssetTypeRepository,
-            IAccountRepository accountRepository, IAssetTypeRepository assetTypeRepository)
+        private readonly IAccountService _accountService;
+
+        public Account_AssetTypeController(IAccountService accountService)
         {
-            _account_AssetTypeRepository = account_AssetTypeRepository;
-            _accountRepository = accountRepository;
-            _assetTypeRepository = assetTypeRepository;
+            _accountService = accountService;
         }
+
+        private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetAssetTypes(int id)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            var account = await _accountRepository.GetByIdAsync(id);
-            if (account == null)
-            {
-                return NotFound();
-            }
-
-            if (account.UserId != int.Parse(userIdClaim.Value))
-            {
-                return Unauthorized();
-            }
-
-            var result = await _account_AssetTypeRepository.GetAssetTypes(id);
+            var result = await _accountService.GetAssetTypesForAccountAsync(GetUserId(), id);
             return Ok(result);
         }
 
         [HttpPost("{id}")]
-        public async Task<IActionResult> AssignAssetTypesToAccount(int id, [FromBody]List<Account_AssetTypeDTO> assetTypes)
+        public async Task<IActionResult> AssignAssetTypesToAccount(int id, [FromBody] List<Account_AssetTypeDTO> assetTypes)
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            var account = await _accountRepository.GetByIdAsync(id);
-            if (account == null)
-            {
-                return NotFound();
-            }
-
-            if (account.UserId != int.Parse(userIdClaim.Value))
-            {
-                return Unauthorized();
-            }
-
-            if (assetTypes == null || !assetTypes.Any())
-            {
-                return BadRequest("Select at least 1");
-            }
-
-            var result = await _account_AssetTypeRepository.AssignAssetTypesToAccountAsync(id, assetTypes);
-            return Ok(result);
+            await _accountService.AssignAssetTypesToAccountAsync(GetUserId(), id, assetTypes);
+            return Ok();
         }
     }
-}   
+}

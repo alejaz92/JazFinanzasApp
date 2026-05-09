@@ -1,7 +1,6 @@
-﻿using JazFinanzasApp.API.Business.DTO.AssetType;
-using JazFinanzasApp.API.Infrastructure.Interfaces;
+using JazFinanzasApp.API.Business.DTO.AssetType;
+using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
@@ -12,37 +11,19 @@ namespace JazFinanzasApp.API.Controllers
     [ApiController]
     public class AssetTypeController : ControllerBase
     {
-        private readonly IAssetTypeRepository _assetTypeRepository;
+        private readonly IAssetService _assetService;
 
-        public AssetTypeController(IAssetTypeRepository assetTypeRepository)
+        public AssetTypeController(IAssetService assetService)
         {
-            _assetTypeRepository = assetTypeRepository;
+            _assetService = assetService;
         }
 
-       // get method by environmnet parameter
+       // get method by environment parameter
        [HttpGet]
        public async Task<IActionResult> GetAssetTypes([FromQuery] string environment)
          {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier);
-            if (userIdClaim == null)
-            {
-                return Unauthorized();
-            }
-
-            int userId = int.Parse(userIdClaim.Value);
-
-            var assetTypes = await _assetTypeRepository.GetAssetTypes(environment);
-
-            // adapt to dto
-            var assetTypesDTO = assetTypes.Select(a => new AssetTypeDTO
-            {
-                Id = a.Id,
-                Name = a.Name,
-                Environment = a.Environment
-            });
-
-
-            return Ok(assetTypesDTO);
+            var result = await _assetService.GetAssetTypesByEnvironmentAsync(environment);
+            return Ok(result);
          }
     }
 }

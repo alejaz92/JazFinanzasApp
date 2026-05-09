@@ -1,5 +1,5 @@
-﻿using JazFinanzasApp.API.Infrastructure.Data;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Infrastructure.Data;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;

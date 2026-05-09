@@ -1,6 +1,6 @@
-﻿using JazFinanzasApp.API.Business.DTO.Account_AssetType;
+﻿using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Data;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +15,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<IEnumerable<Account_AssetTypeDTO>> GetAssetTypes(int id)
+        public async Task<IEnumerable<AccountAssetTypeResult>> GetAssetTypes(int id)
         {
             var assetTypes = await _context.AssetTypes.ToListAsync();
 
@@ -23,7 +23,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(x => x.AccountId == id)
                 .ToListAsync();
 
-            var result = assetTypes.Select(assetType => new Account_AssetTypeDTO
+            var result = assetTypes.Select(assetType => new AccountAssetTypeResult
             {
                 Id = assetType.Id,
                 Name = assetType.Name,
@@ -34,7 +34,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         }
 
-        public async Task<bool> AssignAssetTypesToAccountAsync(int accountId, List<Account_AssetTypeDTO> assetTypes)
+        public async Task<bool> AssignAssetTypesToAccountAsync(int accountId, IEnumerable<AccountAssetTypeResult> assetTypes)
         {
             // Paso 1: Obtener los registros actuales de tipos de activos para la cuenta
             var currentAssetTypes = await _context.Account_AssetTypes

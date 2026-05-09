@@ -1,7 +1,7 @@
-﻿using JazFinanzasApp.API.Business.DTO.CardTransaction;
-using JazFinanzasApp.API.Business.DTO.Report;
+﻿using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
+
 using JazFinanzasApp.API.Infrastructure.Data;
-using JazFinanzasApp.API.Infrastructure.Domain;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,7 +15,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             _context = context;
         }    
-        public async Task<IEnumerable<CardTransactionsPendingDTO>> GetPendingCardTransactionsAsync(int userId)
+        public async Task<IEnumerable<CardTransactionPendingResult>> GetPendingCardTransactionsAsync(int userId)
         {
             var today = DateTime.Today;
             today = new DateTime(today.Year, today.Month, 1);
@@ -30,7 +30,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today 
                     
                 ))
-                .Select(cm => new CardTransactionsPendingDTO
+                .Select(cm => new CardTransactionPendingResult
                 {
                     Id = cm.Id,
                     Date = cm.Date,
@@ -78,7 +78,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         }
 
 
-        public async Task<IEnumerable<CardGraphDTO>> GetCardStats(int? cardId, string Asset, int userId)
+        public async Task<IEnumerable<CardGraphResult>> GetCardStats(int? cardId, string Asset, int userId)
         {
             var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
@@ -93,7 +93,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                              (cardId == 0 || ct.CardId == cardId))
                 .ToListAsync();
 
-            // Realizar la expansión de meses en memoria
+            // Realizar la expansi�n de meses en memoria
             var expandedTransactions = transactions
                 .SelectMany(ct =>
                 {
@@ -122,10 +122,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .GroupJoin(expandedTransactions,
                     month => month,
                     transaction => transaction.Month,
-                    (month, transactions) => new CardGraphDTO
+                    (month, transactions) => new CardGraphResult
                     {
                         Month = month,
-                        Amount = transactions.Sum(x => x.InstallmentAmount) // Si no hay transacciones, el valor será 0
+                        Amount = transactions.Sum(x => x.InstallmentAmount) // Si no hay transacciones, el valor ser� 0
                     })
                 .ToList();
 
