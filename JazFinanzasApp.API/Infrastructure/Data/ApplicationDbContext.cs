@@ -31,6 +31,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<CryptoStatsByDateResult> CryptoStatsByDateResult { get; set; }
         public DbSet<CryptoStatsByDateCommerceResult> CryptoStatsByDateCommerceResult { get; set; }
         public DbSet<Portfolio> Portfolios { get; set; }
+        public DbSet<AssetSplitEvent> AssetSplitEvents { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -163,6 +164,12 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(bp => bp.Asset)
                 .WithMany()
                 .HasForeignKey(bp => bp.AssetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<AssetSplitEvent>()
+                .HasOne(s => s.Asset)
+                .WithMany()
+                .HasForeignKey(s => s.AssetId)
                 .OnDelete(DeleteBehavior.Restrict);
         }
     }

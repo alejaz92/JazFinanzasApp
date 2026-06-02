@@ -62,18 +62,33 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // get balance by asset and user, group by account
         public async Task<IEnumerable<BalanceResult>> GetBalanceByAssetAndUserAsync(int assetId, int userId)
         {
-            var balanceByAccount = await _context.Transactions
+            var transactions = await _context.Transactions
                 .Include(t => t.Account)
                 .Where(t => t.UserId == userId && t.AssetId == assetId)
-                .GroupBy(t => t.Account.Name)
+                .Select(t => new { t.Account.Name, t.Amount, t.Date })
+                .ToListAsync();
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => s.AssetId == assetId)
+                .Select(s => new { s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            var balanceByAccount = transactions
+                .GroupBy(t => t.Name)
                 .Select(g => new BalanceResult
                 {
                     Account = g.Key,
-                    Balance = g.Sum(t => t.Amount)
+                    Balance = g.Sum(t =>
+                    {
+                        var factor = splits
+                            .Where(s => s.Date > t.Date)
+                            .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+                        return t.Amount * factor;
+                    })
                 })
                 .Where(g => g.Balance > 0)
                 .OrderByDescending(g => g.Balance)
-                .ToListAsync();
+                .ToList();
 
             return balanceByAccount;
         }
@@ -84,10 +99,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             if (asset.Name == "Peso Argentino")
             {
                 var pesosSQL = @"
-                    SELECT 
+                    ;WITH SplitFactors AS (
+                        SELECT t.Id AS TransactionId,
+                            ISNULL(
+                                (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                                 FROM AssetSplitEvents se
+                                 WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                            1) AS CumulativeFactor
+                        FROM Transactions t WHERE t.UserId = @USER
+                    )
+                    SELECT
                     CAST(SUM(
-                        CASE WHEN A.ID = 2 THEN T.Amount
-                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
+                        CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
+                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
                         AS decimal(18,2))
                         *
                         (SELECT VALUE FROM AssetQuotes WHERE TYPE = 'BOLSA' AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
@@ -97,6 +121,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
                         AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
                         AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                    INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                     WHERE T.UserId = @USER
                 ";
 
@@ -131,16 +156,26 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             else if (asset.Name == "Dolar Estadounidense")
             {
                 var dollarSQL = @"
-                SELECT 
+                ;WITH SplitFactors AS (
+                    SELECT t.Id AS TransactionId,
+                        ISNULL(
+                            (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                             FROM AssetSplitEvents se
+                             WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                        1) AS CumulativeFactor
+                    FROM Transactions t WHERE t.UserId = @USER
+                )
+                SELECT
                 CAST(SUM(
-                    CASE WHEN A.ID = 2 THEN T.Amount
-                    ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
+                    CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
+                    ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
                     AS decimal(18,2)) AS TOTAL
                 FROM Transactions T
                 INNER JOIN Assets A ON T.AssetId = A.Id
                 LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
                     AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
                     AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                 WHERE T.UserId = @USER
                 ";
                 decimal totalBalanceDollars = 0;
@@ -172,10 +207,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             else
             {
                 var otherSQL = @"
-                    SELECT 
+                    ;WITH SplitFactors AS (
+                        SELECT t.Id AS TransactionId,
+                            ISNULL(
+                                (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                                 FROM AssetSplitEvents se
+                                 WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                            1) AS CumulativeFactor
+                        FROM Transactions t WHERE t.UserId = @USER
+                    )
+                    SELECT
                     CAST(SUM(
-                        CASE WHEN A.ID = 2 THEN T.Amount
-                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN T.Amount /AQ.Value ELSE 0 END END)
+                        CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
+                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
                         AS decimal(18,2))
                         *
                         (SELECT VALUE FROM AssetQuotes WHERE assetId = @ASSETID AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
@@ -185,6 +229,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
                         AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
                         AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                    INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                     WHERE T.UserId = @USER
                 ";
 
@@ -906,43 +951,58 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         public async Task<IEnumerable<InvestmentTransactionsResult>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
         {
-            var transactions = _context.InvestmentTransactions
-                .Include(it => it.IncomeTransaction)
+            var splits = await _context.AssetSplitEvents
+                .Where(s => s.AssetId == assetId)
+                .Select(s => new { s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            var refQuotes = await _context.AssetQuotes
+                .Where(aq => aq.Asset.Id == referenceAssetId)
+                .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
+                .OrderByDescending(aq => aq.Date)
+                .Select(aq => new { aq.Date, aq.Value })
+                .ToListAsync();
+
+            var rawData = await _context.InvestmentTransactions
+                .Include(it => it.IncomeTransaction!).ThenInclude(t => t!.Account)
                 .Include(it => it.ExpenseTransaction)
-                .Where(it => it.IncomeTransaction.UserId == userId || it.ExpenseTransaction.UserId == userId)
-                .Where(it => it.IncomeTransaction.AssetId == assetId || it.ExpenseTransaction.AssetId == assetId)
-                .Select(it => new InvestmentTransactionsResult
+                .Where(it => it.IncomeTransaction!.UserId == userId || it.ExpenseTransaction!.UserId == userId)
+                .Where(it => it.IncomeTransaction!.AssetId == assetId || it.ExpenseTransaction!.AssetId == assetId)
+                .ToListAsync();
+
+            decimal GetRefQuoteAt(DateTime date) =>
+                refQuotes.FirstOrDefault(q => q.Date <= date)?.Value ?? 0m;
+
+            decimal GetSplitFactor(DateTime date) =>
+                splits
+                    .Where(s => s.Date > date)
+                    .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            return rawData
+                .Select(it =>
                 {
-                    Date = it.IncomeTransaction.Date,
-                    Account = it.IncomeTransaction.Account.Name,
-                    MovementType = it.IncomeTransaction.AssetId == assetId ? "I" : "E",
-                    CommerceType = it.CommerceType,
-                    Quantity = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount : it.ExpenseTransaction.Amount),
-                    QuotePrice = 1 / (it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.QuotePrice.Value) *
-                        
-                            _context.AssetQuotes
-                                .Where(aq => aq.Asset.Id == referenceAssetId)
-                                .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
-                                .Where(aq => aq.Date <= it.IncomeTransaction.Date)
-                                .OrderByDescending(aq => aq.Date)
-                                .Select(aq => aq.Value)
-                                .FirstOrDefault()
-                        ,
-                    Total = Math.Abs(it.IncomeTransaction.AssetId == assetId ? it.IncomeTransaction.Amount * 1 / it.IncomeTransaction.QuotePrice.Value : it.ExpenseTransaction.Amount * 1 / it.ExpenseTransaction.QuotePrice.Value) *
-                        
-                            _context.AssetQuotes
-                                .Where(aq => aq.Asset.Id == referenceAssetId)
-                                .Where(aq => aq.Type == "NA" || aq.Type == "BLUE")
-                                .Where(aq => aq.Date <= it.IncomeTransaction.Date)
-                                .OrderByDescending(aq => aq.Date)
-                                .Select(aq => aq.Value)
-                                .FirstOrDefault()
-                        
+                    bool isIncome = it.IncomeTransaction!.AssetId == assetId;
+                    var tx = isIncome ? it.IncomeTransaction! : it.ExpenseTransaction!;
+                    var factor = GetSplitFactor(tx.Date);
+                    var refQuote = GetRefQuoteAt(it.IncomeTransaction!.Date);
 
-                });
+                    var adjustedQty = Math.Abs(tx.Amount) * factor;
+                    // QuotePrice stored as 1/price; display price = (1/storedQP)/factor * refQuote
+                    var displayPrice = 1m / tx.QuotePrice!.Value / factor * refQuote;
 
-            return await transactions.OrderByDescending(t => t.Date).ToListAsync();
-
+                    return new InvestmentTransactionsResult
+                    {
+                        Date = it.IncomeTransaction!.Date,
+                        Account = it.IncomeTransaction!.Account.Name,
+                        MovementType = isIncome ? "I" : "E",
+                        CommerceType = it.CommerceType,
+                        Quantity = adjustedQty,
+                        QuotePrice = displayPrice,
+                        Total = Math.Abs(tx.Amount) * (1m / tx.QuotePrice!.Value) * refQuote
+                    };
+                })
+                .OrderByDescending(t => t.Date)
+                .ToList();
         }
 
         public async Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId)
@@ -972,12 +1032,25 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // get the balance for the account, asset and portfolio combination
         public async Task<decimal> GetBalance(int accountId, int assetId, int portfolioId)
         {
-            var balance = await _context.Transactions
+            var transactions = await _context.Transactions
                 .Where(t => t.AccountId == accountId)
                 .Where(t => t.AssetId == assetId)
                 .Where(t => t.PortfolioId == portfolioId)
-                .SumAsync(t => t.Amount);
-            return balance;
+                .Select(t => new { t.Amount, t.Date })
+                .ToListAsync();
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => s.AssetId == assetId)
+                .Select(s => new { s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            return transactions.Sum(t =>
+            {
+                var factor = splits
+                    .Where(s => s.Date > t.Date)
+                    .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+                return t.Amount * factor;
+            });
         }
 
 
@@ -989,11 +1062,25 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.AssetId == assetId)
                 .Where(t => t.PortfolioId == portfolioId)
                 .Where(t => t.QuotePrice.HasValue)
-                .ToListAsync(); // Traer los datos a memoria antes de hacer c?lculos
-            if (transactions.Count == 0) return 0;
-            var total = transactions.Average(t => t.QuotePrice.Value);
+                .Select(t => new { t.QuotePrice, t.Date })
+                .ToListAsync();
 
-            return total;
+            if (transactions.Count == 0) return 0;
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => s.AssetId == assetId)
+                .Select(s => new { s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            // QuotePrice is stored as inverse rate (1/price). After a split, the equivalent
+            // stored rate scales up by the factor (e.g. 4:1 split: 1/200 → 1/50 = (1/200)×4).
+            return transactions.Average(t =>
+            {
+                var factor = splits
+                    .Where(s => s.Date > t.Date)
+                    .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+                return t.QuotePrice.Value * factor;
+            });
         }
     }
 }
