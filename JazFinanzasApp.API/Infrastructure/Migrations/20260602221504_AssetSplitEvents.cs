@@ -11,17 +11,10 @@ namespace JazFinanzasApp.API.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "CryptoStatsByDateCommerceDTO");
-
-            migrationBuilder.DropTable(
-                name: "CryptoStatsByDateDTO");
-
-            migrationBuilder.DropTable(
-                name: "StocksGralStatsDTO");
-
-            migrationBuilder.DropTable(
-                name: "StockStatsListDTO");
+            migrationBuilder.Sql("IF OBJECT_ID('[dbo].[CryptoStatsByDateCommerceDTO]', 'U') IS NOT NULL DROP TABLE [dbo].[CryptoStatsByDateCommerceDTO]");
+            migrationBuilder.Sql("IF OBJECT_ID('[dbo].[CryptoStatsByDateDTO]', 'U') IS NOT NULL DROP TABLE [dbo].[CryptoStatsByDateDTO]");
+            migrationBuilder.Sql("IF OBJECT_ID('[dbo].[StocksGralStatsDTO]', 'U') IS NOT NULL DROP TABLE [dbo].[StocksGralStatsDTO]");
+            migrationBuilder.Sql("IF OBJECT_ID('[dbo].[StockStatsListDTO]', 'U') IS NOT NULL DROP TABLE [dbo].[StockStatsListDTO]");
 
             // Safe data migration for PortfolioId: create default portfolios for users with
             // NULL PortfolioId transactions (old records), then make the column NOT NULL.
