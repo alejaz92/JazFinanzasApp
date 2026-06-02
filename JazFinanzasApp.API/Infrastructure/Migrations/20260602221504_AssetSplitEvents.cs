@@ -23,15 +23,38 @@ namespace JazFinanzasApp.API.Migrations
             migrationBuilder.DropTable(
                 name: "StockStatsListDTO");
 
-            migrationBuilder.AlterColumn<int>(
-                name: "PortfolioId",
-                table: "Transactions",
-                type: "int",
-                nullable: false,
-                defaultValue: 0,
-                oldClrType: typeof(int),
-                oldType: "int",
-                oldNullable: true);
+            // Safe data migration for PortfolioId: create default portfolios for users with
+            // NULL PortfolioId transactions (old records), then make the column NOT NULL.
+            migrationBuilder.Sql(@"
+                IF EXISTS (
+                    SELECT 1 FROM sys.foreign_keys
+                    WHERE name = 'FK_Transactions_Portfolios_PortfolioId'
+                )
+                    ALTER TABLE [Transactions] DROP CONSTRAINT [FK_Transactions_Portfolios_PortfolioId];
+
+                INSERT INTO [Portfolios] ([Name], [UserId], [IsDefault], [CreatedAt], [UpdatedAt])
+                SELECT DISTINCT N'Default', t.[UserId], 1, GETUTCDATE(), GETUTCDATE()
+                FROM [Transactions] t
+                WHERE t.[PortfolioId] IS NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM [Portfolios] p WHERE p.[UserId] = t.[UserId] AND p.[IsDefault] = 1
+                  );
+
+                UPDATE t
+                SET t.[PortfolioId] = p.[Id]
+                FROM [Transactions] t
+                INNER JOIN [Portfolios] p ON p.[UserId] = t.[UserId] AND p.[IsDefault] = 1
+                WHERE t.[PortfolioId] IS NULL;
+
+                ALTER TABLE [Transactions] ALTER COLUMN [PortfolioId] int NOT NULL;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.foreign_keys
+                    WHERE name = 'FK_Transactions_Portfolios_PortfolioId'
+                )
+                    ALTER TABLE [Transactions] ADD CONSTRAINT [FK_Transactions_Portfolios_PortfolioId]
+                        FOREIGN KEY ([PortfolioId]) REFERENCES [Portfolios] ([Id]);
+            ");
 
             migrationBuilder.CreateTable(
                 name: "AssetSplitEvents",
@@ -185,13 +208,22 @@ namespace JazFinanzasApp.API.Migrations
             migrationBuilder.DropTable(
                 name: "StockStatsListResult");
 
-            migrationBuilder.AlterColumn<int>(
-                name: "PortfolioId",
-                table: "Transactions",
-                type: "int",
-                nullable: true,
-                oldClrType: typeof(int),
-                oldType: "int");
+            migrationBuilder.Sql(@"
+                IF EXISTS (
+                    SELECT 1 FROM sys.foreign_keys
+                    WHERE name = 'FK_Transactions_Portfolios_PortfolioId'
+                )
+                    ALTER TABLE [Transactions] DROP CONSTRAINT [FK_Transactions_Portfolios_PortfolioId];
+
+                ALTER TABLE [Transactions] ALTER COLUMN [PortfolioId] int NULL;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM sys.foreign_keys
+                    WHERE name = 'FK_Transactions_Portfolios_PortfolioId'
+                )
+                    ALTER TABLE [Transactions] ADD CONSTRAINT [FK_Transactions_Portfolios_PortfolioId]
+                        FOREIGN KEY ([PortfolioId]) REFERENCES [Portfolios] ([Id]);
+            ");
 
             migrationBuilder.CreateTable(
                 name: "CryptoStatsByDateCommerceDTO",

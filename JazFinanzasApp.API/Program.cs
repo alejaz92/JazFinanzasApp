@@ -147,6 +147,19 @@ app.UseRateLimiter();
 
 app.MapControllers();
 
+// Apply pending database migrations on startup
+try
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Error applying database migrations.");
+}
+
 // Seed: crear rol Admin y asignarlo al usuario administrador
 try
 {
