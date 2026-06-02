@@ -61,6 +61,7 @@ builder.Services.AddScoped<IPortfolioService, PortfolioService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
 builder.Services.AddScoped<ICardService, CardService>();
+builder.Services.AddScoped<IAssetSplitEventService, AssetSplitEventService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
