@@ -44,7 +44,7 @@ namespace JazFinanzasApp.API.Middleware
                 StatusCode = (int)statusCode,
                 Error = error,
                 Message = statusCode == HttpStatusCode.InternalServerError
-                    ? "An unexpected error occurred."
+                    ? $"[DEBUG] {exception.GetType().Name}: {exception.Message}"
                     : exception.Message
             };
 

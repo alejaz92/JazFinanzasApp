@@ -820,15 +820,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             bool considerStable,
             int referenceAssetId)
         {
-            var userIdParam = new SqlParameter("@UserId", userId);
-            var assetTypeIdParam = new SqlParameter("@AssetTypeId", assetTypeId);
-            var environmentParam = new SqlParameter("@Environment", environment);
-            var considerStableParam = new SqlParameter("@ConsiderStable", considerStable);
-            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
-
-            var result = await _context.StockStatsListResult
-                .FromSqlRaw("EXEC GetStockStats @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}",
-                            userId, assetTypeId, environment, considerStable, referenceAssetId)
+            var result = await _context.Database
+                .SqlQueryRaw<StockStatsListResult>(
+                    "EXEC GetStockStats @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}",
+                    userId, assetTypeId, environment, considerStable, referenceAssetId)
                 .ToListAsync();
 
             return result;
@@ -839,13 +834,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             string environment,
             int referenceAssetId)
         {
-            var userIdParam = new SqlParameter("@UserId", userId);
-            var environmentParam = new SqlParameter("@Environment", environment);
-            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
-
-            var result = await _context.StocksGralStatsResult
-                .FromSqlRaw("EXEC GetStockGralStats @UserId = {0}, @Environment = {1}, @ReferenceAssetId = {2}",
-                            userId, environment, referenceAssetId)
+            var result = await _context.Database
+                .SqlQueryRaw<StocksGralStatsResult>(
+                    "EXEC GetStockGralStats @UserId = {0}, @Environment = {1}, @ReferenceAssetId = {2}",
+                    userId, environment, referenceAssetId)
                 .ToListAsync();
 
             return result;
@@ -860,16 +852,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             int referenceAssetId)
         {
 
-            var userIdParam = new SqlParameter("@UserId", userId);
-            var assetTypeIdParam = new SqlParameter("@AssetTypeId", assetTypeId);
-            var environmentParam = new SqlParameter("@Environment", environment);
-            var considerStableParam = new SqlParameter("@ConsiderStable", considerStable);
-            var referenceAssetIdParam = new SqlParameter("@ReferenceAssetId", referenceAssetId);
-            var assetIdParam = new SqlParameter("@AssetId", assetId.HasValue ? assetId : 0);
-
-            var result = await _context.CryptoStatsByDateResult
-                .FromSqlRaw("EXEC GetCryptoStatsByDate @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}, @AssetId = {5}",
-                            userId, assetTypeId, environment, considerStable, referenceAssetId, assetId)
+            var result = await _context.Database
+                .SqlQueryRaw<CryptoStatsByDateResult>(
+                    "EXEC GetCryptoStatsByDate @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}, @AssetId = {5}",
+                    userId, assetTypeId, environment, considerStable, referenceAssetId, assetId ?? 0)
                 .ToListAsync();
 
             return result;
@@ -878,9 +864,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         public async Task<IEnumerable<CryptoStatsByDateCommerceResult>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
         {
-            var result = await _context.CryptoStatsByDateCommerceResult
-                .FromSqlRaw("EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
-                            userId, assetTypeId, environment, considerStable, months, referenceId)
+            var result = await _context.Database
+                .SqlQueryRaw<CryptoStatsByDateCommerceResult>(
+                    "EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
+                    userId, assetTypeId, environment, considerStable, months, referenceId)
                 .ToListAsync();
 
             return result;
