@@ -130,9 +130,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
                 try
                 {
-                    var resultPesos = await _context.Database
+                    var resultPesos = (await _context.Database
                         .SqlQueryRaw<TotalBalanceResult>(pesosSQL, new SqlParameter("@USER", userId))
-                        .FirstOrDefaultAsync();
+                        .ToListAsync()).FirstOrDefault();
 
                     totalBalancePesos = resultPesos?.Total ?? 0;
 
@@ -182,9 +182,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
                 try
                 {
-                    var resultDollars = await _context.Database
+                    var resultDollars = (await _context.Database
                         .SqlQueryRaw<TotalBalanceResult>(dollarSQL, new SqlParameter("@USER", userId))
-                        .FirstOrDefaultAsync();
+                        .ToListAsync()).FirstOrDefault();
 
                     totalBalanceDollars = resultDollars?.Total ?? 0;
 
@@ -238,9 +238,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
                 try
                 {
-                    var resultOther = await _context.Database
+                    var resultOther = (await _context.Database
                         .SqlQueryRaw<TotalBalanceResult>(otherSQL, new SqlParameter("@ASSETID", asset.Id), new SqlParameter("@USER", userId))
-                        .FirstOrDefaultAsync();
+                        .ToListAsync()).FirstOrDefault();
 
                     totalBalanceOther = resultOther?.Total ?? 0;
 
