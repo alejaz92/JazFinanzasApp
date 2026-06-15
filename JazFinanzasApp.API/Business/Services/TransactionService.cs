@@ -17,6 +17,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IInvestmentTransactionRepository _investmentTransactionRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ISharedExpenseRepository _sharedExpenseRepository;
 
         public TransactionService(
             ITransactionRepository transactionRepository,
@@ -26,7 +27,8 @@ namespace JazFinanzasApp.API.Business.Services
             IAssetQuoteRepository assetQuoteRepository,
             IInvestmentTransactionRepository investmentTransactionRepository,
             IPortfolioRepository portfolioRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            ISharedExpenseRepository sharedExpenseRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -36,6 +38,7 @@ namespace JazFinanzasApp.API.Business.Services
             _investmentTransactionRepository = investmentTransactionRepository;
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
+            _sharedExpenseRepository = sharedExpenseRepository;
         }
 
         public async Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize)
@@ -336,6 +339,40 @@ namespace JazFinanzasApp.API.Business.Services
                     UpdatedAt = time,
                     QuotePrice = transaction.QuotePrice
                 });
+            }
+
+            if (refundDTO.SplitAllocations != null && refundDTO.SplitAllocations.Any())
+            {
+                var sharedExpense = await _sharedExpenseRepository.GetByTransactionIdAsync(id)
+                    ?? throw new BusinessRuleException("Esta transacción no tiene un gasto compartido asociado");
+
+                var validSplitIds = sharedExpense.Splits.ToDictionary(s => s.Id);
+
+                foreach (var allocation in refundDTO.SplitAllocations)
+                {
+                    if (!validSplitIds.ContainsKey(allocation.SplitId))
+                        throw new BusinessRuleException($"El split {allocation.SplitId} no pertenece a esta transacción");
+                }
+
+                var allocationsSum = refundDTO.SplitAllocations.Sum(a => a.Amount);
+                if (allocationsSum != refundDTO.Amount)
+                    throw new BusinessRuleException("La suma de las allocations debe ser igual al monto del reintegro");
+
+                foreach (var allocation in refundDTO.SplitAllocations)
+                {
+                    var split = validSplitIds[allocation.SplitId];
+
+                    if (split.AmountReimbursed + allocation.Amount > split.Amount)
+                        throw new BusinessRuleException($"El monto asignado al split {split.Id} supera la deuda original");
+
+                    split.AmountReimbursed += allocation.Amount;
+                    split.Status = split.AmountReimbursed >= split.Amount
+                        ? SharedExpenseSplitStatus.Paid
+                        : SharedExpenseSplitStatus.PartiallyPaid;
+                    split.UpdatedAt = DateTime.UtcNow;
+
+                    await _sharedExpenseRepository.UpdateSplitAsync(split);
+                }
             }
         }
 
