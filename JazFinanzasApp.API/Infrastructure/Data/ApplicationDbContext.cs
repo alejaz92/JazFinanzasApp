@@ -32,6 +32,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<CryptoStatsByDateCommerceResult> CryptoStatsByDateCommerceResult { get; set; }
         public DbSet<Portfolio> Portfolios { get; set; }
         public DbSet<AssetSplitEvent> AssetSplitEvents { get; set; }
+        public DbSet<Person> People { get; set; }
+        public DbSet<SharedExpense> SharedExpenses { get; set; }
+        public DbSet<SharedExpenseSplit> SharedExpenseSplits { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -171,6 +174,36 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(s => s.AssetId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<Person>()
+                .HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpense>()
+                .HasOne(se => se.Transaction)
+                .WithMany()
+                .HasForeignKey(se => se.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpense>()
+                .HasOne(se => se.User)
+                .WithMany()
+                .HasForeignKey(se => se.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpenseSplit>()
+                .HasOne(ss => ss.SharedExpense)
+                .WithMany(se => se.Splits)
+                .HasForeignKey(ss => ss.SharedExpenseId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpenseSplit>()
+                .HasOne(ss => ss.Person)
+                .WithMany()
+                .HasForeignKey(ss => ss.PersonId)
+                .OnDelete(DeleteBehavior.NoAction);
         }
     }
 }
