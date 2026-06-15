@@ -46,6 +46,7 @@ builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
 builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
 builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
 builder.Services.AddScoped<IAssetSplitEventRepository, AssetSplitEventRepository>();
+builder.Services.AddScoped<IPersonRepository, PersonRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios
@@ -62,6 +63,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
 builder.Services.AddScoped<ICardService, CardService>();
 builder.Services.AddScoped<IAssetSplitEventService, AssetSplitEventService>();
+builder.Services.AddScoped<IPersonService, PersonService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
