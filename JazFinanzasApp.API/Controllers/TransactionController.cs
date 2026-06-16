@@ -30,8 +30,8 @@ namespace JazFinanzasApp.API.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateTransaction(TransactionAddDTO transactionDTO)
         {
-            await _transactionService.CreateTransactionAsync(GetUserId(), transactionDTO);
-            return Ok();
+            var transactionId = await _transactionService.CreateTransactionAsync(GetUserId(), transactionDTO);
+            return Ok(new { id = transactionId });
         }
 
         [HttpPut("{id}")]

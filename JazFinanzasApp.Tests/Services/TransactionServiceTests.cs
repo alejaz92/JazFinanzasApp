@@ -18,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IInvestmentTransactionRepository> _investmentTransactionRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+        private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
         private readonly TransactionService _sut;
 
         private const int UserId = 1;
@@ -32,6 +33,7 @@ namespace JazFinanzasApp.Tests.Services
             _investmentTransactionRepoMock = new Mock<IInvestmentTransactionRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
+            _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
 
             _sut = new TransactionService(
                 _transactionRepoMock.Object,
@@ -41,7 +43,8 @@ namespace JazFinanzasApp.Tests.Services
                 _assetQuoteRepoMock.Object,
                 _investmentTransactionRepoMock.Object,
                 _portfolioRepoMock.Object,
-                _unitOfWorkMock.Object);
+                _unitOfWorkMock.Object,
+                _sharedExpenseRepoMock.Object);
         }
 
         // ── GetTransactionByIdAsync ───────────────────────────────────────────

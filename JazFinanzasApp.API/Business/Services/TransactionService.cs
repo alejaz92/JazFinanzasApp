@@ -93,7 +93,7 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        public async Task CreateTransactionAsync(int userId, TransactionAddDTO transactionDTO)
+        public async Task<int> CreateTransactionAsync(int userId, TransactionAddDTO transactionDTO)
         {
             var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId)
                 ?? throw new NotFoundException("Default portfolio not found");
@@ -115,7 +115,7 @@ namespace JazFinanzasApp.API.Business.Services
                     throw new BusinessRuleException("No se puede asignar una clase de movimiento de tipo egreso a un movimiento de tipo ingreso");
                 if (transactionClass.UserId != userId) throw new UnauthorizedDomainException();
 
-                await _transactionRepository.AddAsync(new Transaction
+                var incomeTransaction = await _transactionRepository.AddAsyncReturnObject(new Transaction
                 {
                     AccountId = incomeAccount.Id,
                     Account = incomeAccount,
@@ -132,6 +132,7 @@ namespace JazFinanzasApp.API.Business.Services
                     UserId = userId,
                     QuotePrice = quotePrice
                 });
+                return incomeTransaction.Id;
             }
             else if (transactionDTO.movementType == "E")
             {
@@ -149,7 +150,7 @@ namespace JazFinanzasApp.API.Business.Services
                 if (balance < transactionDTO.amount)
                     throw new BusinessRuleException("No hay suficiente saldo en la cuenta");
 
-                await _transactionRepository.AddAsync(new Transaction
+                var expenseTransaction = await _transactionRepository.AddAsyncReturnObject(new Transaction
                 {
                     AccountId = expenseAccount.Id,
                     Account = expenseAccount,
@@ -166,6 +167,7 @@ namespace JazFinanzasApp.API.Business.Services
                     UserId = userId,
                     QuotePrice = quotePrice
                 });
+                return expenseTransaction.Id;
             }
             else if (transactionDTO.movementType == "EX")
             {
@@ -232,6 +234,7 @@ namespace JazFinanzasApp.API.Business.Services
                     UserId = userId
                 });
             }
+            return 0;
         }
 
         public async Task EditTransactionAsync(int userId, int id, TransactionEditDTO transactionDTO)

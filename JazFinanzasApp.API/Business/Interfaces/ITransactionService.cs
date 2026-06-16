@@ -7,7 +7,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
     {
         Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize);
         Task<TransactionListDTO> GetTransactionByIdAsync(int userId, int id);
-        Task CreateTransactionAsync(int userId, TransactionAddDTO dto);
+        Task<int> CreateTransactionAsync(int userId, TransactionAddDTO dto);
         Task EditTransactionAsync(int userId, int id, TransactionEditDTO dto);
         Task DeleteTransactionAsync(int userId, int id);
         Task RefundTransactionAsync(int userId, int id, RefundDTO dto);
