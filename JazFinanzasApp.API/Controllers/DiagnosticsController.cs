@@ -153,6 +153,44 @@ namespace JazFinanzasApp.API.Controllers
             {
                 try
                 {
+                    var pesosSQL = @"
+                        ;WITH SplitFactors AS (
+                            SELECT t.Id AS TransactionId,
+                                ISNULL(
+                                    (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                                     FROM AssetSplitEvents se
+                                     WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                                1) AS CumulativeFactor
+                            FROM Transactions t WHERE t.UserId = {0}
+                        )
+                        SELECT
+                        CAST(SUM(
+                            CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
+                            ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
+                            AS decimal(18,2))
+                            *
+                            (SELECT VALUE FROM AssetQuotes WHERE TYPE = 'BOLSA' AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
+                            ) AS TOTAL
+                        FROM Transactions T
+                        INNER JOIN Assets A ON T.AssetId = A.Id
+                        LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
+                            AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
+                            AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                        INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
+                        WHERE T.UserId = {0}";
+
+                    var resPesos = await _context.Database
+                        .SqlQueryRaw<TotalBalanceResult>(pesosSQL, userId)
+                        .ToListAsync();
+                    result["pesosBalanceFullQuery"] = "OK (total=" + (resPesos.FirstOrDefault()?.Total?.ToString() ?? "null") + ")";
+                }
+                catch (Exception ex)
+                {
+                    result["pesosBalanceFullQueryError"] = ex.GetType().Name + ": " + ex.Message;
+                }
+
+                try
+                {
                     var dollarSQL = @"
                         ;WITH SplitFactors AS (
                             SELECT t.Id AS TransactionId,
