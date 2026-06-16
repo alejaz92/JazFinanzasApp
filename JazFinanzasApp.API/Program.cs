@@ -26,7 +26,9 @@ builder.Services.AddSwaggerGen();
 // Conexi�n a la base de datos
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    options.UseSqlServer(builder.Configuration.GetConnectionString("JazFinanzasAppConnectionString"));
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("JazFinanzasAppConnectionString"),
+        sqlOptions => sqlOptions.CommandTimeout(120));
 });
 
 // Registrar los repositorios

@@ -153,6 +153,21 @@ namespace JazFinanzasApp.API.Controllers
             {
                 try
                 {
+                    var refAssets = await _context.Assets_Users
+                        .Include(au => au.Asset)
+                        .Where(au => au.UserId == userId && au.isReference)
+                        .Select(au => new { au.Asset.Id, au.Asset.Name })
+                        .ToListAsync();
+                    result["referenceAssets"] = refAssets.Select(a => $"Id={a.Id} Name={a.Name}").ToList();
+                }
+                catch (Exception ex)
+                {
+                    result["referenceAssetsError"] = ex.GetType().Name + ": " + ex.Message;
+                }
+
+                try
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
                     var pesosSQL = @"
                         ;WITH SplitFactors AS (
                             SELECT t.Id AS TransactionId,
@@ -182,7 +197,8 @@ namespace JazFinanzasApp.API.Controllers
                     var resPesos = await _context.Database
                         .SqlQueryRaw<TotalBalanceResult>(pesosSQL, userId)
                         .ToListAsync();
-                    result["pesosBalanceFullQuery"] = "OK (total=" + (resPesos.FirstOrDefault()?.Total?.ToString() ?? "null") + ")";
+                    sw.Stop();
+                    result["pesosBalanceFullQuery"] = $"OK ({sw.ElapsedMilliseconds}ms, total={resPesos.FirstOrDefault()?.Total?.ToString() ?? "null"})";
                 }
                 catch (Exception ex)
                 {
@@ -191,6 +207,7 @@ namespace JazFinanzasApp.API.Controllers
 
                 try
                 {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
                     var dollarSQL = @"
                         ;WITH SplitFactors AS (
                             SELECT t.Id AS TransactionId,
@@ -217,7 +234,8 @@ namespace JazFinanzasApp.API.Controllers
                     var res = await _context.Database
                         .SqlQueryRaw<TotalBalanceResult>(dollarSQL, userId)
                         .ToListAsync();
-                    result["dollarBalanceFullQuery"] = "OK (total=" + (res.FirstOrDefault()?.Total?.ToString() ?? "null") + ")";
+                    sw.Stop();
+                    result["dollarBalanceFullQuery"] = $"OK ({sw.ElapsedMilliseconds}ms, total={res.FirstOrDefault()?.Total?.ToString() ?? "null"})";
                 }
                 catch (Exception ex)
                 {
