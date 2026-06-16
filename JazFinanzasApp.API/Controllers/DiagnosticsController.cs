@@ -2,6 +2,7 @@ using JazFinanzasApp.API.Infrastructure.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Data;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 
 namespace JazFinanzasApp.API.Controllers
 {
@@ -69,6 +70,124 @@ namespace JazFinanzasApp.API.Controllers
             }
 
             return Ok(info);
+        }
+
+        [HttpGet("test-balance")]
+        public async Task<IActionResult> TestBalance([FromQuery] int userId = -1)
+        {
+            var result = new Dictionary<string, object>();
+            var conn = _context.Database.GetDbConnection();
+
+            try
+            {
+                if (conn.State != ConnectionState.Open)
+                    await conn.OpenAsync();
+
+                using var cmd1 = conn.CreateCommand();
+                cmd1.CommandText = @"SELECT name FROM sys.tables WHERE name IN
+                    ('People','SharedExpenses','SharedExpenseSplits','AssetSplitEvents') ORDER BY name";
+                var tables = new List<string>();
+                using (var r = await cmd1.ExecuteReaderAsync())
+                    while (await r.ReadAsync()) tables.Add(r.GetString(0));
+                result["p1TablesExist"] = tables;
+            }
+            catch (Exception ex)
+            {
+                result["tableCheckError"] = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            try
+            {
+                var conn2 = _context.Database.GetDbConnection();
+                if (conn2.State != ConnectionState.Open)
+                    await conn2.OpenAsync();
+
+                using var cmd2 = conn2.CreateCommand();
+                cmd2.CommandText = @"
+                    ;WITH SplitFactors AS (
+                        SELECT t.Id AS TransactionId,
+                            ISNULL(
+                                (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                                 FROM AssetSplitEvents se
+                                 WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                            1) AS CumulativeFactor
+                        FROM Transactions t WHERE t.UserId = @uid
+                    )
+                    SELECT COUNT(*) FROM SplitFactors";
+                var p = cmd2.CreateParameter();
+                p.ParameterName = "@uid";
+                p.Value = userId;
+                cmd2.Parameters.Add(p);
+                var count = await cmd2.ExecuteScalarAsync();
+                result["balanceSQLSyntax"] = "OK (rows=" + count + ")";
+            }
+            catch (Exception ex)
+            {
+                result["balanceSQLError"] = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            try
+            {
+                var efCount = await _context.AssetSplitEvents.CountAsync();
+                result["efCoreAssetSplitEvents"] = "OK (count=" + efCount + ")";
+            }
+            catch (Exception ex)
+            {
+                result["efCoreModelError"] = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            try
+            {
+                var sqlTest = await _context.Database
+                    .SqlQueryRaw<TotalBalanceResult>(
+                        "SELECT CAST(0 AS decimal(18,2)) AS TOTAL")
+                    .ToListAsync();
+                result["efCoreSqlQueryRaw"] = "OK";
+            }
+            catch (Exception ex)
+            {
+                result["efCoreSqlQueryRawError"] = ex.GetType().Name + ": " + ex.Message;
+            }
+
+            if (userId > 0)
+            {
+                try
+                {
+                    var dollarSQL = @"
+                        ;WITH SplitFactors AS (
+                            SELECT t.Id AS TransactionId,
+                                ISNULL(
+                                    (SELECT EXP(SUM(LOG(se.SplitRatio)))
+                                     FROM AssetSplitEvents se
+                                     WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
+                                1) AS CumulativeFactor
+                            FROM Transactions t WHERE t.UserId = {0}
+                        )
+                        SELECT
+                        CAST(SUM(
+                            CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
+                            ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
+                            AS decimal(18,2)) AS TOTAL
+                        FROM Transactions T
+                        INNER JOIN Assets A ON T.AssetId = A.Id
+                        LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
+                            AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
+                            AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
+                        INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
+                        WHERE T.UserId = {0}";
+
+                    var res = await _context.Database
+                        .SqlQueryRaw<TotalBalanceResult>(dollarSQL, userId)
+                        .ToListAsync();
+                    result["dollarBalanceFullQuery"] = "OK (total=" + (res.FirstOrDefault()?.Total?.ToString() ?? "null") + ")";
+                }
+                catch (Exception ex)
+                {
+                    result["dollarBalanceFullQueryError"] = ex.GetType().Name + ": " + ex.Message;
+                }
+            }
+
+            return Ok(result);
         }
     }
 }
