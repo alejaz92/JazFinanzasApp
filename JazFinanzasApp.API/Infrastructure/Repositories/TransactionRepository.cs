@@ -123,6 +123,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
                     INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                     WHERE T.UserId = @USER
+                    OPTION(RECOMPILE)
                 ";
 
                 decimal totalBalancePesos = 0;
@@ -177,6 +178,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
                 INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                 WHERE T.UserId = @USER
+                OPTION(RECOMPILE)
                 ";
                 decimal totalBalanceDollars = 0;
 
@@ -231,6 +233,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
                     INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
                     WHERE T.UserId = @USER
+                    OPTION(RECOMPILE)
                 ";
 
                 decimal totalBalanceOther = 0;
