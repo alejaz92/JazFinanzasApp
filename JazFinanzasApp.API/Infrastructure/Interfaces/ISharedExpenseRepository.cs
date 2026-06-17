@@ -7,5 +7,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<SharedExpense?> GetByTransactionIdAsync(int transactionId);
         Task<IEnumerable<SharedExpenseSplit>> GetPendingSplitsByUserIdAsync(int userId);
         Task UpdateSplitAsync(SharedExpenseSplit split);
+        Task DeleteByTransactionIdAsync(int transactionId);
     }
 }

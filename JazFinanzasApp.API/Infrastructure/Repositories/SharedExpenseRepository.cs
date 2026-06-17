@@ -36,5 +36,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             _context.SharedExpenseSplits.Update(split);
             await _context.SaveChangesAsync();
         }
+
+        public async Task DeleteByTransactionIdAsync(int transactionId)
+        {
+            var sharedExpense = await _context.SharedExpenses
+                .Include(se => se.Splits)
+                .FirstOrDefaultAsync(se => se.TransactionId == transactionId);
+
+            if (sharedExpense == null)
+                return;
+
+            _context.SharedExpenseSplits.RemoveRange(sharedExpense.Splits);
+            _context.SharedExpenses.Remove(sharedExpense);
+            await _context.SaveChangesAsync();
+        }
     }
 }

@@ -283,7 +283,19 @@ namespace JazFinanzasApp.API.Business.Services
             var transaction = await _transactionRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Transaction not found");
             if (transaction.UserId != userId) throw new UnauthorizedDomainException();
-            await _transactionRepository.DeleteAsync(transaction.Id);
+
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                await _sharedExpenseRepository.DeleteByTransactionIdAsync(id);
+                await _transactionRepository.DeleteAsync(transaction.Id);
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                throw;
+            }
         }
 
         public async Task RefundTransactionAsync(int userId, int id, RefundDTO refundDTO)
