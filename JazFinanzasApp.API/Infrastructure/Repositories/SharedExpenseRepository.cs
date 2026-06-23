@@ -44,6 +44,24 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             await _context.SaveChangesAsync();
         }
 
+        public async Task<IEnumerable<SharedExpenseReimbursement>> GetReimbursementsBySplitIdAsync(int splitId)
+        {
+            return await _context.SharedExpenseReimbursements
+                .Where(r => r.SharedExpenseSplitId == splitId)
+                .OrderBy(r => r.Id)
+                .ToListAsync();
+        }
+
+        public async Task DeleteReimbursementAsync(int id)
+        {
+            var reimbursement = await _context.SharedExpenseReimbursements.FindAsync(id);
+            if (reimbursement != null)
+            {
+                _context.SharedExpenseReimbursements.Remove(reimbursement);
+                await _context.SaveChangesAsync();
+            }
+        }
+
         public async Task<IEnumerable<SharedExpenseSplit>> GetPendingSplitsByUserIdAsync(int userId)
         {
             return await _context.SharedExpenseSplits

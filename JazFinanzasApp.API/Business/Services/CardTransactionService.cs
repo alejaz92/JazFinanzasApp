@@ -20,6 +20,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITransactionRepository _transactionRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ISharedExpenseRepository _sharedExpenseRepository;
 
         public CardTransactionService(
             ICardTransactionRepository cardTransactionRepository,
@@ -33,7 +34,8 @@ namespace JazFinanzasApp.API.Business.Services
             IAccount_AssetTypeRepository account_AssetTypeRepository,
             ITransactionRepository transactionRepository,
             IPortfolioRepository portfolioRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            ISharedExpenseRepository sharedExpenseRepository)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -47,6 +49,7 @@ namespace JazFinanzasApp.API.Business.Services
             _transactionRepository = transactionRepository;
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
+            _sharedExpenseRepository = sharedExpenseRepository;
         }
 
         public async Task AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
@@ -133,6 +136,7 @@ namespace JazFinanzasApp.API.Business.Services
 
                 return new CardTransactionPaymentListDTO
                 {
+                    CardTransactionId = m.Id,
                     Date = m.Date,
                     TransactionClassId = m.TransactionClassId,
                     TransactionClass = m.TransactionClass.Description,
@@ -192,6 +196,7 @@ namespace JazFinanzasApp.API.Business.Services
                     cardTransaction.TransactionClass = transactionClass.Description;
 
                     var transaction = BuildCardPaymentTransaction(dto, cardTransaction, userId, peso, dolar, quotePrice, portfolio.Id);
+                    await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, transaction);
                     await _transactionRepository.AddAsyncTransaction(transaction);
                 }
 
@@ -300,6 +305,47 @@ namespace JazFinanzasApp.API.Business.Services
                 ?? throw new NotFoundException("Card transaction not found");
             if (cardTransaction.UserId != userId) throw new UnauthorizedDomainException();
             await _cardTransactionRepository.DeleteAsync(id);
+        }
+
+        private async Task ApplySharedExpenseReimbursementsAsync(int cardTransactionId, Transaction expenseTransaction)
+        {
+            var sharedExpense = await _sharedExpenseRepository.GetByCardTransactionIdAsync(cardTransactionId);
+            if (sharedExpense == null)
+                return;
+
+            foreach (var split in sharedExpense.Splits)
+            {
+                var available = split.AmountReimbursed - split.AmountApplied;
+                if (available <= 0)
+                    continue;
+
+                var toApply = Math.Min(available, split.InstallmentSplitAmount);
+                if (toApply <= 0)
+                    continue;
+
+                expenseTransaction.Amount += toApply;
+                split.AmountApplied += toApply;
+                split.UpdatedAt = DateTime.UtcNow;
+
+                await RemoveConsumedReimbursementsAsync(split);
+                await _sharedExpenseRepository.UpdateSplitAsync(split);
+            }
+        }
+
+        private async Task RemoveConsumedReimbursementsAsync(SharedExpenseSplit split)
+        {
+            var reimbursements = await _sharedExpenseRepository.GetReimbursementsBySplitIdAsync(split.Id);
+
+            decimal cumulative = 0;
+            foreach (var reimbursement in reimbursements)
+            {
+                cumulative += reimbursement.Amount;
+                if (split.AmountApplied < cumulative)
+                    break;
+
+                await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
+                await _transactionRepository.DeleteAsync(reimbursement.TransactionId);
+            }
         }
 
         private Transaction BuildCardPaymentTransaction(

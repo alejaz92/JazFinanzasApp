@@ -2,6 +2,7 @@
 {
     public class CardTransactionPaymentListDTO
     {
+        public int CardTransactionId { get; set; }
         public DateTime Date { get; set; }
         public int CardId { get; set; } 
         public string? Card { get; set; }
