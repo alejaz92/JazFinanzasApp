@@ -27,10 +27,31 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpPost("card")]
+        public async Task<IActionResult> CreateForCard(SharedExpenseAddDTO dto)
+        {
+            var result = await _sharedExpenseService.CreateAsync(GetUserId(), dto);
+            return Ok(result);
+        }
+
         [HttpGet("transaction/{transactionId}")]
         public async Task<IActionResult> GetByTransaction(int transactionId)
         {
             var result = await _sharedExpenseService.GetByTransactionIdAsync(GetUserId(), transactionId);
+            return Ok(result);
+        }
+
+        [HttpGet("card-transaction/{cardTransactionId}")]
+        public async Task<IActionResult> GetByCardTransaction(int cardTransactionId)
+        {
+            var result = await _sharedExpenseService.GetByCardTransactionIdAsync(GetUserId(), cardTransactionId);
+            return Ok(result);
+        }
+
+        [HttpPost("reimbursement")]
+        public async Task<IActionResult> RegisterReimbursement(RegisterReimbursementDTO dto)
+        {
+            var result = await _sharedExpenseService.RegisterReimbursementAsync(GetUserId(), dto);
             return Ok(result);
         }
 

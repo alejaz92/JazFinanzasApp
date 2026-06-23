@@ -22,6 +22,28 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .FirstOrDefaultAsync(se => se.TransactionId == transactionId);
         }
 
+        public async Task<SharedExpense?> GetByCardTransactionIdAsync(int cardTransactionId)
+        {
+            return await _context.SharedExpenses
+                .Include(se => se.Splits)
+                    .ThenInclude(s => s.Person)
+                .FirstOrDefaultAsync(se => se.CardTransactionId == cardTransactionId);
+        }
+
+        public async Task<SharedExpenseSplit?> GetSplitByIdAsync(int splitId)
+        {
+            return await _context.SharedExpenseSplits
+                .Include(s => s.SharedExpense)
+                .Include(s => s.Person)
+                .FirstOrDefaultAsync(s => s.Id == splitId);
+        }
+
+        public async Task AddReimbursementAsync(SharedExpenseReimbursement reimbursement)
+        {
+            await _context.SharedExpenseReimbursements.AddAsync(reimbursement);
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<IEnumerable<SharedExpenseSplit>> GetPendingSplitsByUserIdAsync(int userId)
         {
             return await _context.SharedExpenseSplits
