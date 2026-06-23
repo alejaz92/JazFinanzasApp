@@ -5,10 +5,13 @@ namespace JazFinanzasApp.API.Domain
 {
     public class SharedExpense : BaseEntity
     {
-        [Required]
         [ForeignKey("TransactionId")]
-        public int TransactionId { get; set; }
-        public Transaction Transaction { get; set; }
+        public int? TransactionId { get; set; }
+        public Transaction? Transaction { get; set; }
+
+        [ForeignKey("CardTransactionId")]
+        public int? CardTransactionId { get; set; }
+        public CardTransaction? CardTransaction { get; set; }
 
         public string? Notes { get; set; }
 

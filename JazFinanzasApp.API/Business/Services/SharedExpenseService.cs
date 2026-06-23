@@ -95,7 +95,7 @@ namespace JazFinanzasApp.API.Business.Services
             if (sharedExpense.UserId != userId)
                 throw new UnauthorizedDomainException();
 
-            var full = await _sharedExpenseRepository.GetByTransactionIdAsync(sharedExpense.TransactionId);
+            var full = await _sharedExpenseRepository.GetByTransactionIdAsync(sharedExpense.TransactionId!.Value);
             if (full!.Splits.Any(s => s.Status != SharedExpenseSplitStatus.Pending))
                 throw new BusinessRuleException("No se puede eliminar un gasto compartido con splits que ya tienen reintegros");
 
@@ -123,12 +123,12 @@ namespace JazFinanzasApp.API.Business.Services
             return new SharedExpenseDetailDTO
             {
                 Id = se.Id,
-                TransactionId = se.TransactionId,
+                TransactionId = se.TransactionId!.Value,
                 Notes = se.Notes,
                 Splits = se.Splits.Select(s => new SharedExpenseSplitDTO
                 {
                     Id = s.Id,
-                    PersonId = s.PersonId,
+                    PersonId = s.PersonId!.Value,
                     PersonName = s.Person?.Alias ?? s.Person?.Name ?? string.Empty,
                     Amount = s.Amount,
                     AmountReimbursed = s.AmountReimbursed,

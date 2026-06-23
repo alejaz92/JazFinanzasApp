@@ -10,10 +10,12 @@ namespace JazFinanzasApp.API.Domain
         public int SharedExpenseId { get; set; }
         public SharedExpense SharedExpense { get; set; }
 
-        [Required]
         [ForeignKey("PersonId")]
-        public int PersonId { get; set; }
-        public Person Person { get; set; }
+        public int? PersonId { get; set; }
+        public Person? Person { get; set; }
+
+        [Required]
+        public SharedExpenseSplitType SplitType { get; set; } = SharedExpenseSplitType.Person;
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]
@@ -22,6 +24,14 @@ namespace JazFinanzasApp.API.Domain
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal AmountReimbursed { get; set; } = 0;
+
+        [Required]
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal AmountApplied { get; set; } = 0;
+
+        [Required]
+        [Column(TypeName = "decimal(18,2)")]
+        public decimal InstallmentSplitAmount { get; set; } = 0;
 
         [Required]
         public SharedExpenseSplitStatus Status { get; set; } = SharedExpenseSplitStatus.Pending;

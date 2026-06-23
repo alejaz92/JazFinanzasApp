@@ -35,6 +35,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<Person> People { get; set; }
         public DbSet<SharedExpense> SharedExpenses { get; set; }
         public DbSet<SharedExpenseSplit> SharedExpenseSplits { get; set; }
+        public DbSet<SharedExpenseReimbursement> SharedExpenseReimbursements { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -206,6 +207,24 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(ss => ss.Person)
                 .WithMany()
                 .HasForeignKey(ss => ss.PersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpense>()
+                .HasOne(se => se.CardTransaction)
+                .WithMany()
+                .HasForeignKey(se => se.CardTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpenseReimbursement>()
+                .HasOne(ser => ser.SharedExpenseSplit)
+                .WithMany()
+                .HasForeignKey(ser => ser.SharedExpenseSplitId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedExpenseReimbursement>()
+                .HasOne(ser => ser.Transaction)
+                .WithMany()
+                .HasForeignKey(ser => ser.TransactionId)
                 .OnDelete(DeleteBehavior.NoAction);
         }
     }
