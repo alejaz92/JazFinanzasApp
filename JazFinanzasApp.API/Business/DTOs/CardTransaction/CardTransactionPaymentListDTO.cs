@@ -12,6 +12,7 @@
         public int AssetId { get; set; }
         public string? Asset { get; set; }
         public string Installment { get; set; }
+        public int InstallmentNumber { get; set; }
         public decimal InstallmentAmount { get; set; }
         public decimal ValueInPesos { get; set; }
     }

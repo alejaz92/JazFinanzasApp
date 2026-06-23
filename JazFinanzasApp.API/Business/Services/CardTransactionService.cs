@@ -121,16 +121,8 @@ namespace JazFinanzasApp.API.Business.Services
 
             return cardTransactions.Select(m =>
             {
-                string installmentDisplay;
-                if (m.Repeat == "YES")
-                {
-                    installmentDisplay = "Recurrente";
-                }
-                else
-                {
-                    var currentInstallment = ((paymentMonth.Year - m.FirstInstallment.Year) * 12) + paymentMonth.Month - m.FirstInstallment.Month + 1;
-                    installmentDisplay = $"{currentInstallment}/{m.Installments}";
-                }
+                var currentInstallment = ((paymentMonth.Year - m.FirstInstallment.Year) * 12) + paymentMonth.Month - m.FirstInstallment.Month + 1;
+                var installmentDisplay = m.Repeat == "YES" ? "Recurrente" : $"{currentInstallment}/{m.Installments}";
 
                 var valueInPesos = m.Asset.Name == "Dolar Estadounidense" ? m.InstallmentAmount * exchangeRate : m.InstallmentAmount;
 
@@ -144,6 +136,7 @@ namespace JazFinanzasApp.API.Business.Services
                     AssetId = m.AssetId,
                     Asset = m.Asset.Name,
                     Installment = installmentDisplay,
+                    InstallmentNumber = currentInstallment,
                     InstallmentAmount = m.InstallmentAmount,
                     ValueInPesos = valueInPesos
                 };
@@ -196,7 +189,7 @@ namespace JazFinanzasApp.API.Business.Services
                     cardTransaction.TransactionClass = transactionClass.Description;
 
                     var transaction = BuildCardPaymentTransaction(dto, cardTransaction, userId, peso, dolar, quotePrice, portfolio.Id);
-                    await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, transaction);
+                    await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
                     await _transactionRepository.AddAsyncTransaction(transaction);
                 }
 
@@ -307,7 +300,7 @@ namespace JazFinanzasApp.API.Business.Services
             await _cardTransactionRepository.DeleteAsync(id);
         }
 
-        private async Task ApplySharedExpenseReimbursementsAsync(int cardTransactionId, Transaction expenseTransaction)
+        private async Task ApplySharedExpenseReimbursementsAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction)
         {
             var sharedExpense = await _sharedExpenseRepository.GetByCardTransactionIdAsync(cardTransactionId);
             if (sharedExpense == null)
@@ -315,21 +308,54 @@ namespace JazFinanzasApp.API.Business.Services
 
             foreach (var split in sharedExpense.Splits)
             {
-                var available = split.AmountReimbursed - split.AmountApplied;
-                if (available <= 0)
-                    continue;
-
-                var toApply = Math.Min(available, split.InstallmentSplitAmount);
-                if (toApply <= 0)
-                    continue;
-
-                expenseTransaction.Amount += toApply;
-                split.AmountApplied += toApply;
-                split.UpdatedAt = DateTime.UtcNow;
-
-                await RemoveConsumedReimbursementsAsync(split);
-                await _sharedExpenseRepository.UpdateSplitAsync(split);
+                if (split.SplitType == SharedExpenseSplitType.BankPromotion)
+                    await ApplyPromotionInstallmentAsync(split, installmentNumber, expenseTransaction);
+                else
+                    await ApplyPersonPoolInstallmentAsync(split, expenseTransaction);
             }
+        }
+
+        // Las promociones quedan pre-particionadas por cuota al registrarse (FIFO); solo se aplica
+        // lo que haya quedado etiquetado exactamente para la cuota que se está pagando ahora.
+        private async Task ApplyPromotionInstallmentAsync(SharedExpenseSplit split, int installmentNumber, Transaction expenseTransaction)
+        {
+            var reimbursements = await _sharedExpenseRepository.GetReimbursementsBySplitIdAsync(split.Id);
+            var matching = reimbursements.Where(r => r.InstallmentNumber == installmentNumber).ToList();
+            if (!matching.Any())
+                return;
+
+            var toApply = matching.Sum(r => r.Amount);
+            expenseTransaction.Amount += toApply;
+            split.AmountApplied += toApply;
+            split.UpdatedAt = DateTime.UtcNow;
+
+            foreach (var reimbursement in matching)
+            {
+                await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
+                await _transactionRepository.DeleteAsync(reimbursement.TransactionId);
+            }
+
+            await _sharedExpenseRepository.UpdateSplitAsync(split);
+        }
+
+        // Las personas pagan a un pool sin atar cada Transaction a una cuota específica (mes a mes o upfront);
+        // cada cuota consume hasta InstallmentSplitAmount del pool disponible.
+        private async Task ApplyPersonPoolInstallmentAsync(SharedExpenseSplit split, Transaction expenseTransaction)
+        {
+            var available = split.AmountReimbursed - split.AmountApplied;
+            if (available <= 0)
+                return;
+
+            var toApply = Math.Min(available, split.InstallmentSplitAmount);
+            if (toApply <= 0)
+                return;
+
+            expenseTransaction.Amount += toApply;
+            split.AmountApplied += toApply;
+            split.UpdatedAt = DateTime.UtcNow;
+
+            await RemoveConsumedReimbursementsAsync(split);
+            await _sharedExpenseRepository.UpdateSplitAsync(split);
         }
 
         private async Task RemoveConsumedReimbursementsAsync(SharedExpenseSplit split)
