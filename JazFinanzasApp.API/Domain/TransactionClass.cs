@@ -8,6 +8,7 @@ namespace JazFinanzasApp.API.Domain
         [Required]
         public string Description { get; set; }
         public string IncExp {  get; set; }
+        public bool IsSystem { get; set; } = false;
         [Required]
         [ForeignKey("UserId")]
         public int UserId { get; set; }

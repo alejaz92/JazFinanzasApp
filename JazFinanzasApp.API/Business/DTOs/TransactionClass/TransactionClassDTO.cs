@@ -7,5 +7,6 @@ namespace JazFinanzasApp.API.Business.DTO.TransactionClass
         public int Id { get; set; }
         public string Description { get; set; }
         public string IncExp { get; set; }
+        public bool IsSystem { get; set; }
     }
 }

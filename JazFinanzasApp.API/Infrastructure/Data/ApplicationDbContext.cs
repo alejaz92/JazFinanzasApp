@@ -151,6 +151,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
+            modelBuilder.Entity<TransactionClass>()
+                .Property(tc => tc.IsSystem)
+                .HasDefaultValue(false);
             modelBuilder.Entity<InvestmentTransaction>()
             .HasOne(im => im.IncomeTransaction)
             .WithMany()

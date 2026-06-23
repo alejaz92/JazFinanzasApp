@@ -36,11 +36,12 @@ namespace JazFinanzasApp.API.Business.Services
                 IsDefault = true
             });
 
-            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ajuste Saldos Ingreso", IncExp = "I", UserId = result.UserId });
-            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ingreso Inversiones", IncExp = "I", UserId = result.UserId });
-            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ajuste Saldos Egreso", IncExp = "E", UserId = result.UserId });
-            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Gastos Tarjeta", IncExp = "E", UserId = result.UserId });
-            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Inversiones", IncExp = "E", UserId = result.UserId });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ajuste Saldos Ingreso", IncExp = "I", UserId = result.UserId, IsSystem = true });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ingreso Inversiones", IncExp = "I", UserId = result.UserId, IsSystem = true });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Ajuste Saldos Egreso", IncExp = "E", UserId = result.UserId, IsSystem = true });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Gastos Tarjeta", IncExp = "E", UserId = result.UserId, IsSystem = true });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Inversiones", IncExp = "E", UserId = result.UserId, IsSystem = true });
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Reintegro", IncExp = "I", UserId = result.UserId, IsSystem = true });
 
             return (true, Enumerable.Empty<string>());
         }

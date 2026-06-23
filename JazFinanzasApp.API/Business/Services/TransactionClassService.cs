@@ -19,7 +19,7 @@ namespace JazFinanzasApp.API.Business.Services
         {
             var classes = await _transactionClassRepository.GetByUserIdAsync(userId);
             return classes.OrderBy(mc => mc.Description)
-                .Select(mc => new TransactionClassDTO { Id = mc.Id, Description = mc.Description, IncExp = mc.IncExp });
+                .Select(mc => new TransactionClassDTO { Id = mc.Id, Description = mc.Description, IncExp = mc.IncExp, IsSystem = mc.IsSystem });
         }
 
         public async Task<TransactionClassDTO> GetByIdAsync(int userId, int id)
@@ -27,7 +27,7 @@ namespace JazFinanzasApp.API.Business.Services
             var tc = await _transactionClassRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Transaction class not found");
             if (tc.UserId != userId) throw new UnauthorizedDomainException();
-            return new TransactionClassDTO { Id = tc.Id, Description = tc.Description, IncExp = tc.IncExp };
+            return new TransactionClassDTO { Id = tc.Id, Description = tc.Description, IncExp = tc.IncExp, IsSystem = tc.IsSystem };
         }
 
         public async Task CreateTransactionClassAsync(int userId, TransactionClassDTO dto)
@@ -45,6 +45,7 @@ namespace JazFinanzasApp.API.Business.Services
             var tc = await _transactionClassRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Transaction class not found");
             if (tc.UserId != userId) throw new UnauthorizedDomainException();
+            if (tc.IsSystem) throw new BusinessRuleException("System transaction class cannot be edited");
             tc.Description = dto.Description;
             tc.UpdatedAt = DateTime.UtcNow;
             await _transactionClassRepository.UpdateAsync(tc);
@@ -55,6 +56,7 @@ namespace JazFinanzasApp.API.Business.Services
             var tc = await _transactionClassRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Transaction class not found");
             if (tc.UserId != userId) throw new UnauthorizedDomainException();
+            if (tc.IsSystem) throw new BusinessRuleException("System transaction class cannot be deleted");
             var isInUse = await _transactionClassRepository.IsTransactionClassInUseAsync(id);
             if (isInUse) throw new BusinessRuleException("Transaction Class is being used in transactions");
             await _transactionClassRepository.DeleteAsync(id);
