@@ -371,7 +371,22 @@ namespace JazFinanzasApp.API.Business.Services
                 {
                     PersonId = g.Key!.Id,
                     PersonName = g.Key!.Alias ?? g.Key!.Name,
-                    TotalPending = g.Sum(s => s.Amount - s.AmountReimbursed)
+                    TotalPending = g.Sum(s => s.Amount - s.AmountReimbursed),
+                    Splits = g.Select(s => new PersonDebtSplitDTO
+                    {
+                        SplitId = s.Id,
+                        Description = s.SharedExpense.CardTransactionId.HasValue
+                            ? (s.SharedExpense.CardTransaction?.Detail ?? "Gasto de tarjeta")
+                            : (s.SharedExpense.Transaction?.Detail ?? "Gasto"),
+                        Amount = s.Amount,
+                        AmountReimbursed = s.AmountReimbursed,
+                        Pending = Math.Round(s.Amount - s.AmountReimbursed, 2),
+                        Status = s.Status,
+                        CardTransactionId = s.SharedExpense.CardTransactionId,
+                        TransactionId = s.SharedExpense.TransactionId
+                    })
+                    .OrderByDescending(s => s.Pending)
+                    .ToList()
                 })
                 .OrderBy(x => x.PersonName)
                 .ToList();

@@ -88,13 +88,15 @@ namespace JazFinanzasApp.Tests.Services
             _assetRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(asset);
             _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 3)).ReturnsAsync(assetUser);
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(transactionClass);
-            _cardTransactionRepoMock.Setup(r => r.AddAsync(It.IsAny<CardTransaction>())).Returns(Task.CompletedTask);
+            _cardTransactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<CardTransaction>()))
+                .ReturnsAsync((CardTransaction ct) => { ct.Id = 55; return ct; });
 
             // Act
-            await _sut.AddCardTransactionAsync(UserId, dto);
+            var id = await _sut.AddCardTransactionAsync(UserId, dto);
 
             // Assert
-            _cardTransactionRepoMock.Verify(r => r.AddAsync(It.Is<CardTransaction>(ct =>
+            id.Should().Be(55);
+            _cardTransactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.Is<CardTransaction>(ct =>
                 ct.UserId == UserId &&
                 ct.CardId == 1 &&
                 ct.TotalAmount == 6000m &&

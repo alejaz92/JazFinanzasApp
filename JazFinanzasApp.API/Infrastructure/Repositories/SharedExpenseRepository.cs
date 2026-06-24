@@ -67,7 +67,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.SharedExpenseSplits
                 .Include(s => s.Person)
                 .Include(s => s.SharedExpense)
-                .Where(s => s.SharedExpense.UserId == userId && s.Status != SharedExpenseSplitStatus.Paid)
+                    .ThenInclude(se => se.Transaction)
+                .Include(s => s.SharedExpense)
+                    .ThenInclude(se => se.CardTransaction)
+                .Where(s => s.SharedExpense.UserId == userId)
                 .ToListAsync();
         }
 

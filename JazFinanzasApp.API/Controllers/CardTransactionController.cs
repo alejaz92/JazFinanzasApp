@@ -23,8 +23,8 @@ namespace JazFinanzasApp.API.Controllers
         [HttpPost]
         public async Task<IActionResult> AddCardTransaction([FromBody] CardTransactionAddDTO cardTransactionAddDTO)
         {
-            await _cardTransactionService.AddCardTransactionAsync(GetUserId(), cardTransactionAddDTO);
-            return Ok(cardTransactionAddDTO);
+            var id = await _cardTransactionService.AddCardTransactionAsync(GetUserId(), cardTransactionAddDTO);
+            return Ok(new { id });
         }
 
         [HttpGet]

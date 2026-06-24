@@ -52,7 +52,7 @@ namespace JazFinanzasApp.API.Business.Services
             _sharedExpenseRepository = sharedExpenseRepository;
         }
 
-        public async Task AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
+        public async Task<int> AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
         {
             var card = await _cardRepository.GetByIdAsync(dto.CardId)
                 ?? throw new NotFoundException("Card not found");
@@ -66,7 +66,7 @@ namespace JazFinanzasApp.API.Business.Services
             dto.FirstInstallment = new DateTime(dto.FirstInstallment.Year, dto.FirstInstallment.Month, 1);
             dto.LastInstallment = new DateTime(dto.LastInstallment.Year, dto.LastInstallment.Month, 1);
 
-            await _cardTransactionRepository.AddAsync(new CardTransaction
+            var cardTransaction = await _cardTransactionRepository.AddAsyncReturnObject(new CardTransaction
             {
                 Date = dto.Date,
                 Detail = dto.Detail,
@@ -84,6 +84,8 @@ namespace JazFinanzasApp.API.Business.Services
                 UserId = userId,
                 InstallmentAmount = dto.TotalAmount / dto.Installments
             });
+
+            return cardTransaction.Id;
         }
 
         public async Task<IEnumerable<CardTransactionsPendingDTO>> GetPendingCardTransactionsAsync(int userId)
