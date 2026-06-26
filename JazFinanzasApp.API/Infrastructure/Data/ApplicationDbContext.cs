@@ -36,6 +36,8 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<SharedExpense> SharedExpenses { get; set; }
         public DbSet<SharedExpenseSplit> SharedExpenseSplits { get; set; }
         public DbSet<SharedExpenseReimbursement> SharedExpenseReimbursements { get; set; }
+        public DbSet<CardTransactionDiscount> CardTransactionDiscounts { get; set; }
+        public DbSet<CardTransactionDiscountInstallment> CardTransactionDiscountInstallments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -225,6 +227,34 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(ser => ser.Transaction)
                 .WithMany()
                 .HasForeignKey(ser => ser.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<CardTransactionDiscount>()
+                .HasIndex(ctd => ctd.CardTransactionId)
+                .IsUnique();
+
+            modelBuilder.Entity<CardTransactionDiscount>()
+                .HasOne(ctd => ctd.CardTransaction)
+                .WithMany()
+                .HasForeignKey(ctd => ctd.CardTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<CardTransactionDiscount>()
+                .HasOne(ctd => ctd.User)
+                .WithMany()
+                .HasForeignKey(ctd => ctd.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<CardTransactionDiscountInstallment>()
+                .HasOne(ctdi => ctdi.CardTransactionDiscount)
+                .WithMany()
+                .HasForeignKey(ctdi => ctdi.CardTransactionDiscountId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<CardTransactionDiscountInstallment>()
+                .HasOne(ctdi => ctdi.Transaction)
+                .WithMany()
+                .HasForeignKey(ctdi => ctdi.TransactionId)
                 .OnDelete(DeleteBehavior.NoAction);
         }
     }

@@ -3,12 +3,12 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace JazFinanzasApp.API.Domain
 {
-    public class SharedExpenseReimbursement : BaseEntity
+    public class CardTransactionDiscountInstallment : BaseEntity
     {
         [Required]
-        [ForeignKey("SharedExpenseSplitId")]
-        public int SharedExpenseSplitId { get; set; }
-        public SharedExpenseSplit SharedExpenseSplit { get; set; }
+        [ForeignKey("CardTransactionDiscountId")]
+        public int CardTransactionDiscountId { get; set; }
+        public CardTransactionDiscount CardTransactionDiscount { get; set; }
 
         [Required]
         [ForeignKey("TransactionId")]
@@ -18,6 +18,9 @@ namespace JazFinanzasApp.API.Domain
         [Required]
         [Column(TypeName = "decimal(18,2)")]
         public decimal Amount { get; set; }
+
+        [Required]
+        public int InstallmentNumber { get; set; }
 
         [Required]
         public DateTime Date { get; set; }

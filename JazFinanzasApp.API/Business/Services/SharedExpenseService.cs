@@ -45,23 +45,6 @@ namespace JazFinanzasApp.API.Business.Services
             if (!dto.Splits.Any())
                 throw new BusinessRuleException("Debe incluir al menos un split");
 
-            foreach (var splitInput in dto.Splits)
-            {
-                if (splitInput.SplitType == SharedExpenseSplitType.BankPromotion)
-                {
-                    if (splitInput.PersonId.HasValue)
-                        throw new BusinessRuleException("Un split de promoción bancaria no puede tener PersonId");
-                    if (!hasCardTransaction)
-                        throw new BusinessRuleException("Las promociones bancarias solo aplican a gastos de tarjeta");
-                    if (!splitInput.AccountId.HasValue || !splitInput.Date.HasValue || !splitInput.TransactionClassId.HasValue)
-                        throw new BusinessRuleException("Una promoción bancaria requiere cuenta, fecha y clase de transacción");
-                }
-                else if (!splitInput.PersonId.HasValue)
-                {
-                    throw new BusinessRuleException("Debe indicar la persona para un split de tipo Person");
-                }
-            }
-
             return hasTransaction
                 ? await CreateForAccountAsync(userId, dto)
                 : await CreateForCardAsync(userId, dto);
@@ -88,7 +71,7 @@ namespace JazFinanzasApp.API.Business.Services
 
             foreach (var splitInput in dto.Splits)
             {
-                var person = await _personRepository.GetByIdAsync(splitInput.PersonId!.Value)
+                var person = await _personRepository.GetByIdAsync(splitInput.PersonId)
                     ?? throw new NotFoundException($"Persona {splitInput.PersonId} no encontrada");
                 if (person.UserId != userId)
                     throw new UnauthorizedDomainException();
@@ -102,7 +85,6 @@ namespace JazFinanzasApp.API.Business.Services
                 Splits = dto.Splits.Select(s => new SharedExpenseSplit
                 {
                     PersonId = s.PersonId,
-                    SplitType = SharedExpenseSplitType.Person,
                     Amount = s.Amount,
                     AmountReimbursed = 0,
                     Status = SharedExpenseSplitStatus.Pending,
@@ -132,9 +114,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (totalSplits > cardTransaction.TotalAmount)
                 throw new BusinessRuleException("La suma de los splits no puede superar el monto del gasto de tarjeta");
 
-            foreach (var splitInput in dto.Splits.Where(s => s.SplitType == SharedExpenseSplitType.Person))
+            foreach (var splitInput in dto.Splits)
             {
-                var person = await _personRepository.GetByIdAsync(splitInput.PersonId!.Value)
+                var person = await _personRepository.GetByIdAsync(splitInput.PersonId)
                     ?? throw new NotFoundException($"Persona {splitInput.PersonId} no encontrada");
                 if (person.UserId != userId)
                     throw new UnauthorizedDomainException();
@@ -143,7 +125,6 @@ namespace JazFinanzasApp.API.Business.Services
             var splitEntities = dto.Splits.Select(s => new SharedExpenseSplit
             {
                 PersonId = s.PersonId,
-                SplitType = s.SplitType,
                 Amount = s.Amount,
                 AmountReimbursed = 0,
                 AmountApplied = 0,
@@ -162,75 +143,8 @@ namespace JazFinanzasApp.API.Business.Services
 
             await _sharedExpenseRepository.AddAsyncReturnObject(sharedExpense);
 
-            for (int i = 0; i < dto.Splits.Count; i++)
-            {
-                if (dto.Splits[i].SplitType == SharedExpenseSplitType.BankPromotion)
-                    await ApplyBankPromotionFifoAsync(userId, cardTransaction, splitEntities[i], dto.Splits[i]);
-            }
-
             var full = await _sharedExpenseRepository.GetByCardTransactionIdAsync(dto.CardTransactionId.Value);
             return MapToDetailDTO(full!);
-        }
-
-        private async Task ApplyBankPromotionFifoAsync(int userId, CardTransaction cardTransaction, SharedExpenseSplit split, SplitInputDTO splitInput)
-        {
-            var account = await _accountRepository.GetByIdAsync(splitInput.AccountId!.Value)
-                ?? throw new NotFoundException("Cuenta no encontrada");
-            if (account.UserId != userId)
-                throw new UnauthorizedDomainException();
-
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(splitInput.TransactionClassId!.Value)
-                ?? throw new NotFoundException("Clase de transacción no encontrada");
-            if (transactionClass.UserId != userId)
-                throw new UnauthorizedDomainException();
-            if (transactionClass.IncExp != "I")
-                throw new BusinessRuleException("La clase de transacción debe ser de tipo ingreso");
-
-            var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId)
-                ?? throw new NotFoundException("Portfolio por defecto no encontrado");
-
-            decimal remaining = split.Amount;
-            int installmentNumber = 1;
-
-            while (remaining > 0 && installmentNumber <= cardTransaction.Installments)
-            {
-                var portion = Math.Min(remaining, split.InstallmentSplitAmount);
-
-                var incomeTransaction = await _transactionRepository.AddAsyncReturnObject(new Transaction
-                {
-                    AccountId = account.Id,
-                    Account = account,
-                    PortfolioId = defaultPortfolio.Id,
-                    Portfolio = defaultPortfolio,
-                    AssetId = cardTransaction.AssetId,
-                    Date = splitInput.Date!.Value,
-                    MovementType = "I",
-                    TransactionClassId = transactionClass.Id,
-                    TransactionClass = transactionClass,
-                    Detail = $"Promoción bancaria - {cardTransaction.Detail}",
-                    Amount = portion,
-                    UserId = userId
-                });
-
-                await _sharedExpenseRepository.AddReimbursementAsync(new SharedExpenseReimbursement
-                {
-                    SharedExpenseSplitId = split.Id,
-                    TransactionId = incomeTransaction.Id,
-                    Amount = portion,
-                    Date = splitInput.Date.Value,
-                    InstallmentNumber = installmentNumber
-                });
-
-                split.AmountReimbursed += portion;
-                remaining -= portion;
-                installmentNumber++;
-            }
-
-            split.Status = split.AmountReimbursed >= split.Amount
-                ? SharedExpenseSplitStatus.Paid
-                : SharedExpenseSplitStatus.PartiallyPaid;
-            split.UpdatedAt = DateTime.UtcNow;
-            await _sharedExpenseRepository.UpdateSplitAsync(split);
         }
 
         public async Task<SharedExpenseDetailDTO> GetByTransactionIdAsync(int userId, int transactionId)
@@ -271,9 +185,6 @@ namespace JazFinanzasApp.API.Business.Services
 
             if (split.SharedExpense.CardTransactionId == null)
                 throw new BusinessRuleException("Este split no corresponde a un gasto de tarjeta");
-
-            if (split.SplitType != SharedExpenseSplitType.Person)
-                throw new BusinessRuleException("Las promociones bancarias no se registran con este endpoint");
 
             if (split.AmountReimbursed + dto.Amount > split.Amount)
                 throw new BusinessRuleException("El monto del reintegro supera la deuda pendiente del split");
@@ -332,7 +243,6 @@ namespace JazFinanzasApp.API.Business.Services
                 Id = split.Id,
                 PersonId = split.PersonId,
                 PersonName = split.Person?.Alias ?? split.Person?.Name ?? string.Empty,
-                SplitType = split.SplitType,
                 Amount = split.Amount,
                 AmountReimbursed = split.AmountReimbursed,
                 AmountApplied = split.AmountApplied,
@@ -365,7 +275,6 @@ namespace JazFinanzasApp.API.Business.Services
             var splits = await _sharedExpenseRepository.GetPendingSplitsByUserIdAsync(userId);
 
             return splits
-                .Where(s => s.Person != null)
                 .GroupBy(s => s.Person)
                 .Select(g => new PersonDebtSummaryDTO
                 {
@@ -404,10 +313,7 @@ namespace JazFinanzasApp.API.Business.Services
                 {
                     Id = s.Id,
                     PersonId = s.PersonId,
-                    PersonName = s.SplitType == SharedExpenseSplitType.BankPromotion
-                        ? "Promoción bancaria"
-                        : (s.Person?.Alias ?? s.Person?.Name ?? string.Empty),
-                    SplitType = s.SplitType,
+                    PersonName = s.Person?.Alias ?? s.Person?.Name ?? string.Empty,
                     Amount = s.Amount,
                     AmountReimbursed = s.AmountReimbursed,
                     AmountApplied = s.AmountApplied,

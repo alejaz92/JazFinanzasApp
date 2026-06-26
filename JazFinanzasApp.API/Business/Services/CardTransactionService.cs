@@ -310,34 +310,8 @@ namespace JazFinanzasApp.API.Business.Services
 
             foreach (var split in sharedExpense.Splits)
             {
-                if (split.SplitType == SharedExpenseSplitType.BankPromotion)
-                    await ApplyPromotionInstallmentAsync(split, installmentNumber, expenseTransaction);
-                else
-                    await ApplyPersonPoolInstallmentAsync(split, expenseTransaction);
+                await ApplyPersonPoolInstallmentAsync(split, expenseTransaction);
             }
-        }
-
-        // Las promociones quedan pre-particionadas por cuota al registrarse (FIFO); solo se aplica
-        // lo que haya quedado etiquetado exactamente para la cuota que se está pagando ahora.
-        private async Task ApplyPromotionInstallmentAsync(SharedExpenseSplit split, int installmentNumber, Transaction expenseTransaction)
-        {
-            var reimbursements = await _sharedExpenseRepository.GetReimbursementsBySplitIdAsync(split.Id);
-            var matching = reimbursements.Where(r => r.InstallmentNumber == installmentNumber).ToList();
-            if (!matching.Any())
-                return;
-
-            var toApply = matching.Sum(r => r.Amount);
-            expenseTransaction.Amount += toApply;
-            split.AmountApplied += toApply;
-            split.UpdatedAt = DateTime.UtcNow;
-
-            foreach (var reimbursement in matching)
-            {
-                await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
-                await _transactionRepository.DeleteAsync(reimbursement.TransactionId);
-            }
-
-            await _sharedExpenseRepository.UpdateSplitAsync(split);
         }
 
         // Las personas pagan a un pool sin atar cada Transaction a una cuota específica (mes a mes o upfront);

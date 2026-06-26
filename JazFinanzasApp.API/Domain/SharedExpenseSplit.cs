@@ -10,12 +10,10 @@ namespace JazFinanzasApp.API.Domain
         public int SharedExpenseId { get; set; }
         public SharedExpense SharedExpense { get; set; }
 
-        [ForeignKey("PersonId")]
-        public int? PersonId { get; set; }
-        public Person? Person { get; set; }
-
         [Required]
-        public SharedExpenseSplitType SplitType { get; set; } = SharedExpenseSplitType.Person;
+        [ForeignKey("PersonId")]
+        public int PersonId { get; set; }
+        public Person Person { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(18,2)")]

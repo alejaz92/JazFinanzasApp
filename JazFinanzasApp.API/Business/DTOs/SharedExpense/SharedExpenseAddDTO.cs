@@ -17,19 +17,13 @@ namespace JazFinanzasApp.API.Business.DTO.SharedExpense
 
     public class SplitInputDTO
     {
-        public int? PersonId { get; set; }
-
-        public SharedExpenseSplitType SplitType { get; set; } = SharedExpenseSplitType.Person;
+        [Required]
+        public int PersonId { get; set; }
 
         [Required]
         [Range(0.01, double.MaxValue)]
         public decimal Amount { get; set; }
 
         public string? Notes { get; set; }
-
-        // Solo para SplitType = BankPromotion: permite precalcular la distribución FIFO al crear el gasto compartido de tarjeta
-        public int? AccountId { get; set; }
-        public DateTime? Date { get; set; }
-        public int? TransactionClassId { get; set; }
     }
 }
