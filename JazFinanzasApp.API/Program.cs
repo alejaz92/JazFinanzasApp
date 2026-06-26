@@ -50,6 +50,7 @@ builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
 builder.Services.AddScoped<IAssetSplitEventRepository, AssetSplitEventRepository>();
 builder.Services.AddScoped<IPersonRepository, PersonRepository>();
 builder.Services.AddScoped<ISharedExpenseRepository, SharedExpenseRepository>();
+builder.Services.AddScoped<ICardTransactionDiscountRepository, CardTransactionDiscountRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios
@@ -68,6 +69,7 @@ builder.Services.AddScoped<ICardService, CardService>();
 builder.Services.AddScoped<IAssetSplitEventService, AssetSplitEventService>();
 builder.Services.AddScoped<IPersonService, PersonService>();
 builder.Services.AddScoped<ISharedExpenseService, SharedExpenseService>();
+builder.Services.AddScoped<ICardTransactionDiscountService, CardTransactionDiscountService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
