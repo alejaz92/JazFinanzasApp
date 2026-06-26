@@ -21,6 +21,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
+        private readonly ICardTransactionDiscountRepository _cardTransactionDiscountRepository;
 
         public CardTransactionService(
             ICardTransactionRepository cardTransactionRepository,
@@ -35,7 +36,8 @@ namespace JazFinanzasApp.API.Business.Services
             ITransactionRepository transactionRepository,
             IPortfolioRepository portfolioRepository,
             IUnitOfWork unitOfWork,
-            ISharedExpenseRepository sharedExpenseRepository)
+            ISharedExpenseRepository sharedExpenseRepository,
+            ICardTransactionDiscountRepository cardTransactionDiscountRepository)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -50,6 +52,7 @@ namespace JazFinanzasApp.API.Business.Services
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
             _sharedExpenseRepository = sharedExpenseRepository;
+            _cardTransactionDiscountRepository = cardTransactionDiscountRepository;
         }
 
         public async Task<int> AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
@@ -192,6 +195,7 @@ namespace JazFinanzasApp.API.Business.Services
 
                     var transaction = BuildCardPaymentTransaction(dto, cardTransaction, userId, peso, dolar, quotePrice, portfolio.Id);
                     await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
+                    await ApplyCardTransactionDiscountInstallmentAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
                     await _transactionRepository.AddAsyncTransaction(transaction);
                 }
 
@@ -332,6 +336,33 @@ namespace JazFinanzasApp.API.Business.Services
 
             await RemoveConsumedReimbursementsAsync(split);
             await _sharedExpenseRepository.UpdateSplitAsync(split);
+        }
+
+        // El descuento queda pre-particionado por cuota exacta al crearse (FIFO); solo se aplica
+        // lo que haya quedado etiquetado exactamente para la cuota que se está pagando ahora.
+        private async Task ApplyCardTransactionDiscountInstallmentAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction)
+        {
+            var discount = await _cardTransactionDiscountRepository.GetByCardTransactionIdAsync(cardTransactionId);
+            if (discount == null)
+                return;
+
+            var installments = await _cardTransactionDiscountRepository.GetInstallmentsByDiscountIdAsync(discount.Id);
+            var matching = installments.Where(i => i.InstallmentNumber == installmentNumber).ToList();
+            if (!matching.Any())
+                return;
+
+            var toApply = matching.Sum(i => i.Amount);
+            expenseTransaction.Amount += toApply;
+            discount.AmountApplied += toApply;
+            discount.UpdatedAt = DateTime.UtcNow;
+
+            foreach (var installment in matching)
+            {
+                await _cardTransactionDiscountRepository.DeleteInstallmentAsync(installment.Id);
+                await _transactionRepository.DeleteAsync(installment.TransactionId);
+            }
+
+            await _cardTransactionDiscountRepository.UpdateAsync(discount);
         }
 
         private async Task RemoveConsumedReimbursementsAsync(SharedExpenseSplit split)

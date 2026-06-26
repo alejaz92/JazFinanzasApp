@@ -23,6 +23,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
         private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
+        private readonly Mock<ICardTransactionDiscountRepository> _cardTransactionDiscountRepoMock;
         private readonly CardTransactionService _sut;
 
         private const int UserId = 1;
@@ -42,6 +43,7 @@ namespace JazFinanzasApp.Tests.Services
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
             _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
+            _cardTransactionDiscountRepoMock = new Mock<ICardTransactionDiscountRepository>();
 
             _sut = new CardTransactionService(
                 _cardTransactionRepoMock.Object,
@@ -56,7 +58,8 @@ namespace JazFinanzasApp.Tests.Services
                 _transactionRepoMock.Object,
                 _portfolioRepoMock.Object,
                 _unitOfWorkMock.Object,
-                _sharedExpenseRepoMock.Object);
+                _sharedExpenseRepoMock.Object,
+                _cardTransactionDiscountRepoMock.Object);
         }
 
         // ── AddCardTransactionAsync ───────────────────────────────────────────
@@ -194,6 +197,170 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             await act.Should().ThrowAsync<BusinessRuleException>().WithMessage("*recurrent*");
+        }
+
+        // ── RegisterCardPaymentAsync ─────────────────────────────────────────
+
+        private CardTransactionPaymentDTO MakePaymentDto(int installmentNumber = 1, decimal installmentAmount = 200m)
+        {
+            return new CardTransactionPaymentDTO
+            {
+                CardId = 1,
+                PaymentMonth = new DateTime(2026, 1, 1),
+                PaymentDate = new DateTime(2026, 1, 1),
+                accountId = 2,
+                PaymentAsset = "P",
+                PesosAmount = 0,
+                DolarAmount = null,
+                CardExpenses = 0,
+                CardTransactions = new List<CardTransactionPaymentListDTO>
+                {
+                    new()
+                    {
+                        CardTransactionId = 20,
+                        Date = new DateTime(2026, 1, 1),
+                        CardId = 1,
+                        TransactionClassId = 3,
+                        Detail = "Compra",
+                        AssetId = 1,
+                        Installment = $"{installmentNumber}/6",
+                        InstallmentNumber = installmentNumber,
+                        InstallmentAmount = installmentAmount,
+                        ValueInPesos = installmentAmount
+                    }
+                }
+            };
+        }
+
+        private void SetupRegisterCardPaymentHappyPathDependencies()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            var account = new Account { Id = 2, UserId = UserId };
+            var peso = new Asset { Id = 1, Name = "Peso Argentino" };
+            var dolar = new Asset { Id = 2, Name = "Dolar Estadounidense" };
+            var portfolio = new Portfolio { Id = 1, UserId = UserId, IsDefault = true };
+            var gastosTarjetaClass = new TransactionClass { Id = 4, UserId = UserId, Description = "Gastos Tarjeta" };
+            var cardTransactionClass = new TransactionClass { Id = 3, UserId = UserId, Description = "Compras" };
+
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(card);
+            _accountRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(account);
+            _accountAssetTypeRepoMock.Setup(r => r.GetAccount_AssetTypeByAccountIdAndAssetTypeNameAsync(2, "Moneda"))
+                .ReturnsAsync(new Account_AssetType { AccountId = 2, AssetTypeId = 1 });
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Peso Argentino")).ReturnsAsync(peso);
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Dolar Estadounidense")).ReturnsAsync(dolar);
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, It.IsAny<DateTime>(), "BLUE")).ReturnsAsync(1m);
+            _portfolioRepoMock.Setup(r => r.GetDefaultPortfolio(UserId)).ReturnsAsync(portfolio);
+            _transactionRepoMock.Setup(r => r.GetBalance(account.Id, peso.Id, portfolio.Id)).ReturnsAsync(100000m);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(peso);
+            _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 1)).ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 1 });
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(cardTransactionClass);
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Gastos Tarjeta", UserId)).ReturnsAsync(gastosTarjetaClass);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithDiscountInstallment_AppliesDiscountAndDeletesInstallment()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+
+            var discount = new CardTransactionDiscount { Id = 1, CardTransactionId = 20, AmountApplied = 0 };
+            var installments = new List<CardTransactionDiscountInstallment>
+            {
+                new() { Id = 10, CardTransactionDiscountId = 1, TransactionId = 500, Amount = 200m, InstallmentNumber = 1 }
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(1)).ReturnsAsync(installments);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+
+            Transaction? capturedExpenseTransaction = null;
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => { if (t.Detail.Contains("Compra")) capturedExpenseTransaction = t; })
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            capturedExpenseTransaction!.Amount.Should().Be(0m); // -200 (cuota) + 200 (descuento)
+            _cardTransactionDiscountRepoMock.Verify(r => r.DeleteInstallmentAsync(10), Times.Once);
+            _transactionRepoMock.Verify(r => r.DeleteAsync(500), Times.Once);
+            _cardTransactionDiscountRepoMock.Verify(r => r.UpdateAsync(It.Is<CardTransactionDiscount>(d => d.AmountApplied == 200m)), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithPersonPoolReimbursement_AppliesPersonPoolWithoutTouchingDiscount()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+
+            var sharedExpense = new SharedExpense { Id = 1, CardTransactionId = 20, UserId = UserId };
+            var split = new SharedExpenseSplit
+            {
+                Id = 5,
+                SharedExpenseId = 1,
+                SharedExpense = sharedExpense,
+                PersonId = 8,
+                Amount = 300m,
+                AmountReimbursed = 300m,
+                AmountApplied = 0,
+                InstallmentSplitAmount = 50m
+            };
+            sharedExpense.Splits = new List<SharedExpenseSplit> { split };
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(sharedExpense);
+            _sharedExpenseRepoMock.Setup(r => r.GetReimbursementsBySplitIdAsync(5)).ReturnsAsync(new List<SharedExpenseReimbursement>());
+
+            Transaction? capturedExpenseTransaction = null;
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => { if (t.Detail.Contains("Compra")) capturedExpenseTransaction = t; })
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            capturedExpenseTransaction!.Amount.Should().Be(-150m); // -200 (cuota) + 50 (pool de persona)
+            _sharedExpenseRepoMock.Verify(r => r.UpdateSplitAsync(It.Is<SharedExpenseSplit>(s => s.AmountApplied == 50m)), Times.Once);
+            _cardTransactionDiscountRepoMock.Verify(r => r.UpdateAsync(It.IsAny<CardTransactionDiscount>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithPersonAndDiscountTogether_AppliesBothIndependently()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+
+            var discount = new CardTransactionDiscount { Id = 1, CardTransactionId = 20, AmountApplied = 0 };
+            var discountInstallments = new List<CardTransactionDiscountInstallment>
+            {
+                new() { Id = 10, CardTransactionDiscountId = 1, TransactionId = 500, Amount = 200m, InstallmentNumber = 1 }
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(1)).ReturnsAsync(discountInstallments);
+
+            var sharedExpense = new SharedExpense { Id = 1, CardTransactionId = 20, UserId = UserId };
+            var split = new SharedExpenseSplit
+            {
+                Id = 5,
+                SharedExpenseId = 1,
+                SharedExpense = sharedExpense,
+                PersonId = 8,
+                Amount = 300m,
+                AmountReimbursed = 300m,
+                AmountApplied = 0,
+                InstallmentSplitAmount = 50m
+            };
+            sharedExpense.Splits = new List<SharedExpenseSplit> { split };
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(sharedExpense);
+            _sharedExpenseRepoMock.Setup(r => r.GetReimbursementsBySplitIdAsync(5)).ReturnsAsync(new List<SharedExpenseReimbursement>());
+
+            Transaction? capturedExpenseTransaction = null;
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => { if (t.Detail.Contains("Compra")) capturedExpenseTransaction = t; })
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            capturedExpenseTransaction!.Amount.Should().Be(50m); // -200 (cuota) + 200 (descuento) + 50 (pool de persona)
+            _cardTransactionDiscountRepoMock.Verify(r => r.UpdateAsync(It.Is<CardTransactionDiscount>(d => d.AmountApplied == 200m)), Times.Once);
+            _sharedExpenseRepoMock.Verify(r => r.UpdateSplitAsync(It.Is<SharedExpenseSplit>(s => s.AmountApplied == 50m)), Times.Once);
         }
     }
 }
