@@ -20,6 +20,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .FirstOrDefaultAsync(d => d.CardTransactionId == cardTransactionId);
         }
 
+        public async Task<IEnumerable<CardTransactionDiscount>> GetActiveByUserIdAsync(int userId)
+        {
+            return await _context.CardTransactionDiscounts
+                .Where(d => d.UserId == userId && d.AmountApplied < d.Amount)
+                .ToListAsync();
+        }
+
         public async Task AddInstallmentAsync(CardTransactionDiscountInstallment installment)
         {
             await _context.CardTransactionDiscountInstallments.AddAsync(installment);

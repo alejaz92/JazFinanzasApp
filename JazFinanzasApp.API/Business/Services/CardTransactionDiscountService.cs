@@ -119,6 +119,12 @@ namespace JazFinanzasApp.API.Business.Services
             return MapToDetailDTO(discount);
         }
 
+        public async Task<IEnumerable<CardTransactionDiscountDetailDTO>> GetActiveByUserIdAsync(int userId)
+        {
+            var discounts = await _cardTransactionDiscountRepository.GetActiveByUserIdAsync(userId);
+            return discounts.Select(MapToDetailDTO);
+        }
+
         public async Task DeleteAsync(int userId, int id)
         {
             var discount = await _cardTransactionDiscountRepository.GetByIdAsync(id)

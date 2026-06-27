@@ -34,6 +34,13 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("active")]
+        public async Task<IActionResult> GetActive()
+        {
+            var result = await _cardTransactionDiscountService.GetActiveByUserIdAsync(GetUserId());
+            return Ok(result);
+        }
+
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {

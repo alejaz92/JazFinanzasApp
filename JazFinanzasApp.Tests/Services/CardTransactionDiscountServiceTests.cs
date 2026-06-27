@@ -159,6 +159,25 @@ namespace JazFinanzasApp.Tests.Services
             result.AmountApplied.Should().Be(50m);
         }
 
+        // ── GetActiveByUserIdAsync ────────────────────────────────────────────
+
+        [Fact]
+        public async Task GetActiveByUserIdAsync_ReturnsOnlyDiscountsWithRemainingAmount()
+        {
+            var discounts = new List<CardTransactionDiscount>
+            {
+                new() { Id = 1, CardTransactionId = 20, Amount = 200m, AmountApplied = 50m }
+            };
+            _discountRepoMock.Setup(r => r.GetActiveByUserIdAsync(UserId)).ReturnsAsync(discounts);
+
+            var result = (await _sut.GetActiveByUserIdAsync(UserId)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].CardTransactionId.Should().Be(20);
+            result[0].Amount.Should().Be(200m);
+            result[0].AmountApplied.Should().Be(50m);
+        }
+
         // ── DeleteAsync ───────────────────────────────────────────────────────
 
         [Fact]

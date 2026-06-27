@@ -6,6 +6,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
     {
         Task<CardTransactionDiscountDetailDTO> CreateAsync(int userId, CardTransactionDiscountAddDTO dto);
         Task<CardTransactionDiscountDetailDTO> GetByCardTransactionIdAsync(int userId, int cardTransactionId);
+        Task<IEnumerable<CardTransactionDiscountDetailDTO>> GetActiveByUserIdAsync(int userId);
         Task DeleteAsync(int userId, int id);
     }
 }
