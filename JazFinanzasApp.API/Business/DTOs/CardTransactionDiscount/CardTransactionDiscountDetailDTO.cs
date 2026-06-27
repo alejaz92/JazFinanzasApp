@@ -7,5 +7,6 @@ namespace JazFinanzasApp.API.Business.DTO.CardTransactionDiscount
         public decimal Amount { get; set; }
         public decimal AmountApplied { get; set; }
         public string? Notes { get; set; }
+        public List<CardTransactionDiscountInstallmentDTO> Installments { get; set; } = new();
     }
 }

@@ -103,7 +103,7 @@ namespace JazFinanzasApp.API.Business.Services
                 installmentNumber++;
             }
 
-            return MapToDetailDTO(discount);
+            return await MapToDetailDTOAsync(discount);
         }
 
         public async Task<CardTransactionDiscountDetailDTO> GetByCardTransactionIdAsync(int userId, int cardTransactionId)
@@ -116,13 +116,17 @@ namespace JazFinanzasApp.API.Business.Services
             var discount = await _cardTransactionDiscountRepository.GetByCardTransactionIdAsync(cardTransactionId)
                 ?? throw new NotFoundException("Este gasto de tarjeta no tiene un descuento asociado");
 
-            return MapToDetailDTO(discount);
+            return await MapToDetailDTOAsync(discount);
         }
 
         public async Task<IEnumerable<CardTransactionDiscountDetailDTO>> GetActiveByUserIdAsync(int userId)
         {
             var discounts = await _cardTransactionDiscountRepository.GetActiveByUserIdAsync(userId);
-            return discounts.Select(MapToDetailDTO);
+            var result = new List<CardTransactionDiscountDetailDTO>();
+            foreach (var discount in discounts)
+                result.Add(await MapToDetailDTOAsync(discount));
+
+            return result;
         }
 
         public async Task DeleteAsync(int userId, int id)
@@ -145,15 +149,20 @@ namespace JazFinanzasApp.API.Business.Services
             await _cardTransactionDiscountRepository.DeleteAsync(id);
         }
 
-        private static CardTransactionDiscountDetailDTO MapToDetailDTO(CardTransactionDiscount discount)
+        private async Task<CardTransactionDiscountDetailDTO> MapToDetailDTOAsync(CardTransactionDiscount discount)
         {
+            var installments = await _cardTransactionDiscountRepository.GetInstallmentsByDiscountIdAsync(discount.Id);
+
             return new CardTransactionDiscountDetailDTO
             {
                 Id = discount.Id,
                 CardTransactionId = discount.CardTransactionId,
                 Amount = discount.Amount,
                 AmountApplied = discount.AmountApplied,
-                Notes = discount.Notes
+                Notes = discount.Notes,
+                Installments = installments
+                    .Select(i => new CardTransactionDiscountInstallmentDTO { InstallmentNumber = i.InstallmentNumber, Amount = i.Amount })
+                    .ToList()
             };
         }
     }
