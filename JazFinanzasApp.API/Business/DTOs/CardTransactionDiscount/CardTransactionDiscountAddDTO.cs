@@ -17,9 +17,6 @@ namespace JazFinanzasApp.API.Business.DTO.CardTransactionDiscount
         [Required]
         public DateTime Date { get; set; }
 
-        [Required]
-        public int TransactionClassId { get; set; }
-
         public string? Notes { get; set; }
     }
 }

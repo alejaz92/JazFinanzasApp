@@ -16,8 +16,5 @@ namespace JazFinanzasApp.API.Business.DTO.SharedExpense
 
         [Required]
         public int AccountId { get; set; }
-
-        [Required]
-        public int TransactionClassId { get; set; }
     }
 }

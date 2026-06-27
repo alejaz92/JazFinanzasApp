@@ -50,12 +50,8 @@ namespace JazFinanzasApp.API.Business.Services
             if (account.UserId != userId)
                 throw new UnauthorizedDomainException();
 
-            var transactionClass = await _transactionClassRepository.GetByIdAsync(dto.TransactionClassId)
-                ?? throw new NotFoundException("Clase de transacción no encontrada");
-            if (transactionClass.UserId != userId)
-                throw new UnauthorizedDomainException();
-            if (transactionClass.IncExp != "I")
-                throw new BusinessRuleException("La clase de transacción debe ser de tipo ingreso");
+            var transactionClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Reintegro", userId)
+                ?? throw new NotFoundException("Clase de transacción 'Reintegro' no encontrada");
 
             var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId)
                 ?? throw new NotFoundException("Portfolio por defecto no encontrado");

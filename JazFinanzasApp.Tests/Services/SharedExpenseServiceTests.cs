@@ -133,7 +133,7 @@ namespace JazFinanzasApp.Tests.Services
                 Status = SharedExpenseSplitStatus.Pending
             };
             var account = new Account { Id = 2, UserId = UserId };
-            var transactionClass = new TransactionClass { Id = 3, UserId = UserId, IncExp = "I" };
+            var transactionClass = new TransactionClass { Id = 3, UserId = UserId, Description = "Reintegro", IncExp = "I", IsSystem = true };
             var cardTransaction = new CardTransaction { Id = 20, UserId = UserId, AssetId = 1, Detail = "Compra" };
             var portfolio = new Portfolio { Id = 1, UserId = UserId, IsDefault = true };
 
@@ -141,14 +141,13 @@ namespace JazFinanzasApp.Tests.Services
             {
                 SplitId = 5,
                 AccountId = 2,
-                TransactionClassId = 3,
                 Amount = 300m,
                 Date = new DateTime(2026, 1, 1)
             };
 
             _sharedExpenseRepoMock.Setup(r => r.GetSplitByIdAsync(5)).ReturnsAsync(split);
             _accountRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(account);
-            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(transactionClass);
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Reintegro", UserId)).ReturnsAsync(transactionClass);
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(cardTransaction);
             _portfolioRepoMock.Setup(r => r.GetDefaultPortfolio(UserId)).ReturnsAsync(portfolio);
             _transactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<Transaction>()))

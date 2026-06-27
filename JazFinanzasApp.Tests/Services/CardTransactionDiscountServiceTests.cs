@@ -52,13 +52,13 @@ namespace JazFinanzasApp.Tests.Services
         private void SetupHappyPathDependencies(CardTransaction cardTransaction)
         {
             var account = new Account { Id = 2, UserId = UserId };
-            var transactionClass = new TransactionClass { Id = 3, UserId = UserId, IncExp = "I" };
+            var transactionClass = new TransactionClass { Id = 3, UserId = UserId, Description = "Reintegro", IncExp = "I", IsSystem = true };
             var portfolio = new Portfolio { Id = 1, UserId = UserId, IsDefault = true };
 
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(cardTransaction.Id)).ReturnsAsync(cardTransaction);
             _discountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(cardTransaction.Id)).ReturnsAsync((CardTransactionDiscount?)null);
             _accountRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(account);
-            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(transactionClass);
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Reintegro", UserId)).ReturnsAsync(transactionClass);
             _portfolioRepoMock.Setup(r => r.GetDefaultPortfolio(UserId)).ReturnsAsync(portfolio);
             _discountRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<CardTransactionDiscount>()))
                 .ReturnsAsync((CardTransactionDiscount d) => { d.Id = 1; return d; });
@@ -81,8 +81,7 @@ namespace JazFinanzasApp.Tests.Services
                 CardTransactionId = 20,
                 Amount = 360m,
                 AccountId = 2,
-                Date = new DateTime(2026, 1, 1),
-                TransactionClassId = 3
+                Date = new DateTime(2026, 1, 1)
             };
 
             var createdInstallments = new List<CardTransactionDiscountInstallment>();
@@ -110,7 +109,7 @@ namespace JazFinanzasApp.Tests.Services
             _discountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20))
                 .ReturnsAsync(new CardTransactionDiscount { Id = 5, CardTransactionId = 20 });
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today, TransactionClassId = 3 };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<BusinessRuleException>();
@@ -123,7 +122,7 @@ namespace JazFinanzasApp.Tests.Services
             cardTransaction.UserId = 999;
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(cardTransaction);
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today, TransactionClassId = 3 };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<UnauthorizedDomainException>();
@@ -136,7 +135,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(cardTransaction);
             _discountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 200m, AccountId = 2, Date = DateTime.Today, TransactionClassId = 3 };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 200m, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<BusinessRuleException>();
