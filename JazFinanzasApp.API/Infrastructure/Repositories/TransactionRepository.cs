@@ -816,6 +816,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             };
         }
 
+        // Reemplaza al stored procedure [dbo].[GetStockStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 1).
         public async Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(
             int userId,
             int assetTypeId,
@@ -823,11 +824,100 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             bool considerStable,
             int referenceAssetId)
         {
-            var result = await _context.Database
-                .SqlQueryRaw<StockStatsListResult>(
-                    "EXEC GetStockStats @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}",
-                    userId, assetTypeId, environment, considerStable, referenceAssetId)
+            var stableSymbols = new[] { "DAI", "USDT", "USDC" };
+
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Where(t => t.Asset.AssetType.Environment == environment)
+                .Where(t => assetTypeId == 0 || t.Asset.AssetTypeId == assetTypeId)
+                .Where(t => considerStable || !stableSymbols.Contains(t.Asset.Symbol))
+                .Select(t => new
+                {
+                    t.AssetId,
+                    AssetName = t.Asset.Name,
+                    t.Asset.Symbol,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
+                })
                 .ToListAsync();
+
+            if (transactions.Count == 0)
+                return Enumerable.Empty<StockStatsListResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            // Última cotización de cada activo, sin filtrar por Type (igual que el LEFT JOIN del SP
+            // original, que resuelve por MAX(Date) sin distinguir Type). En la práctica los activos de
+            // Bolsa/Cripto solo tienen un Type de cotización por día, así que esto no genera fan-out;
+            // se suma igual por si hubiera más de una fila para la misma fecha, para mantener la misma
+            // semántica que tendría el LEFT JOIN del SP en ese caso.
+            var latestQuoteByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Select(q => new { q.AssetId, q.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .ToDictionary(g => g.Key, g => g.Where(q => q.Date == g.Max(x => x.Date)).Sum(q => q.Value));
+
+            var referenceQuotes = await _context.AssetQuotes
+                .Where(q => q.AssetId == referenceAssetId && (q.Type == "BLUE" || q.Type == "NA"))
+                .OrderByDescending(q => q.Date)
+                .Select(q => new { q.Date, q.Value })
+                .ToListAsync();
+
+            var latestReferenceQuote = referenceQuotes.FirstOrDefault()?.Value ?? 1m;
+
+            decimal GetReferenceQuoteOnOrBefore(DateTime date) =>
+                referenceQuotes.FirstOrDefault(q => q.Date <= date)?.Value ?? 0m;
+
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var result = transactions
+                .Select(t =>
+                {
+                    var cumulativeFactor = GetSplitFactor(t.AssetId, t.Date);
+                    var referenceQuoteOnDate = GetReferenceQuoteOnOrBefore(t.Date);
+                    var latestQuote = latestQuoteByAsset.TryGetValue(t.AssetId, out var q) ? q : 0m;
+
+                    return new
+                    {
+                        t.AssetName,
+                        t.Symbol,
+                        QuantityContribution = t.Amount * cumulativeFactor,
+                        OriginalValueContribution = t.QuotePrice.HasValue && t.QuotePrice.Value > 0 && referenceQuoteOnDate > 0
+                            ? (t.Amount / t.QuotePrice.Value) * referenceQuoteOnDate
+                            : 0m,
+                        ActualValueContribution = latestQuote > 0
+                            ? (t.Amount * cumulativeFactor / latestQuote) * latestReferenceQuote
+                            : 0m
+                    };
+                })
+                .GroupBy(t => new { t.AssetName, t.Symbol })
+                .Select(g => new
+                {
+                    g.Key.AssetName,
+                    g.Key.Symbol,
+                    RawQuantity = g.Sum(t => t.QuantityContribution),
+                    RawOriginalValue = g.Sum(t => t.OriginalValueContribution),
+                    RawActualValue = g.Sum(t => t.ActualValueContribution)
+                })
+                .Where(x => x.RawQuantity > 0) // HAVING SUM(Amount * CumulativeFactor) > 0 en el SP original
+                .Select(x => new StockStatsListResult
+                {
+                    AssetName = x.AssetName,
+                    Symbol = x.Symbol,
+                    Quantity = Math.Round(x.RawQuantity, 2),
+                    OriginalValue = Math.Round(x.RawOriginalValue, 2),
+                    ActualValue = Math.Round(x.RawActualValue, 2)
+                })
+                .OrderByDescending(r => r.ActualValue)
+                .ToList();
 
             return result;
         }
