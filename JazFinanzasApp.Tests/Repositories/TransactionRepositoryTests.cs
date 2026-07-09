@@ -185,5 +185,62 @@ namespace JazFinanzasApp.Tests.Repositories
 
             result.Should().BeEmpty();
         }
+
+        // ── GetStocksGralStatsAsync (Fase 2) ─────────────────────────────────
+
+        [Fact]
+        public async Task GetStocksGralStatsAsync_GroupsByAssetTypeAcrossAssets()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var apple = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "Accion USA");
+            var google = AddInvestmentAsset(context, "Google", "GOOGL", "BOLSA", "Accion USA");
+            var bond = AddInvestmentAsset(context, "Bono Nacion", "BONA", "BOLSA", "Bono");
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, apple, date, amount: 10m, quotePrice: 1m / 100m);   // $1000
+            AddTransaction(context, google, date, amount: 5m, quotePrice: 1m / 200m);   // $1000
+            AddTransaction(context, bond, date, amount: 1m, quotePrice: 1m / 500m);     // $500
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = apple, Date = date, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = google, Date = date, Type = "NA", Value = 1m / 200m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = bond, Date = date, Type = "NA", Value = 1m / 500m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetStocksGralStatsAsync(UserId, "BOLSA", reference.Id)).ToList();
+
+            result.Should().HaveCount(2); // "Accion USA" (Apple + Google combinadas) y "Bono"
+            var accionUsa = result.Single(r => r.AssetType == "Accion USA");
+            accionUsa.OriginalValue.Should().Be(2000m); // 1000 + 1000
+            accionUsa.ActualValue.Should().Be(2000m);
+
+            var bonoStats = result.Single(r => r.AssetType == "Bono");
+            bonoStats.OriginalValue.Should().Be(500m);
+        }
+
+        [Fact]
+        public async Task GetStocksGralStatsAsync_IncludesStableCoinsUnlikeGetStockStatsAsync()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var usdt = AddInvestmentAsset(context, "Tether", "USDT", "CRYPTO", "Criptomoneda");
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, usdt, date, amount: 100m, quotePrice: 1m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = usdt, Date = date, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetStocksGralStatsAsync(UserId, "CRYPTO", reference.Id)).ToList();
+
+            // GetStockGralStats (a diferencia de GetStockStats) nunca tuvo parámetro @ConsiderStable
+            result.Should().ContainSingle();
+            result[0].AssetType.Should().Be("Criptomoneda");
+        }
     }
 }

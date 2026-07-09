@@ -816,13 +816,23 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             };
         }
 
-        // Reemplaza al stored procedure [dbo].[GetStockStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 1).
-        public async Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(
-            int userId,
-            int assetTypeId,
-            string environment,
-            bool considerStable,
-            int referenceAssetId)
+        // Contribución de una transacción individual a las stats de inversión: cantidad, valor original
+        // (a la cotización de referencia del momento de la compra) y valor actual (a la última cotización
+        // conocida). Extraído para que GetStockStatsAsync y GetStocksGralStatsAsync (Fase 1/2 de
+        // docs/plans/activos/reemplazar-stored-procedures.md) compartan el cálculo en vez de duplicarlo
+        // como hacían los stored procedures GetStockStats/GetStockGralStats originales.
+        private class InvestmentValueContribution
+        {
+            public string AssetName { get; set; } = "";
+            public string Symbol { get; set; } = "";
+            public string AssetTypeName { get; set; } = "";
+            public decimal QuantityContribution { get; set; }
+            public decimal OriginalValueContribution { get; set; }
+            public decimal ActualValueContribution { get; set; }
+        }
+
+        private async Task<List<InvestmentValueContribution>> GetInvestmentValueContributionsAsync(
+            int userId, string environment, int referenceAssetId, int assetTypeId, bool considerStable)
         {
             var stableSymbols = new[] { "DAI", "USDT", "USDC" };
 
@@ -836,6 +846,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     t.AssetId,
                     AssetName = t.Asset.Name,
                     t.Asset.Symbol,
+                    AssetTypeName = t.Asset.AssetType.Name,
                     t.Amount,
                     t.QuotePrice,
                     t.Date
@@ -843,7 +854,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
 
             if (transactions.Count == 0)
-                return Enumerable.Empty<StockStatsListResult>();
+                return new List<InvestmentValueContribution>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
             var earliestTransactionDate = transactions.Min(t => t.Date);
@@ -887,17 +898,18 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            var result = transactions
+            return transactions
                 .Select(t =>
                 {
                     var cumulativeFactor = GetSplitFactor(t.AssetId, t.Date);
                     var referenceQuoteOnDate = GetReferenceQuoteOnOrBefore(t.Date);
                     var latestQuote = latestQuoteByAsset.TryGetValue(t.AssetId, out var q) ? q : 0m;
 
-                    return new
+                    return new InvestmentValueContribution
                     {
-                        t.AssetName,
-                        t.Symbol,
+                        AssetName = t.AssetName,
+                        Symbol = t.Symbol,
+                        AssetTypeName = t.AssetTypeName,
                         QuantityContribution = t.Amount * cumulativeFactor,
                         OriginalValueContribution = t.QuotePrice.HasValue && t.QuotePrice.Value > 0 && referenceQuoteOnDate > 0
                             ? (t.Amount / t.QuotePrice.Value) * referenceQuoteOnDate
@@ -907,14 +919,28 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             : 0m
                     };
                 })
-                .GroupBy(t => new { t.AssetName, t.Symbol })
+                .ToList();
+        }
+
+        // Reemplaza al stored procedure [dbo].[GetStockStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 1).
+        public async Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(
+            int userId,
+            int assetTypeId,
+            string environment,
+            bool considerStable,
+            int referenceAssetId)
+        {
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment, referenceAssetId, assetTypeId, considerStable);
+
+            return contributions
+                .GroupBy(c => new { c.AssetName, c.Symbol })
                 .Select(g => new
                 {
                     g.Key.AssetName,
                     g.Key.Symbol,
-                    RawQuantity = g.Sum(t => t.QuantityContribution),
-                    RawOriginalValue = g.Sum(t => t.OriginalValueContribution),
-                    RawActualValue = g.Sum(t => t.ActualValueContribution)
+                    RawQuantity = g.Sum(c => c.QuantityContribution),
+                    RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    RawActualValue = g.Sum(c => c.ActualValueContribution)
                 })
                 .Where(x => x.RawQuantity > 0) // HAVING SUM(Amount * CumulativeFactor) > 0 en el SP original
                 .Select(x => new StockStatsListResult
@@ -927,22 +953,36 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 })
                 .OrderByDescending(r => r.ActualValue)
                 .ToList();
-
-            return result;
         }
 
+        // Reemplaza al stored procedure [dbo].[GetStockGralStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 2).
+        // A diferencia de GetStockStats, no filtra por AssetTypeId ni excluye stablecoins (el SP original
+        // tampoco lo hacía) y agrupa por tipo de activo en vez de por activo individual.
         public async Task<IEnumerable<StocksGralStatsResult>> GetStocksGralStatsAsync(
             int userId,
             string environment,
             int referenceAssetId)
         {
-            var result = await _context.Database
-                .SqlQueryRaw<StocksGralStatsResult>(
-                    "EXEC GetStockGralStats @UserId = {0}, @Environment = {1}, @ReferenceAssetId = {2}",
-                    userId, environment, referenceAssetId)
-                .ToListAsync();
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment, referenceAssetId, assetTypeId: 0, considerStable: true);
 
-            return result;
+            return contributions
+                .GroupBy(c => c.AssetTypeName)
+                .Select(g => new
+                {
+                    AssetType = g.Key,
+                    RawQuantity = g.Sum(c => c.QuantityContribution),
+                    RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    RawActualValue = g.Sum(c => c.ActualValueContribution)
+                })
+                .Where(x => x.RawQuantity > 0) // HAVING SUM(Amount * CumulativeFactor) > 0 en el SP original
+                .Select(x => new StocksGralStatsResult
+                {
+                    AssetType = x.AssetType,
+                    OriginalValue = Math.Round(x.RawOriginalValue, 2),
+                    ActualValue = Math.Round(x.RawActualValue, 2)
+                })
+                .OrderByDescending(r => r.ActualValue)
+                .ToList();
         }
 
         public async Task<IEnumerable<CryptoStatsByDateResult>> GetCryptoStatsByDateAsync(
