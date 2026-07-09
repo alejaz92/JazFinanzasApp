@@ -750,6 +750,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // como hacían los stored procedures GetStockStats/GetStockGralStats originales.
         private class InvestmentValueContribution
         {
+            public int PortfolioId { get; set; }
             public string AssetName { get; set; } = "";
             public string Symbol { get; set; } = "";
             public string AssetTypeName { get; set; } = "";
@@ -758,18 +759,21 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             public decimal ActualValueContribution { get; set; }
         }
 
+        // environment == null: sin filtrar por ambiente (usado por las stats de cartera, que combinan
+        // efectivo e inversión de cualquier tipo — ver docs/plans/activos/portfolios-estadisticas.md).
         private async Task<List<InvestmentValueContribution>> GetInvestmentValueContributionsAsync(
-            int userId, string environment, int referenceAssetId, int assetTypeId, bool considerStable)
+            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable)
         {
             var stableSymbols = new[] { "DAI", "USDT", "USDC" };
 
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
-                .Where(t => t.Asset.AssetType.Environment == environment)
+                .Where(t => environment == null || t.Asset.AssetType.Environment == environment)
                 .Where(t => assetTypeId == 0 || t.Asset.AssetTypeId == assetTypeId)
                 .Where(t => considerStable || !stableSymbols.Contains(t.Asset.Symbol))
                 .Select(t => new
                 {
+                    t.PortfolioId,
                     t.AssetId,
                     AssetName = t.Asset.Name,
                     t.Asset.Symbol,
@@ -792,20 +796,24 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
 
             // Última cotización de cada activo, sin filtrar por Type (igual que el LEFT JOIN del SP
-            // original, que resuelve por MAX(Date) sin distinguir Type). En la práctica los activos de
-            // Bolsa/Cripto solo tienen un Type de cotización por día, así que esto no genera fan-out;
-            // se suma igual por si hubiera más de una fila para la misma fecha, para mantener la misma
-            // semántica que tendría el LEFT JOIN del SP en ese caso.
+            // original, que resuelve por MAX(Date) sin distinguir Type). Se guarda la LISTA de valores
+            // que comparten esa fecha (no se suman entre sí): con environment == null (stats de cartera)
+            // un activo como Peso Argentino puede tener más de un Type el mismo día (ej. NA y BOLSA — 836
+            // fechas distintas en datos reales, ver lección de fan-out en el plan), y cada uno debe aportar
+            // su propio cociente por separado — sumar primero los valores y dividir una sola vez da un
+            // resultado equivocado. Para Bolsa/Cripto (un solo Type por día en la práctica) esto no cambia
+            // el resultado respecto al comportamiento anterior.
             // El MAX(Date) se resuelve con una subquery correlacionada en el propio SQL Server (igual
             // que el SP original) en vez de traer todo el historial de cotizaciones a memoria.
-            var latestQuoteByAsset = await _context.AssetQuotes
-                .Where(q => assetIds.Contains(q.AssetId))
-                .Where(q => q.Date == _context.AssetQuotes
-                    .Where(q2 => q2.AssetId == q.AssetId)
-                    .Max(q2 => q2.Date))
+            var latestQuotesByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Date == _context.AssetQuotes
+                        .Where(q2 => q2.AssetId == q.AssetId)
+                        .Max(q2 => q2.Date))
+                    .Select(q => new { q.AssetId, q.Value })
+                    .ToListAsync())
                 .GroupBy(q => q.AssetId)
-                .Select(g => new { AssetId = g.Key, Value = g.Sum(q => q.Value) })
-                .ToDictionaryAsync(x => x.AssetId, x => x.Value);
+                .ToDictionary(g => g.Key, g => g.Select(q => q.Value).ToList());
 
             // Acotado a partir de la transacción más antigua: no hace falta cotización de referencia
             // anterior a eso. El límite superior queda abierto porque la más reciente puede ser
@@ -817,10 +825,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(q => new { q.Date, q.Value })
                 .ToListAsync();
 
-            var latestReferenceQuote = referenceQuotes.FirstOrDefault()?.Value ?? 1m;
+            // Mismo criterio de fan-out que latestQuotesByAsset, aplicado a la cotización de referencia:
+            // todas las que comparten la fecha resuelta aportan su propio valor por separado.
+            List<decimal> GetReferenceQuotesOnOrBefore(DateTime date)
+            {
+                var mostRecentMatch = referenceQuotes.FirstOrDefault(q => q.Date <= date);
+                if (mostRecentMatch == null) return new List<decimal>();
+                return referenceQuotes.Where(q => q.Date == mostRecentMatch.Date).Select(q => q.Value).ToList();
+            }
 
-            decimal GetReferenceQuoteOnOrBefore(DateTime date) =>
-                referenceQuotes.FirstOrDefault(q => q.Date <= date)?.Value ?? 0m;
+            var latestReferenceDate = referenceQuotes.FirstOrDefault()?.Date;
+            var latestReferenceQuotes = latestReferenceDate.HasValue
+                ? referenceQuotes.Where(q => q.Date == latestReferenceDate.Value).Select(q => q.Value).ToList()
+                : new List<decimal> { 1m };
 
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
@@ -829,23 +846,70 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(t =>
                 {
                     var cumulativeFactor = GetSplitFactor(t.AssetId, t.Date);
-                    var referenceQuoteOnDate = GetReferenceQuoteOnOrBefore(t.Date);
-                    var latestQuote = latestQuoteByAsset.TryGetValue(t.AssetId, out var q) ? q : 0m;
+                    var quantity = t.Amount * cumulativeFactor;
+
+                    var referenceQuotesOnDate = GetReferenceQuotesOnOrBefore(t.Date);
+                    var originalValue = t.QuotePrice.HasValue && t.QuotePrice.Value > 0 && referenceQuotesOnDate.Count > 0
+                        ? referenceQuotesOnDate.Sum(refQuote => (t.Amount / t.QuotePrice.Value) * refQuote)
+                        : 0m;
+
+                    var latestAssetQuotes = latestQuotesByAsset.TryGetValue(t.AssetId, out var quotes) ? quotes : new List<decimal>();
+                    var actualValue = latestAssetQuotes
+                        .Where(assetQuote => assetQuote > 0)
+                        .SelectMany(assetQuote => latestReferenceQuotes.Select(refQuote => (quantity / assetQuote) * refQuote))
+                        .Sum();
 
                     return new InvestmentValueContribution
                     {
+                        PortfolioId = t.PortfolioId,
                         AssetName = t.AssetName,
                         Symbol = t.Symbol,
                         AssetTypeName = t.AssetTypeName,
-                        QuantityContribution = t.Amount * cumulativeFactor,
-                        OriginalValueContribution = t.QuotePrice.HasValue && t.QuotePrice.Value > 0 && referenceQuoteOnDate > 0
-                            ? (t.Amount / t.QuotePrice.Value) * referenceQuoteOnDate
-                            : 0m,
-                        ActualValueContribution = latestQuote > 0
-                            ? (t.Amount * cumulativeFactor / latestQuote) * latestReferenceQuote
-                            : 0m
+                        QuantityContribution = quantity,
+                        OriginalValueContribution = originalValue,
+                        ActualValueContribution = actualValue
                     };
                 })
+                .ToList();
+        }
+
+        // Resumen de valor por cartera (ver docs/plans/activos/portfolios-estadisticas.md, Fase 1).
+        // A diferencia de GetStockStatsAsync/GetStocksGralStatsAsync, combina todo tipo de activo (efectivo
+        // e inversión, sin filtro de Environment ni AssetTypeId) porque una cartera es transversal a ambos.
+        // Las stablecoins siempre se cuentan (ConsiderStable fijo en true, sin toggle expuesto — Decisión 5
+        // del plan). Devuelve una fila por cada cartera del usuario, incluyendo las que no tienen ninguna
+        // transacción (valor $0, no se excluyen).
+        public async Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId)
+        {
+            var portfolios = await _context.Portfolios
+                .Where(p => p.UserId == userId)
+                .Select(p => new { p.Id, p.Name, p.IsDefault })
+                .ToListAsync();
+
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true);
+
+            var valueByPortfolio = contributions
+                .GroupBy(c => c.PortfolioId)
+                .ToDictionary(g => g.Key, g => new
+                {
+                    OriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    ActualValue = g.Sum(c => c.ActualValueContribution)
+                });
+
+            return portfolios
+                .Select(p =>
+                {
+                    valueByPortfolio.TryGetValue(p.Id, out var value);
+                    return new PortfolioStatsResult
+                    {
+                        PortfolioId = p.Id,
+                        PortfolioName = p.Name,
+                        IsDefault = p.IsDefault,
+                        OriginalValue = Math.Round(value?.OriginalValue ?? 0m, 2),
+                        ActualValue = Math.Round(value?.ActualValue ?? 0m, 2)
+                    };
+                })
+                .OrderByDescending(r => r.ActualValue)
                 .ToList();
         }
 

@@ -276,6 +276,33 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
+        public async Task<IEnumerable<PortfolioStatsDTO>> GetPortfolioStatsAsync(int userId)
+        {
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                var dollar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollar.Id;
+            }
+            else
+            {
+                mainReferenceAssetId = mainReferenceAsset.AssetId;
+            }
+
+            var portfolioStats = await _transactionRepository.GetPortfolioStatsAsync(userId, mainReferenceAssetId);
+
+            return portfolioStats.Select(r => new PortfolioStatsDTO
+            {
+                PortfolioId = r.PortfolioId,
+                PortfolioName = r.PortfolioName,
+                IsDefault = r.IsDefault,
+                OriginalValue = r.OriginalValue,
+                ActualValue = r.ActualValue
+            });
+        }
+
         private static IncExpStatsDTO MapIncExpResult(IncExpResult r) => new IncExpStatsDTO
         {
             ClassIncomeStats = r.ClassIncomeStats?.Select(x => new ClassIncomeStats { TransactionClass = x.TransactionClass, Amount = x.Amount }).ToArray(),
