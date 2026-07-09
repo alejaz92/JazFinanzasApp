@@ -985,6 +985,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
         }
 
+        // Reemplaza al stored procedure [dbo].[GetCryptoStatsByDate] (ver docs/plans/activos/reemplazar-stored-procedures.md,
+        // Fase 3). No estaba versionado en el repo — se extrajo directamente de la base con "Script as CREATE".
+        //
+        // Replica fielmente el comportamiento del SP, incluyendo dos particularidades que no son evidentes a simple
+        // vista pero que hacen a la paridad de resultados:
+        // 1. La cotización de referencia se empareja por fecha EXACTA (no "la más reciente disponible" como en
+        //    GetStockStats) y si no hay ninguna para ese día puntual, se usa 1 como valor por defecto (COALESCE).
+        // 2. El valor final NO se redondea (a diferencia de GetStockStats, que sí castea a DECIMAL(18,2)).
+        // 3. Un día solo aparece en el resultado si el activo tiene una cotización cargada para esa fecha exacta —
+        //    no hay relleno con "el último precio conocido" para los días sin cotización (gaps de carga de precios).
         public async Task<IEnumerable<CryptoStatsByDateResult>> GetCryptoStatsByDateAsync(
             int userId,
             int assetTypeId,
@@ -993,15 +1003,77 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             bool considerStable,
             int referenceAssetId)
         {
+            var stableSymbols = new[] { "DAI", "USDT", "USDC" };
+            var effectiveAssetId = assetId ?? 0;
 
-            var result = await _context.Database
-                .SqlQueryRaw<CryptoStatsByDateResult>(
-                    "EXEC GetCryptoStatsByDate @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @ConsiderStable = {3}, @ReferenceAssetId = {4}, @AssetId = {5}",
-                    userId, assetTypeId, environment, considerStable, referenceAssetId, assetId ?? 0)
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Where(t => t.Asset.AssetTypeId == assetTypeId)
+                .Where(t => t.Asset.AssetType.Environment == environment)
+                .Where(t => effectiveAssetId == 0 || t.AssetId == effectiveAssetId)
+                .Where(t => considerStable || !stableSymbols.Contains(t.Asset.Symbol))
+                .Select(t => new { t.AssetId, t.Amount, Date = t.Date.Date })
                 .ToListAsync();
 
-            return result;
+            if (transactions.Count == 0)
+                return Enumerable.Empty<CryptoStatsByDateResult>();
 
+            var startDate = transactions.Min(t => t.Date);
+            var endDate = transactions.Max(t => t.Date);
+
+            // Checkpoints ordenados por activo para poder calcular la tenencia acumulada a una fecha dada
+            // (equivalente a SUM(Amount) WHERE Date <= d, pero sin recorrer todas las transacciones por día).
+            var transactionsByAsset = transactions
+                .GroupBy(t => t.AssetId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+
+            decimal? GetAccumulatedAmountAsOf(int assetId, DateTime date)
+            {
+                if (!transactionsByAsset.TryGetValue(assetId, out var checkpoints)) return null;
+                var upToDate = checkpoints.Where(c => c.Date <= date).ToList();
+                return upToDate.Count == 0 ? null : upToDate.Sum(c => c.Amount);
+            }
+
+            var relevantAssetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+
+            // Cotizaciones de los activos (cualquier Type, igual que el SP original), acotadas al rango de
+            // fechas relevante en vez de traer todo el historial.
+            var assetQuotes = await _context.AssetQuotes
+                .Where(q => relevantAssetIds.Contains(q.AssetId))
+                .Where(q => q.Date >= startDate && q.Date <= endDate)
+                .Select(q => new { q.AssetId, Date = q.Date.Date, q.Value })
+                .ToListAsync();
+
+            // Cotizaciones de referencia por fecha exacta (puede haber más de una si el activo de referencia
+            // tiene, por ejemplo, tipo BLUE y NA el mismo día — se replica el fan-out que produciría el LEFT
+            // JOIN del SP en ese caso).
+            var referenceQuotesByDate = (await _context.AssetQuotes
+                    .Where(q => q.AssetId == referenceAssetId && (q.Type == "BLUE" || q.Type == "NA"))
+                    .Where(q => q.Date >= startDate && q.Date <= endDate)
+                    .Select(q => new { Date = q.Date.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.Date)
+                .ToDictionary(g => g.Key, g => g.Select(q => q.Value).ToList());
+
+            var contributions = new List<(DateTime Date, decimal Value)>();
+
+            foreach (var q in assetQuotes)
+            {
+                if (q.Value == 0) continue; // evita división por cero; el SP no la protege pero nunca debería darse en datos reales
+
+                var accumulatedAmount = GetAccumulatedAmountAsOf(q.AssetId, q.Date);
+                if (accumulatedAmount == null) continue; // sin transacciones del activo hasta esa fecha -> excluido (INNER JOIN)
+
+                var referenceValues = referenceQuotesByDate.TryGetValue(q.Date, out var refs) ? refs : new List<decimal> { 1m };
+                foreach (var referenceValue in referenceValues)
+                    contributions.Add((q.Date, accumulatedAmount.Value / q.Value * referenceValue));
+            }
+
+            return contributions
+                .GroupBy(c => c.Date)
+                .Select(g => new CryptoStatsByDateResult { Date = g.Key, Value = g.Sum(c => c.Value) })
+                .OrderBy(r => r.Date)
+                .ToList();
         }
 
         public async Task<IEnumerable<CryptoStatsByDateCommerceResult>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)

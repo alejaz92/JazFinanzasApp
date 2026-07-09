@@ -242,5 +242,132 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().ContainSingle();
             result[0].AssetType.Should().Be("Criptomoneda");
         }
+
+        // ── GetCryptoStatsByDateAsync (Fase 3) ───────────────────────────────
+        // El SP original empareja la cotización de referencia por fecha EXACTA (no "la más reciente
+        // disponible" como GetStockStats), no redondea el valor final, y un día solo aparece en el
+        // resultado si el activo tiene una cotización cargada para esa fecha puntual.
+
+        [Fact]
+        public async Task GetCryptoStatsByDateAsync_ComputesDailyValueUsingExactDateReferenceQuote()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var day1 = new DateTime(2026, 1, 1);
+            AddTransaction(context, btc, day1, amount: 10m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = day1, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = day1, Type = "NA", Value = 1m / 100m }); // $100
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetCryptoStatsByDateAsync(UserId, btc.AssetTypeId, "CRYPTO", btc.Id, true, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Date.Should().Be(day1);
+            result[0].Value.Should().Be(1000m); // 10 BTC * $100
+        }
+
+        [Fact]
+        public async Task GetCryptoStatsByDateAsync_WhenAssetHasNoQuoteOnExactDay_ExcludesThatDay()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var day1 = new DateTime(2026, 1, 1);
+            var day2 = new DateTime(2026, 1, 2);
+            AddTransaction(context, btc, day1, amount: 10m, quotePrice: 0m);
+            AddTransaction(context, btc, day2, amount: 5m, quotePrice: 0m);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = day1, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = day2, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = day1, Type = "NA", Value = 1m / 100m });
+            // sin cotización de btc para day2 (gap de carga de precios)
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetCryptoStatsByDateAsync(UserId, btc.AssetTypeId, "CRYPTO", btc.Id, true, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Date.Should().Be(day1);
+        }
+
+        [Fact]
+        public async Task GetCryptoStatsByDateAsync_WhenReferenceQuoteMissingForExactDay_DefaultsToOne()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var day1 = new DateTime(2026, 1, 1);
+            AddTransaction(context, btc, day1, amount: 10m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = day1, Type = "NA", Value = 1m / 100m });
+            // sin ninguna cotización del activo de referencia
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetCryptoStatsByDateAsync(UserId, btc.AssetTypeId, "CRYPTO", btc.Id, true, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Value.Should().Be(1000m); // referencia por defecto = 1
+        }
+
+        [Fact]
+        public async Task GetCryptoStatsByDateAsync_DoesNotRoundFinalValue()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var day1 = new DateTime(2026, 1, 1);
+            AddTransaction(context, btc, day1, amount: 1m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = day1, Type = "NA", Value = 1.001m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = day1, Type = "NA", Value = 1m / 3m }); // precio $3
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetCryptoStatsByDateAsync(UserId, btc.AssetTypeId, "CRYPTO", btc.Id, true, reference.Id)).ToList();
+
+            result[0].Value.Should().BeApproximately(3.003m, 0.0000001m); // 1 / (1/3) * 1.001 -- sin redondear a 2 decimales
+        }
+
+        [Fact]
+        public async Task GetCryptoStatsByDateAsync_WhenAssetIdIsZero_AggregatesAcrossAssetsOfSameType()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            var eth = new Asset { Name = "Ethereum", Symbol = "ETH", Color = "#000000", AssetType = cryptoType };
+            context.Assets.AddRange(btc, eth);
+
+            var day1 = new DateTime(2026, 1, 1);
+            AddTransaction(context, btc, day1, amount: 10m, quotePrice: 0m); // 10 * $100 = 1000
+            AddTransaction(context, eth, day1, amount: 2m, quotePrice: 0m);  // 2 * $50 = 100
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = day1, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = day1, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = eth, Date = day1, Type = "NA", Value = 1m / 50m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+
+            var aggregated = (await repo.GetCryptoStatsByDateAsync(UserId, cryptoType.Id, "CRYPTO", 0, true, reference.Id)).ToList();
+            aggregated.Should().ContainSingle();
+            aggregated[0].Value.Should().Be(1100m); // 1000 + 100
+
+            var onlyBtc = (await repo.GetCryptoStatsByDateAsync(UserId, cryptoType.Id, "CRYPTO", btc.Id, true, reference.Id)).ToList();
+            onlyBtc.Should().ContainSingle();
+            onlyBtc[0].Value.Should().Be(1000m);
+        }
     }
 }
