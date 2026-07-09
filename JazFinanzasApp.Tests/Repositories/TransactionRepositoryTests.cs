@@ -620,7 +620,7 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
-        public async Task GetTotalsBalanceByUserAsync_ForPesoArgentino_ConvertsUsingGlobalLatestBolsaQuote()
+        public async Task GetTotalsBalanceByUserAsync_ForPesoArgentino_ConvertsUsingItsOwnLatestBolsaQuote()
         {
             using var context = CreateContext();
             var dollar = AddDollarPivotAsset(context);
@@ -642,7 +642,7 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
-        public async Task GetTotalsBalanceByUserAsync_ForOtherAsset_ConvertsUsingGlobalLatestQuoteForThatAsset()
+        public async Task GetTotalsBalanceByUserAsync_ForOtherAsset_ConvertsUsingItsOwnLatestQuote()
         {
             using var context = CreateContext();
             var dollar = AddDollarPivotAsset(context);
@@ -664,7 +664,7 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
-        public async Task GetTotalsBalanceByUserAsync_WhenNoRateAtGlobalLatestDateForTarget_ReturnsZero()
+        public async Task GetTotalsBalanceByUserAsync_WhenTargetHasNoBolsaQuoteAtAll_ReturnsZero()
         {
             using var context = CreateContext();
             var dollar = AddDollarPivotAsset(context);
@@ -675,7 +675,7 @@ namespace JazFinanzasApp.Tests.Repositories
 
             var date = new DateTime(2026, 1, 1);
             AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
-            // ninguna cotización Type='BOLSA' en la fecha más reciente de toda la tabla -> sin tasa
+            // ninguna cotización Type='BOLSA' para el peso -> sin tasa de conversión posible
 
             await context.SaveChangesAsync();
 
@@ -706,12 +706,12 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
-        public async Task GetTotalsBalanceByUserAsync_WhenAssetHasOnlyOlderQuoteThanGlobalLatestDate_ContributesZero()
+        public async Task GetTotalsBalanceByUserAsync_WhenAssetsHaveDifferentLatestQuoteDates_EachUsesItsOwnLatestQuote()
         {
-            // Particularidad clave del SP original: el JOIN usa la fecha más reciente de TODA la tabla
-            // AssetQuotes (compartida por todos los activos), no la última cotización propia de cada uno.
-            // Un activo cotizado solo en una fecha más vieja que esa (aunque tenga una cotización real)
-            // no aporta nada — no cae a "su último precio conocido" como sí pasa en GetStockStats (Fase 1).
+            // Desviación deliberada respecto al SP original (ver comentario en el método): un activo cotizado
+            // con menor frecuencia que otros (ej. un FCI mensual vs. cripto diario) debe seguir aportando su
+            // propio último valor conocido, no quedar en $0 solo porque otro activo tiene una cotización más
+            // reciente. Se verificó contra datos reales de Azure que esto afectaba fondos con tenencia real.
             using var context = CreateContext();
             var dollar = AddDollarPivotAsset(context);
 
@@ -725,21 +725,21 @@ namespace JazFinanzasApp.Tests.Repositories
             context.Assets.AddRange(btc, eth);
 
             var olderDate = new DateTime(2026, 1, 1);
-            var globalLatestDate = new DateTime(2026, 2, 1);
+            var newerDate = new DateTime(2026, 2, 1);
 
             AddTransaction(context, dollar, olderDate, amount: 100m, quotePrice: 0m);
             AddTransaction(context, btc, olderDate, amount: 1m, quotePrice: 0m);
             AddTransaction(context, eth, olderDate, amount: 1m, quotePrice: 0m);
 
             context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = olderDate, Type = "NA", Value = 1m / 50000m }); // BTC: solo cotización vieja
-            context.AssetQuotes.Add(new AssetQuote { Asset = eth, Date = globalLatestDate, Type = "NA", Value = 1m / 2000m }); // ETH: fija la fecha global más reciente
+            context.AssetQuotes.Add(new AssetQuote { Asset = eth, Date = newerDate, Type = "NA", Value = 1m / 2000m }); // ETH: tiene una cotización más nueva
 
             await context.SaveChangesAsync();
 
             var repo = new TransactionRepository(context);
             var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
 
-            result.Balance.Should().Be(2100m); // 100 (pivote) + 0 (BTC, sin cotización en la fecha global) + 2000 (ETH, sí la tiene)
+            result.Balance.Should().Be(52100m); // 100 (pivote) + 50000 (BTC, su propia última cotización) + 2000 (ETH, la suya)
         }
 
         [Fact]

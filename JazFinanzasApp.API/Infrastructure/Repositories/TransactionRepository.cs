@@ -98,20 +98,22 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // procedure sino SQL crudo embebido, con la misma lógica copy-pasteada 3 veces distinguiendo por
         // Asset.Name en vez de un @ReferenceAssetId genérico como sí usan las stats de inversión.
         //
-        // Particularidades del cálculo original que se preservan tal cual (no se "arreglan" en esta fase):
-        // 1. El activo con Id=2 (asumido Dólar Estadounidense) está hardcodeado como pivote: cualquier
-        //    transacción de ese activo se suma directo, sin buscar cotización — el resto se convierte a
-        //    dólares dividiendo por la última cotización propia del activo (Type distinto de TARJETA/BLUE).
-        // 2. Para "Peso Argentino" y para "cualquier otro activo", la conversión de dólares a la moneda
-        //    pedida multiplica ese subtotal en USD por una cotización ubicada en la fecha MÁS RECIENTE DE
-        //    TODA LA TABLA AssetQuotes (no de ese activo puntual) — filtrando por Type='BOLSA' en el caso
-        //    de pesos, o por AssetId en el caso de "otro activo". Es fràgil (asume que esa fecha global
-        //    tiene una cotización utilizable para el activo pedido) pero es el comportamiento actual.
-        // 3. Mejora de seguridad respecto al original: la búsqueda de esa cotización se resuelve con
-        //    FirstOrDefault en vez de una subquery escalar — si por algún motivo hubiera más de una fila
+        // Particularidades del cálculo original preservadas:
+        // 1. El activo con Id=2 (Dólar Estadounidense, confirmado contra datos reales) está hardcodeado como
+        //    pivote: cualquier transacción de ese activo se suma directo, sin buscar cotización.
+        // 2. Mejora de seguridad sin cambio de comportamiento observable: la búsqueda de cotización se
+        //    resuelve con FirstOrDefault en vez de una subquery escalar — si hubiera más de una fila
         //    coincidente, el SP original tiraría "Subquery returned more than 1 value" (error 500); acá
-        //    simplemente toma la primera. Nunca peor que el original, y sin cambio de comportamiento en el
-        //    caso normal (una sola fila coincidente).
+        //    simplemente toma la primera.
+        //
+        // Desviación deliberada respecto al SP original (no es paridad estricta, decidido explícitamente):
+        // el SP exigía que la cotización usada, tanto para valorizar cada tenencia como para la conversión
+        // final a la moneda pedida, cayera EXACTAMENTE en la fecha más reciente de toda la tabla AssetQuotes
+        // (compartida por todos los activos) — no la última cotización propia de cada uno, a diferencia de
+        // GetStockStats (Fase 1). Verificado contra la base real: esto dejaba en $0 varios Fondos Comunes de
+        // Inversión con tenencia real (se cotizan con menor frecuencia que acciones/cripto, ej. mensual) que
+        // no tenían cotización justo en esa fecha global. Se cambia a "la última cotización propia de cada
+        // activo" (mismo criterio que la Fase 1) para que esas tenencias sí se cuenten.
         public async Task<TotalsBalanceResult> GetTotalsBalanceByUserAsync(int userId, Asset asset)
         {
             const int DollarPivotAssetId = 2; // hardcodeado también en el SP original
@@ -134,29 +136,17 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            // OJO — a diferencia de GetStockStats (Fase 1), acá el JOIN original NO acota el MAX(Date) por
-            // AssetId: usa la fecha más reciente de TODA la tabla AssetQuotes (una sola fecha, compartida por
-            // todos los activos), no la última cotización propia de cada uno. Un activo que no tenga ninguna
-            // cotización exactamente en esa fecha global no aporta nada (aunque tenga cotizaciones más viejas).
-            // Es una particularidad frágil del SP original, pero es el comportamiento real a replicar.
-            var globalLatestQuoteDate = await _context.AssetQuotes.MaxAsync(q => (DateTime?)q.Date);
-
-            // Cotizaciones de los activos involucrados en esa única fecha global (Type distinto de TARJETA/BLUE).
-            // Se guarda la LISTA de valores que comparten esa fecha (no se suman entre sí): el LEFT JOIN
-            // original produce una fila por cada cotización coincidente, y cada una aporta su propio cociente
-            // al SUM exterior — sumar primero los valores de cotización y dividir una sola vez daría un
-            // resultado distinto. Esto sí puede pasar en la práctica (a diferencia de Bolsa/Cripto en las
-            // Fases 1-4) porque Peso Argentino tiene varios Type el mismo día (NA, BOLSA).
-            var latestQuotesByAsset = globalLatestQuoteDate == null
-                ? new Dictionary<int, List<decimal>>()
-                : (await _context.AssetQuotes
-                        .Where(q => assetIds.Contains(q.AssetId))
-                        .Where(q => q.Date == globalLatestQuoteDate.Value)
-                        .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
-                        .Select(q => new { q.AssetId, q.Value })
-                        .ToListAsync())
-                    .GroupBy(q => q.AssetId)
-                    .ToDictionary(g => g.Key, g => g.Select(q => q.Value).ToList());
+            // Última cotización propia de cada activo (Type distinto de TARJETA/BLUE) para expresar su
+            // tenencia en dólares. Se guarda la LISTA de valores que comparten esa fecha (no se suman entre
+            // sí): si hay más de un Type el mismo día (ej. Peso Argentino con NA y BOLSA — pasa en 836 fechas
+            // distintas en datos reales), cada uno aporta su propio cociente por separado.
+            var latestQuotesByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                    .Select(q => new { q.AssetId, q.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .ToDictionary(g => g.Key, g => g.Where(q => q.Date == g.Max(x => x.Date)).Select(q => q.Value).ToList());
 
             var rawTotalInDollars = transactions.Sum(t =>
             {
@@ -180,19 +170,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             }
             else
             {
-                decimal? rate = null;
-                if (globalLatestQuoteDate.HasValue)
-                {
-                    rate = asset.Name == "Peso Argentino"
-                        ? await _context.AssetQuotes
-                            .Where(q => q.Type == "BOLSA" && q.Date == globalLatestQuoteDate.Value)
-                            .Select(q => (decimal?)q.Value)
-                            .FirstOrDefaultAsync()
-                        : await _context.AssetQuotes
-                            .Where(q => q.AssetId == asset.Id && q.Date == globalLatestQuoteDate.Value)
-                            .Select(q => (decimal?)q.Value)
-                            .FirstOrDefaultAsync();
-                }
+                // Última cotización propia (Peso Argentino: su propio Type='BOLSA' más reciente — confirmado
+                // que ningún otro activo usa ese Type en datos reales; "otro activo": su propia última
+                // cotización de cualquier Type, igual que el SP original).
+                var rate = asset.Name == "Peso Argentino"
+                    ? await _context.AssetQuotes
+                        .Where(q => q.AssetId == asset.Id && q.Type == "BOLSA")
+                        .OrderByDescending(q => q.Date)
+                        .Select(q => (decimal?)q.Value)
+                        .FirstOrDefaultAsync()
+                    : await _context.AssetQuotes
+                        .Where(q => q.AssetId == asset.Id)
+                        .OrderByDescending(q => q.Date)
+                        .Select(q => (decimal?)q.Value)
+                        .FirstOrDefaultAsync();
 
                 balance = rate.HasValue ? totalInDollars * rate.Value : 0m;
             }
