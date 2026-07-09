@@ -846,6 +846,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 return Enumerable.Empty<StockStatsListResult>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var earliestTransactionDate = transactions.Min(t => t.Date);
 
             var splits = await _context.AssetSplitEvents
                 .Where(s => assetIds.Contains(s.AssetId))
@@ -857,15 +858,23 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             // Bolsa/Cripto solo tienen un Type de cotización por día, así que esto no genera fan-out;
             // se suma igual por si hubiera más de una fila para la misma fecha, para mantener la misma
             // semántica que tendría el LEFT JOIN del SP en ese caso.
-            var latestQuoteByAsset = (await _context.AssetQuotes
-                    .Where(q => assetIds.Contains(q.AssetId))
-                    .Select(q => new { q.AssetId, q.Date, q.Value })
-                    .ToListAsync())
+            // El MAX(Date) se resuelve con una subquery correlacionada en el propio SQL Server (igual
+            // que el SP original) en vez de traer todo el historial de cotizaciones a memoria.
+            var latestQuoteByAsset = await _context.AssetQuotes
+                .Where(q => assetIds.Contains(q.AssetId))
+                .Where(q => q.Date == _context.AssetQuotes
+                    .Where(q2 => q2.AssetId == q.AssetId)
+                    .Max(q2 => q2.Date))
                 .GroupBy(q => q.AssetId)
-                .ToDictionary(g => g.Key, g => g.Where(q => q.Date == g.Max(x => x.Date)).Sum(q => q.Value));
+                .Select(g => new { AssetId = g.Key, Value = g.Sum(q => q.Value) })
+                .ToDictionaryAsync(x => x.AssetId, x => x.Value);
 
+            // Acotado a partir de la transacción más antigua: no hace falta cotización de referencia
+            // anterior a eso. El límite superior queda abierto porque la más reciente puede ser
+            // posterior a la última transacción.
             var referenceQuotes = await _context.AssetQuotes
                 .Where(q => q.AssetId == referenceAssetId && (q.Type == "BLUE" || q.Type == "NA"))
+                .Where(q => q.Date >= earliestTransactionDate)
                 .OrderByDescending(q => q.Date)
                 .Select(q => new { q.Date, q.Value })
                 .ToListAsync();
