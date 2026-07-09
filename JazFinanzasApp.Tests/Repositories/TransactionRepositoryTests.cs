@@ -369,5 +369,191 @@ namespace JazFinanzasApp.Tests.Repositories
             onlyBtc.Should().ContainSingle();
             onlyBtc[0].Value.Should().Be(1000m);
         }
+
+        // ── GetInvestmentsHoldingsStats (Fase 4) ─────────────────────────────
+        // Solo considera Transaction que forman parte de un InvestmentTransaction; la cotización de
+        // referencia usa "la más reciente <= fecha" pero con semántica de INNER JOIN (si no hay ninguna,
+        // la transacción se excluye, a diferencia del fallback a 1 de GetCryptoStatsByDate); un CommerceType
+        // "Trading" con stablecoin se fuerza a 0 aunque se incluyan stables; se rellenan con 0 todos los
+        // meses del calendario para cada CommerceType visto en el rango.
+
+        private static InvestmentTransaction AddInvestmentTransaction(ApplicationDbContext context, string commerceType, Transaction transaction)
+        {
+            var investmentTransaction = new InvestmentTransaction
+            {
+                Date = transaction.Date,
+                Environment = "CRYPTO",
+                MovementType = "I",
+                CommerceType = commerceType,
+                UserId = UserId,
+                IncomeTransaction = transaction
+            };
+            context.InvestmentTransactions.Add(investmentTransaction);
+            return investmentTransaction;
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_BasicCase_ComputesValuePerMonthAndCommerceType()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(btc);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txnDate = thisMonthStart.AddDays(5);
+
+            var txn = AddTransaction(context, btc, txnDate, amount: 10m, quotePrice: 1m / 100m);
+            AddInvestmentTransaction(context, "Deposit", txn);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 1, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Date.Should().Be(thisMonthStart);
+            result[0].CommerceType.Should().Be("Deposit");
+            result[0].Value.Should().Be(1000m); // 10 * $100
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_TradingWithStableCoin_ZeroesValueButKeepsRow()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var usdt = new Asset { Name = "Tether", Symbol = "USDT", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(usdt);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txnDate = thisMonthStart.AddDays(3);
+
+            var txn = AddTransaction(context, usdt, txnDate, amount: 100m, quotePrice: 1m);
+            AddInvestmentTransaction(context, "Trading", txn);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, considerStable: true, 1, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].CommerceType.Should().Be("Trading");
+            result[0].Value.Should().Be(0m); // stablecoin + Trading -> forzado a 0 aunque se incluyan stables
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_WhenConsiderStableFalse_ExcludesStableCoinRowEntirely()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var usdt = new Asset { Name = "Tether", Symbol = "USDT", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(usdt);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txnDate = thisMonthStart.AddDays(3);
+
+            var txn = AddTransaction(context, usdt, txnDate, amount: 100m, quotePrice: 1m);
+            AddInvestmentTransaction(context, "Trading", txn);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, considerStable: false, 1, reference.Id);
+
+            result.Should().BeEmpty(); // excluida por completo por el WHERE, ni siquiera aparece el CommerceType
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_WhenNoReferenceQuoteAvailable_ExcludesTransaction()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(btc);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txn = AddTransaction(context, btc, thisMonthStart.AddDays(5), amount: 10m, quotePrice: 1m / 100m);
+            AddInvestmentTransaction(context, "Deposit", txn);
+            // sin ninguna cotización del activo de referencia
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 1, reference.Id);
+
+            result.Should().BeEmpty(); // INNER JOIN: sin cotización de referencia, la transacción se excluye (no cae a 1)
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_FillsMonthsWithZeroForCommerceTypesSeenElsewhere()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(btc);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var lastMonthStart = thisMonthStart.AddMonths(-1);
+            var txnDate = lastMonthStart.AddDays(2);
+
+            var txn = AddTransaction(context, btc, txnDate, amount: 5m, quotePrice: 1m / 100m);
+            AddInvestmentTransaction(context, "Deposit", txn);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = lastMonthStart, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 2, reference.Id)).ToList();
+
+            result.Should().HaveCount(2); // mes pasado y mes actual, mismo CommerceType
+            result.Should().Contain(r => r.Date == lastMonthStart && r.CommerceType == "Deposit" && r.Value == 500m);
+            result.Should().Contain(r => r.Date == thisMonthStart && r.CommerceType == "Deposit" && r.Value == 0m);
+        }
+
+        [Fact]
+        public async Task GetInvestmentsHoldingsStats_WhenAssetIdSpecified_OnlyIncludesThatAsset()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            var eth = new Asset { Name = "Ethereum", Symbol = "ETH", Color = "#000000", AssetType = cryptoType };
+            context.Assets.AddRange(btc, eth);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txnDate = thisMonthStart.AddDays(1);
+
+            var btcTxn = AddTransaction(context, btc, txnDate, amount: 10m, quotePrice: 1m / 100m);
+            var ethTxn = AddTransaction(context, eth, txnDate, amount: 2m, quotePrice: 1m / 50m);
+            AddInvestmentTransaction(context, "Deposit", btcTxn);
+            AddInvestmentTransaction(context, "Deposit", ethTxn);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+
+            var onlyBtcResult = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", btc.Id, true, 1, reference.Id)).ToList();
+            onlyBtcResult.Should().ContainSingle();
+            onlyBtcResult[0].Value.Should().Be(1000m); // solo BTC: 10 * $100
+
+            var allResult = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 1, reference.Id)).ToList();
+            allResult.Should().ContainSingle();
+            allResult[0].Value.Should().Be(1100m); // BTC ($1000) + ETH ($100)
+        }
     }
 }

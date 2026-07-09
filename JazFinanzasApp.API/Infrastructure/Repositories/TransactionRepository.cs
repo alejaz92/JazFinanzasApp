@@ -1076,78 +1076,124 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
         }
 
+        // Reemplaza al stored procedure [dbo].[GetCryptoStatsByDateCommerce] (ver docs/plans/activos/reemplazar-stored-procedures.md,
+        // Fase 4). Tampoco estaba versionado en el repo — se extrajo directamente de la base con "Script as CREATE".
+        //
+        // Particularidades del SP replicadas acá (distintas a las Fases 1-3):
+        // 1. Solo considera Transaction que forman parte de un InvestmentTransaction (como ExpenseTransactionId o
+        //    IncomeTransactionId) — no cualquier movimiento de cuenta.
+        // 2. La cotización de referencia usa "la más reciente <= la fecha de la transacción" (como GetStockStats),
+        //    pero acá el JOIN es INNER: si no hay ninguna cotización de referencia a esa fecha, la transacción se
+        //    excluye por completo (no cae a 1 como en GetCryptoStatsByDate).
+        //    (@AssetId): el parámetro nunca se enviaba al SP en la llamada existente (faltaba en el SqlQueryRaw),
+        //    por lo que el filtro por activo específico jamás se aplicaba en la práctica — hoy solo se llama con
+        //    assetId=0, así que el comportamiento observado no cambia, pero queda corregido para cuando se necesite.
+        // 3. Si el CommerceType es exactamente "Trading" y el símbolo es una stablecoin, el valor de esa fila se
+        //    fuerza a 0 aunque @IncludeStable/considerStable sea true (no se excluye la fila, se anula su aporte;
+        //    con otros CommerceType, una stablecoin si se incluye sí aporta su valor real).
+        // 4. El resultado final rellena con 0 todos los meses del calendario para cada CommerceType que aparezca
+        //    en algún mes del rango (no solo los meses donde ese CommerceType efectivamente tuvo movimientos).
         public async Task<IEnumerable<CryptoStatsByDateCommerceResult>> GetInvestmentsHoldingsStats(int userId, int assetTypeId, string environment, int? assetId, bool considerStable, int months, int referenceId)
         {
-            var result = await _context.Database
-                .SqlQueryRaw<CryptoStatsByDateCommerceResult>(
-                    "EXEC GetCryptoStatsByDateCommerce @UserId = {0}, @AssetTypeId = {1}, @Environment = {2}, @IncludeStable = {3}, @Months = {4}, @ReferenceId = {5}",
-                    userId, assetTypeId, environment, considerStable, months, referenceId)
+            var stableSymbols = new[] { "DAI", "USDT", "USDC" };
+            var effectiveAssetId = assetId ?? 0;
+
+            var currentMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var startDate = currentMonthStart.AddMonths(-(months - 1));
+            var upperBoundExclusive = currentMonthStart.AddMonths(1); // primer día del mes siguiente al actual
+
+            var expenseSide = _context.InvestmentTransactions
+                .Where(it => it.ExpenseTransactionId != null)
+                .Select(it => new
+                {
+                    it.CommerceType,
+                    it.ExpenseTransaction!.UserId,
+                    it.ExpenseTransaction!.AssetId,
+                    AssetTypeId = it.ExpenseTransaction!.Asset.AssetTypeId,
+                    Environment = it.ExpenseTransaction!.Asset.AssetType.Environment,
+                    Symbol = it.ExpenseTransaction!.Asset.Symbol,
+                    it.ExpenseTransaction!.Date,
+                    it.ExpenseTransaction!.Amount,
+                    it.ExpenseTransaction!.QuotePrice
+                });
+
+            var incomeSide = _context.InvestmentTransactions
+                .Where(it => it.IncomeTransactionId != null)
+                .Select(it => new
+                {
+                    it.CommerceType,
+                    it.IncomeTransaction!.UserId,
+                    it.IncomeTransaction!.AssetId,
+                    AssetTypeId = it.IncomeTransaction!.Asset.AssetTypeId,
+                    Environment = it.IncomeTransaction!.Asset.AssetType.Environment,
+                    Symbol = it.IncomeTransaction!.Asset.Symbol,
+                    it.IncomeTransaction!.Date,
+                    it.IncomeTransaction!.Amount,
+                    it.IncomeTransaction!.QuotePrice
+                });
+
+            var rows = await expenseSide.Concat(incomeSide)
+                .Where(r => r.UserId == userId)
+                .Where(r => r.AssetTypeId == assetTypeId)
+                .Where(r => r.Environment == environment)
+                .Where(r => effectiveAssetId == 0 || r.AssetId == effectiveAssetId)
+                .Where(r => considerStable || !stableSymbols.Contains(r.Symbol))
+                .Where(r => r.Date >= startDate && r.Date < upperBoundExclusive)
                 .ToListAsync();
 
-            return result;
-            //// Calcula las fechas del rango: mes actual y los ?ltimos 5 meses
-            //DateTime endDate = DateTime.UtcNow.Date.AddDays(1).AddSeconds(-1); // ?ltimo segundo del d?a actual
-            //DateTime startDate = endDate.AddMonths(-(months - 1)).AddDays(1 - endDate.Day); // Primer d?a del mes de hace x meses
+            if (rows.Count == 0)
+                return Enumerable.Empty<CryptoStatsByDateCommerceResult>();
 
-            //// Generar la lista de meses en el rango
-            //var monthsRange = Enumerable.Range(0, months)
-            //    .Select(offset => startDate.AddMonths(offset))
-            //    .Select(date => new { Year = date.Year, Month = date.Month })
-            //    .ToList();
+            var maxRowDate = rows.Max(r => r.Date);
+            var referenceQuotes = await _context.AssetQuotes
+                .Where(q => q.AssetId == referenceId && (q.Type == "BLUE" || q.Type == "NA"))
+                .Where(q => q.Date <= maxRowDate)
+                .OrderByDescending(q => q.Date)
+                .Select(q => new { q.Date, q.Value })
+                .ToListAsync();
 
-            //// Consulta para obtener los movimientos agrupados por mes y tipo de comercio
-            //var query = from t in _context.Transactions
-            //            join it in _context.InvestmentTransactions on t.Id equals it.IncomeTransactionId into itIncome
-            //            from iti in itIncome.DefaultIfEmpty()
-            //            join it2 in _context.InvestmentTransactions on t.Id equals it2.ExpenseTransactionId into itExpense
-            //            from ite in itExpense.DefaultIfEmpty()
-            //            join a in _context.Assets on t.AssetId equals a.Id
-            //            join at in _context.AssetTypes on a.AssetTypeId equals at.Id
-            //            where t.UserId == userId &&
-            //                  t.Date >= startDate &&
-            //                  t.Date <= endDate &&
-            //                  //(assetId == 0 || a.Id == assetId) &&
-            //                  //(considerStable == true || (a.Symbol != "DAI" && a.Symbol != "USDT")) &&
-            //                  at.Environment == environment &&
-            //                  at.Id == assetTypeId &&
-            //                  (iti != null || ite != null) &&
-            //                  (iti == null || iti.MovementType != "EX") &&
-            //                  (ite == null || ite.MovementType != "EX")
-            //            select new
-            //            {
-            //                t.Date.Year,
-            //                t.Date.Month,
-            //                CommerceType = iti != null ? iti.CommerceType : ite.CommerceType,
-            //                Value = t.Amount / t.QuotePrice
-            //            };
+            decimal? GetReferenceQuoteOnOrBeforeOrNull(DateTime date) =>
+                referenceQuotes.FirstOrDefault(q => q.Date <= date)?.Value;
 
-            //// Agrupar los movimientos
-            //var groupedData = query.AsEnumerable()
-            //    .GroupBy(x => new { x.Year, x.Month, x.CommerceType })
-            //    .Select(g => new CryptoStatsByDateCommerceDTO
-            //    {
-            //        Date = new DateTime(g.Key.Year, g.Key.Month, 1),
-            //        CommerceType = g.Key.CommerceType,
-            //        Value = (decimal)g.Sum(x => x.Value)
-            //    })
-            //    .ToList();
+            var monthlyContributions = rows
+                .Select(r =>
+                {
+                    var referenceQuote = GetReferenceQuoteOnOrBeforeOrNull(r.Date);
+                    if (referenceQuote == null) return ((DateTime Month, string CommerceType, decimal Value)?)null; // INNER JOIN: sin cotización de referencia -> se excluye
+                    if (!r.QuotePrice.HasValue || r.QuotePrice.Value == 0) return null;
 
-            //// Combinar con los meses en el rango para incluir los meses sin movimientos
-            //var result = (from month in monthsRange
-            //              from commerceType in groupedData.Select(g => g.CommerceType).Distinct().DefaultIfEmpty()
-            //              join data in groupedData on new { month.Year, month.Month, CommerceType = commerceType }
-            //                  equals new { data.Date.Year, data.Date.Month, data.CommerceType } into joined
-            //              from j in joined.DefaultIfEmpty()
-            //              select new CryptoStatsByDateCommerceDTO
-            //              {
-            //                  Date = new DateTime(month.Year, month.Month, 1),
-            //                  CommerceType = commerceType ?? "",
-            //                  Value = j?.Value ?? 0
-            //              })
-            //              .OrderBy(r => r.Date)
-            //              .ToList();
+                    var isZeroedStableTrading = r.CommerceType == "Trading" && stableSymbols.Contains(r.Symbol);
+                    var value = isZeroedStableTrading ? 0m : r.Amount * (1m / r.QuotePrice.Value) * referenceQuote.Value;
 
-            //return result;
+                    return (Month: new DateTime(r.Date.Year, r.Date.Month, 1), r.CommerceType, Value: value);
+                })
+                .Where(x => x != null)
+                .Select(x => x!.Value)
+                .GroupBy(x => new { x.Month, x.CommerceType })
+                .Select(g => new { g.Key.Month, g.Key.CommerceType, Value = Math.Round(g.Sum(x => x.Value), 6) }) // DECIMAL(18,6) en el SP original
+                .ToList();
+
+            var commerceTypes = monthlyContributions.Select(c => c.CommerceType).Distinct().ToList();
+
+            var result = new List<CryptoStatsByDateCommerceResult>();
+            for (var month = startDate; month <= currentMonthStart; month = month.AddMonths(1))
+            {
+                foreach (var commerceType in commerceTypes)
+                {
+                    var match = monthlyContributions.FirstOrDefault(c => c.Month == month && c.CommerceType == commerceType);
+                    result.Add(new CryptoStatsByDateCommerceResult
+                    {
+                        Date = month,
+                        CommerceType = commerceType,
+                        Value = match?.Value ?? 0m
+                    });
+                }
+            }
+
+            return result
+                .OrderBy(r => r.Date)
+                .ThenBy(r => r.CommerceType, StringComparer.Ordinal)
+                .ToList();
         }
 
         public async Task<IEnumerable<InvestmentTransactionsResult>> GetInvestmentsTransactionsStats(int userId, int assetId, int referenceAssetId)
