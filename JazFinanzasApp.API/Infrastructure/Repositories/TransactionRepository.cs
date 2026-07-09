@@ -134,19 +134,29 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            // Última cotización de cada activo (Type distinto de TARJETA/BLUE) para expresar su tenencia en
-            // dólares. Se guarda la LISTA de valores que comparten la fecha máxima (no se suman entre sí):
-            // el LEFT JOIN original produce una fila por cada cotización coincidente, y cada una aporta su
-            // propio cociente al SUM exterior — sumar primero los valores de cotización y dividir una sola
-            // vez daría un resultado distinto. Esto sí puede pasar en la práctica (a diferencia de
-            // Bolsa/Cripto en las Fases 1-4) porque Peso Argentino tiene varios Type el mismo día (NA, BOLSA).
-            var latestQuotesByAsset = (await _context.AssetQuotes
-                    .Where(q => assetIds.Contains(q.AssetId))
-                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
-                    .Select(q => new { q.AssetId, q.Date, q.Value })
-                    .ToListAsync())
-                .GroupBy(q => q.AssetId)
-                .ToDictionary(g => g.Key, g => g.Where(q => q.Date == g.Max(x => x.Date)).Select(q => q.Value).ToList());
+            // OJO — a diferencia de GetStockStats (Fase 1), acá el JOIN original NO acota el MAX(Date) por
+            // AssetId: usa la fecha más reciente de TODA la tabla AssetQuotes (una sola fecha, compartida por
+            // todos los activos), no la última cotización propia de cada uno. Un activo que no tenga ninguna
+            // cotización exactamente en esa fecha global no aporta nada (aunque tenga cotizaciones más viejas).
+            // Es una particularidad frágil del SP original, pero es el comportamiento real a replicar.
+            var globalLatestQuoteDate = await _context.AssetQuotes.MaxAsync(q => (DateTime?)q.Date);
+
+            // Cotizaciones de los activos involucrados en esa única fecha global (Type distinto de TARJETA/BLUE).
+            // Se guarda la LISTA de valores que comparten esa fecha (no se suman entre sí): el LEFT JOIN
+            // original produce una fila por cada cotización coincidente, y cada una aporta su propio cociente
+            // al SUM exterior — sumar primero los valores de cotización y dividir una sola vez daría un
+            // resultado distinto. Esto sí puede pasar en la práctica (a diferencia de Bolsa/Cripto en las
+            // Fases 1-4) porque Peso Argentino tiene varios Type el mismo día (NA, BOLSA).
+            var latestQuotesByAsset = globalLatestQuoteDate == null
+                ? new Dictionary<int, List<decimal>>()
+                : (await _context.AssetQuotes
+                        .Where(q => assetIds.Contains(q.AssetId))
+                        .Where(q => q.Date == globalLatestQuoteDate.Value)
+                        .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                        .Select(q => new { q.AssetId, q.Value })
+                        .ToListAsync())
+                    .GroupBy(q => q.AssetId)
+                    .ToDictionary(g => g.Key, g => g.Select(q => q.Value).ToList());
 
             var rawTotalInDollars = transactions.Sum(t =>
             {
@@ -170,18 +180,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             }
             else
             {
-                var globalLatestDate = await _context.AssetQuotes.MaxAsync(q => (DateTime?)q.Date);
-
                 decimal? rate = null;
-                if (globalLatestDate.HasValue)
+                if (globalLatestQuoteDate.HasValue)
                 {
                     rate = asset.Name == "Peso Argentino"
                         ? await _context.AssetQuotes
-                            .Where(q => q.Type == "BOLSA" && q.Date == globalLatestDate.Value)
+                            .Where(q => q.Type == "BOLSA" && q.Date == globalLatestQuoteDate.Value)
                             .Select(q => (decimal?)q.Value)
                             .FirstOrDefaultAsync()
                         : await _context.AssetQuotes
-                            .Where(q => q.AssetId == asset.Id && q.Date == globalLatestDate.Value)
+                            .Where(q => q.AssetId == asset.Id && q.Date == globalLatestQuoteDate.Value)
                             .Select(q => (decimal?)q.Value)
                             .FirstOrDefaultAsync();
                 }

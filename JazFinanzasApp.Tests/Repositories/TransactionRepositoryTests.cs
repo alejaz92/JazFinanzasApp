@@ -706,6 +706,43 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
+        public async Task GetTotalsBalanceByUserAsync_WhenAssetHasOnlyOlderQuoteThanGlobalLatestDate_ContributesZero()
+        {
+            // Particularidad clave del SP original: el JOIN usa la fecha más reciente de TODA la tabla
+            // AssetQuotes (compartida por todos los activos), no la última cotización propia de cada uno.
+            // Un activo cotizado solo en una fecha más vieja que esa (aunque tenga una cotización real)
+            // no aporta nada — no cae a "su último precio conocido" como sí pasa en GetStockStats (Fase 1).
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+
+            // IDs explícitos: con dos activos adicionales además del dólar (Id=2 fijo), el generador de
+            // claves del proveedor InMemory puede asignarle Id=2 a alguno de ellos y colisionar si se
+            // dejan autogenerar.
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Id = 10, Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            var eth = new Asset { Id = 11, Name = "Ethereum", Symbol = "ETH", Color = "#000000", AssetType = cryptoType };
+            context.Assets.AddRange(btc, eth);
+
+            var olderDate = new DateTime(2026, 1, 1);
+            var globalLatestDate = new DateTime(2026, 2, 1);
+
+            AddTransaction(context, dollar, olderDate, amount: 100m, quotePrice: 0m);
+            AddTransaction(context, btc, olderDate, amount: 1m, quotePrice: 0m);
+            AddTransaction(context, eth, olderDate, amount: 1m, quotePrice: 0m);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = olderDate, Type = "NA", Value = 1m / 50000m }); // BTC: solo cotización vieja
+            context.AssetQuotes.Add(new AssetQuote { Asset = eth, Date = globalLatestDate, Type = "NA", Value = 1m / 2000m }); // ETH: fija la fecha global más reciente
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
+
+            result.Balance.Should().Be(2100m); // 100 (pivote) + 0 (BTC, sin cotización en la fecha global) + 2000 (ETH, sí la tiene)
+        }
+
+        [Fact]
         public async Task GetTotalsBalanceByUserAsync_WhenMultipleQuoteTypesShareLatestDate_SumsEachContributionSeparately()
         {
             using var context = CreateContext();
