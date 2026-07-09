@@ -524,6 +524,35 @@ namespace JazFinanzasApp.Tests.Repositories
         }
 
         [Fact]
+        public async Task GetInvestmentsHoldingsStats_WhenMultipleReferenceQuoteTypesShareResolvedDate_SumsEachContributionSeparately()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context, "Peso Argentino"); // referencia con más de un Type el mismo día, como en la realidad
+            var cryptoType = new AssetType { Name = "Criptomoneda", Environment = "CRYPTO" };
+            context.AssetTypes.Add(cryptoType);
+            var btc = new Asset { Name = "Bitcoin", Symbol = "BTC", Color = "#000000", AssetType = cryptoType };
+            context.Assets.Add(btc);
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var txnDate = thisMonthStart.AddDays(5);
+
+            var txn = AddTransaction(context, btc, txnDate, amount: 10m, quotePrice: 1m / 100m); // 10 * $100 = 1000 en USD
+            AddInvestmentTransaction(context, "Deposit", txn);
+            // dos Type de referencia el mismo día -> fan-out esperado
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "NA", Value = 1000m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = thisMonthStart, Type = "BLUE", Value = 1050m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 1, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            // fan-out: 1000*1000 + 1000*1050, NO 1000*(1000+1050)
+            result[0].Value.Should().Be(2_050_000m);
+        }
+
+        [Fact]
         public async Task GetInvestmentsHoldingsStats_WhenAssetIdSpecified_OnlyIncludesThatAsset()
         {
             using var context = CreateContext();
@@ -554,6 +583,165 @@ namespace JazFinanzasApp.Tests.Repositories
             var allResult = (await repo.GetInvestmentsHoldingsStats(UserId, cryptoType.Id, "CRYPTO", 0, true, 1, reference.Id)).ToList();
             allResult.Should().ContainSingle();
             allResult[0].Value.Should().Be(1100m); // BTC ($1000) + ETH ($100)
+        }
+
+        // ── GetTotalsBalanceByUserAsync (Fase 5) ─────────────────────────────
+        // Unifica las tres ramas casi idénticas (pesos / dólares / "otro activo") que tenía este método,
+        // distinguidas por Asset.Name en vez de un parámetro genérico. El activo con Id=2 (asumido Dólar
+        // Estadounidense) es el pivote hardcodeado: se suma directo, sin cotización.
+
+        private static Asset AddDollarPivotAsset(ApplicationDbContext context)
+        {
+            var assetType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            var asset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD", Color = "#000000", AssetType = assetType };
+            context.AssetTypes.Add(assetType);
+            context.Assets.Add(asset);
+            return asset;
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_ForDollarPivot_SumsPivotDirectlyAndConvertsOthersViaLatestQuote()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
+            AddTransaction(context, btc, date, amount: 1m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = date, Type = "NA", Value = 1m / 50000m }); // 1 BTC = $50.000
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
+
+            result.Balance.Should().Be(50100m); // 100 (pivote directo) + 50000 (BTC convertido)
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_ForPesoArgentino_ConvertsUsingGlobalLatestBolsaQuote()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var pesoType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            context.AssetTypes.Add(pesoType);
+            var peso = new Asset { Name = "Peso Argentino", Symbol = "ARS", Color = "#000000", AssetType = pesoType };
+            context.Assets.Add(peso);
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BOLSA", Value = 1000m }); // 1000 ARS/USD
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, peso);
+
+            result.Balance.Should().Be(100_000m); // 100 USD * 1000 ARS/USD
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_ForOtherAsset_ConvertsUsingGlobalLatestQuoteForThatAsset()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var euroType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            context.AssetTypes.Add(euroType);
+            var euro = new Asset { Name = "Euro", Symbol = "EUR", Color = "#000000", AssetType = euroType };
+            context.Assets.Add(euro);
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = euro, Date = date, Type = "NA", Value = 0.9m }); // 0.9 EUR/USD
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, euro);
+
+            result.Balance.Should().Be(90m); // 100 USD * 0.9
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_WhenNoRateAtGlobalLatestDateForTarget_ReturnsZero()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var pesoType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            context.AssetTypes.Add(pesoType);
+            var peso = new Asset { Name = "Peso Argentino", Symbol = "ARS", Color = "#000000", AssetType = pesoType };
+            context.Assets.Add(peso);
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
+            // ninguna cotización Type='BOLSA' en la fecha más reciente de toda la tabla -> sin tasa
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, peso);
+
+            result.Balance.Should().Be(0m);
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_WhenTransactionAssetHasNoLatestQuote_ContributesZero()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 100m, quotePrice: 0m);
+            AddTransaction(context, btc, date, amount: 1m, quotePrice: 0m);
+            // sin ninguna cotización para btc
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
+
+            result.Balance.Should().Be(100m); // solo el pivote; BTC aporta 0 sin cotización
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_WhenMultipleQuoteTypesShareLatestDate_SumsEachContributionSeparately()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var pesoType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            context.AssetTypes.Add(pesoType);
+            var peso = new Asset { Name = "Peso Argentino", Symbol = "ARS", Color = "#000000", AssetType = pesoType };
+            context.Assets.Add(peso);
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, peso, date, amount: 5000m, quotePrice: 0m);
+            // dos Type distintos el mismo día para el propio Peso Argentino (NA y BOLSA)
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "NA", Value = 1000m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BOLSA", Value = 1050m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
+
+            // fan-out: 5000/1000 + 5000/1050, NO 5000/(1000+1050)
+            var expected = Math.Round(5000m / 1000m + 5000m / 1050m, 2);
+            result.Balance.Should().Be(expected);
+        }
+
+        [Fact]
+        public async Task GetTotalsBalanceByUserAsync_WhenNoTransactions_ReturnsZeroWithoutError()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetTotalsBalanceByUserAsync(UserId, dollar);
+
+            result.Balance.Should().Be(0m);
         }
     }
 }

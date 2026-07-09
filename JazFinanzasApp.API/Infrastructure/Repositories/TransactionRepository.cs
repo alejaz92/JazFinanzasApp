@@ -93,181 +93,109 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return balanceByAccount;
         }
 
+        // Reemplaza a las tres ramas casi idénticas (pesos / dólares / cualquier otro activo) que tenía este
+        // método antes (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 5). No eran un stored
+        // procedure sino SQL crudo embebido, con la misma lógica copy-pasteada 3 veces distinguiendo por
+        // Asset.Name en vez de un @ReferenceAssetId genérico como sí usan las stats de inversión.
+        //
+        // Particularidades del cálculo original que se preservan tal cual (no se "arreglan" en esta fase):
+        // 1. El activo con Id=2 (asumido Dólar Estadounidense) está hardcodeado como pivote: cualquier
+        //    transacción de ese activo se suma directo, sin buscar cotización — el resto se convierte a
+        //    dólares dividiendo por la última cotización propia del activo (Type distinto de TARJETA/BLUE).
+        // 2. Para "Peso Argentino" y para "cualquier otro activo", la conversión de dólares a la moneda
+        //    pedida multiplica ese subtotal en USD por una cotización ubicada en la fecha MÁS RECIENTE DE
+        //    TODA LA TABLA AssetQuotes (no de ese activo puntual) — filtrando por Type='BOLSA' en el caso
+        //    de pesos, o por AssetId en el caso de "otro activo". Es fràgil (asume que esa fecha global
+        //    tiene una cotización utilizable para el activo pedido) pero es el comportamiento actual.
+        // 3. Mejora de seguridad respecto al original: la búsqueda de esa cotización se resuelve con
+        //    FirstOrDefault en vez de una subquery escalar — si por algún motivo hubiera más de una fila
+        //    coincidente, el SP original tiraría "Subquery returned more than 1 value" (error 500); acá
+        //    simplemente toma la primera. Nunca peor que el original, y sin cambio de comportamiento en el
+        //    caso normal (una sola fila coincidente).
         public async Task<TotalsBalanceResult> GetTotalsBalanceByUserAsync(int userId, Asset asset)
         {
+            const int DollarPivotAssetId = 2; // hardcodeado también en el SP original
 
-            if (asset.Name == "Peso Argentino")
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Select(t => new { t.AssetId, t.Amount, t.Date })
+                .ToListAsync();
+
+            if (transactions.Count == 0)
+                return new TotalsBalanceResult { Asset = asset.Name, Symbol = asset.Symbol, Color = asset.Color, Balance = 0m };
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            // Última cotización de cada activo (Type distinto de TARJETA/BLUE) para expresar su tenencia en
+            // dólares. Se guarda la LISTA de valores que comparten la fecha máxima (no se suman entre sí):
+            // el LEFT JOIN original produce una fila por cada cotización coincidente, y cada una aporta su
+            // propio cociente al SUM exterior — sumar primero los valores de cotización y dividir una sola
+            // vez daría un resultado distinto. Esto sí puede pasar en la práctica (a diferencia de
+            // Bolsa/Cripto en las Fases 1-4) porque Peso Argentino tiene varios Type el mismo día (NA, BOLSA).
+            var latestQuotesByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                    .Select(q => new { q.AssetId, q.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .ToDictionary(g => g.Key, g => g.Where(q => q.Date == g.Max(x => x.Date)).Select(q => q.Value).ToList());
+
+            var rawTotalInDollars = transactions.Sum(t =>
             {
-                var pesosSQL = @"
-                    ;WITH SplitFactors AS (
-                        SELECT t.Id AS TransactionId,
-                            ISNULL(
-                                (SELECT EXP(SUM(LOG(se.SplitRatio)))
-                                 FROM AssetSplitEvents se
-                                 WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
-                            1) AS CumulativeFactor
-                        FROM Transactions t WHERE t.UserId = @USER
-                    )
-                    SELECT
-                    CAST(SUM(
-                        CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
-                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
-                        AS decimal(18,2))
-                        *
-                        (SELECT VALUE FROM AssetQuotes WHERE TYPE = 'BOLSA' AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
-                        ) AS TOTAL
-                    FROM Transactions T
-                    INNER JOIN Assets A ON T.AssetId = A.Id
-                    LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
-                        AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
-                        AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
-                    INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
-                    WHERE T.UserId = @USER
-                    OPTION(RECOMPILE)
-                ";
+                var factor = GetSplitFactor(t.AssetId, t.Date);
+                if (t.AssetId == DollarPivotAssetId)
+                    return t.Amount * factor;
 
-                decimal totalBalancePesos = 0;
+                if (!latestQuotesByAsset.TryGetValue(t.AssetId, out var quotesAtLatestDate) || quotesAtLatestDate.Count == 0)
+                    return 0m;
 
+                return quotesAtLatestDate.Sum(quote => quote == 0 ? 0m : (t.Amount * factor) / quote);
+            });
 
-                try
-                {
-                    var resultPesos = (await _context.Database
-                        .SqlQueryRaw<TotalBalanceResult>(pesosSQL, new SqlParameter("@USER", userId))
-                        .ToListAsync()).FirstOrDefault();
+            // El SP original redondea el subtotal en USD a 2 decimales antes de convertir a la moneda pedida.
+            var totalInDollars = Math.Round(rawTotalInDollars, 2);
 
-                    totalBalancePesos = resultPesos?.Total ?? 0;
-
-                    var totals =
-                        new TotalsBalanceResult
-                        {
-                            Asset = asset.Name,
-                            Symbol = asset.Symbol,
-                            Color = asset.Color,
-                            Balance = totalBalancePesos
-                        };
-
-                    return totals;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error en consulta de pesos: {ex.Message}");
-                    throw;
-                }
-            }
-            else if (asset.Name == "Dolar Estadounidense")
+            decimal balance;
+            if (asset.Name == "Dolar Estadounidense")
             {
-                var dollarSQL = @"
-                ;WITH SplitFactors AS (
-                    SELECT t.Id AS TransactionId,
-                        ISNULL(
-                            (SELECT EXP(SUM(LOG(se.SplitRatio)))
-                             FROM AssetSplitEvents se
-                             WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
-                        1) AS CumulativeFactor
-                    FROM Transactions t WHERE t.UserId = @USER
-                )
-                SELECT
-                CAST(SUM(
-                    CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
-                    ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
-                    AS decimal(18,2)) AS TOTAL
-                FROM Transactions T
-                INNER JOIN Assets A ON T.AssetId = A.Id
-                LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
-                    AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
-                    AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
-                INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
-                WHERE T.UserId = @USER
-                OPTION(RECOMPILE)
-                ";
-                decimal totalBalanceDollars = 0;
-
-                try
-                {
-                    var resultDollars = (await _context.Database
-                        .SqlQueryRaw<TotalBalanceResult>(dollarSQL, new SqlParameter("@USER", userId))
-                        .ToListAsync()).FirstOrDefault();
-
-                    totalBalanceDollars = resultDollars?.Total ?? 0;
-
-                    var totals =
-                        new TotalsBalanceResult
-                        {
-                            Asset = asset.Name,
-                            Symbol = asset.Symbol,
-                            Color = asset.Color,
-                            Balance = totalBalanceDollars
-                        };
-                    return totals;
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error en consulta de d?lares: {ex.Message}");
-                    throw;
-                }
+                balance = totalInDollars;
             }
             else
             {
-                var otherSQL = @"
-                    ;WITH SplitFactors AS (
-                        SELECT t.Id AS TransactionId,
-                            ISNULL(
-                                (SELECT EXP(SUM(LOG(se.SplitRatio)))
-                                 FROM AssetSplitEvents se
-                                 WHERE se.AssetId = t.AssetId AND se.Date > t.Date),
-                            1) AS CumulativeFactor
-                        FROM Transactions t WHERE t.UserId = @USER
-                    )
-                    SELECT
-                    CAST(SUM(
-                        CASE WHEN A.ID = 2 THEN T.Amount * sf.CumulativeFactor
-                        ELSE CASE WHEN AQ.Value IS NOT NULL AND AQ.Value <> 0 THEN (T.Amount * sf.CumulativeFactor) / AQ.Value ELSE 0 END END)
-                        AS decimal(18,2))
-                        *
-                        (SELECT VALUE FROM AssetQuotes WHERE assetId = @ASSETID AND DATE = (SELECT MAX(DATE) FROM AssetQuotes)
-                        ) AS TOTAL
-                    FROM Transactions T
-                    INNER JOIN Assets A ON T.AssetId = A.Id
-                    LEFT JOIN AssetQuotes AQ ON AQ.AssetId = A.Id
-                        AND AQ.Date = (SELECT MAX(Date) FROM AssetQuotes)
-                        AND AQ.Type <> 'TARJETA' AND AQ.Type <> 'BLUE'
-                    INNER JOIN SplitFactors sf ON sf.TransactionId = T.Id
-                    WHERE T.UserId = @USER
-                    OPTION(RECOMPILE)
-                ";
+                var globalLatestDate = await _context.AssetQuotes.MaxAsync(q => (DateTime?)q.Date);
 
-                decimal totalBalanceOther = 0;
-
-
-                try
+                decimal? rate = null;
+                if (globalLatestDate.HasValue)
                 {
-                    var resultOther = (await _context.Database
-                        .SqlQueryRaw<TotalBalanceResult>(otherSQL, new SqlParameter("@ASSETID", asset.Id), new SqlParameter("@USER", userId))
-                        .ToListAsync()).FirstOrDefault();
-
-                    totalBalanceOther = resultOther?.Total ?? 0;
-
-                    var totals =
-                        new TotalsBalanceResult
-                        {
-                            Asset = asset.Name,
-                            Symbol = asset.Symbol,
-                            Color = asset.Color,
-                            Balance = totalBalanceOther
-                        };
-
-                    return totals;
+                    rate = asset.Name == "Peso Argentino"
+                        ? await _context.AssetQuotes
+                            .Where(q => q.Type == "BOLSA" && q.Date == globalLatestDate.Value)
+                            .Select(q => (decimal?)q.Value)
+                            .FirstOrDefaultAsync()
+                        : await _context.AssetQuotes
+                            .Where(q => q.AssetId == asset.Id && q.Date == globalLatestDate.Value)
+                            .Select(q => (decimal?)q.Value)
+                            .FirstOrDefaultAsync();
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Error en consulta de {asset.Name}: {ex.Message}");
-                    throw;
-                }
+
+                balance = rate.HasValue ? totalInDollars * rate.Value : 0m;
             }
 
-
-
-
+            return new TotalsBalanceResult
+            {
+                Asset = asset.Name,
+                Symbol = asset.Symbol,
+                Color = asset.Color,
+                Balance = balance
+            };
         }
 
         public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)
@@ -1152,23 +1080,34 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(q => new { q.Date, q.Value })
                 .ToListAsync();
 
-            decimal? GetReferenceQuoteOnOrBeforeOrNull(DateTime date) =>
-                referenceQuotes.FirstOrDefault(q => q.Date <= date)?.Value;
+            // Devuelve TODAS las cotizaciones de referencia que comparten la fecha más reciente <= la fecha
+            // pedida (no solo la primera): el INNER JOIN original empareja por AssetId+Date sin TOP 1, así
+            // que si esa fecha resuelta tiene más de un Type (BLUE y NA el mismo día, ej. Peso Argentino),
+            // cada una genera su propia fila en el join y su propio aporte al SUM exterior (fan-out) — igual
+            // que se corrigió en la Fase 5 para el mismo tipo de gap.
+            List<decimal> GetReferenceQuotesOnOrBefore(DateTime date)
+            {
+                var mostRecentMatch = referenceQuotes.FirstOrDefault(q => q.Date <= date);
+                if (mostRecentMatch == null) return new List<decimal>();
+                return referenceQuotes.Where(q => q.Date == mostRecentMatch.Date).Select(q => q.Value).ToList();
+            }
 
             var monthlyContributions = rows
-                .Select(r =>
+                .SelectMany(r =>
                 {
-                    var referenceQuote = GetReferenceQuoteOnOrBeforeOrNull(r.Date);
-                    if (referenceQuote == null) return ((DateTime Month, string CommerceType, decimal Value)?)null; // INNER JOIN: sin cotización de referencia -> se excluye
-                    if (!r.QuotePrice.HasValue || r.QuotePrice.Value == 0) return null;
+                    var matchingReferenceQuotes = GetReferenceQuotesOnOrBefore(r.Date);
+                    if (matchingReferenceQuotes.Count == 0) return Enumerable.Empty<(DateTime Month, string CommerceType, decimal Value)>(); // INNER JOIN: sin cotización de referencia -> se excluye
+                    if (!r.QuotePrice.HasValue || r.QuotePrice.Value == 0) return Enumerable.Empty<(DateTime Month, string CommerceType, decimal Value)>();
 
                     var isZeroedStableTrading = r.CommerceType == "Trading" && stableSymbols.Contains(r.Symbol);
-                    var value = isZeroedStableTrading ? 0m : r.Amount * (1m / r.QuotePrice.Value) * referenceQuote.Value;
+                    var month = new DateTime(r.Date.Year, r.Date.Month, 1);
 
-                    return (Month: new DateTime(r.Date.Year, r.Date.Month, 1), r.CommerceType, Value: value);
+                    return matchingReferenceQuotes.Select(referenceQuote =>
+                    {
+                        var value = isZeroedStableTrading ? 0m : r.Amount * (1m / r.QuotePrice.Value) * referenceQuote;
+                        return (Month: month, r.CommerceType, Value: value);
+                    });
                 })
-                .Where(x => x != null)
-                .Select(x => x!.Value)
                 .GroupBy(x => new { x.Month, x.CommerceType })
                 .Select(g => new { g.Key.Month, g.Key.CommerceType, Value = Math.Round(g.Sum(x => x.Value), 6) }) // DECIMAL(18,6) en el SP original
                 .ToList();
