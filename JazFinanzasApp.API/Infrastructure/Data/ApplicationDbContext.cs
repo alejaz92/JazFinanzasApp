@@ -263,6 +263,13 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.NoAction);
+
+            // Borrar un consumo de tarjeta no borra las transacciones de pago ya generadas: solo desvincula
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.CardTransaction)
+                .WithMany()
+                .HasForeignKey(t => t.CardTransactionId)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }

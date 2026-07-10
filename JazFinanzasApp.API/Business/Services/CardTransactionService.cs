@@ -396,6 +396,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Detail = $"(Tarjeta | {cardTx.Installment}) {cardTx.Detail}",
                 AccountId = paymentDTO.accountId,
                 PortfolioId = portfolioId,
+                CardTransactionId = cardTx.CardTransactionId,
                 TransactionClassId = cardTx.TransactionClassId,
                 MovementType = "E",
                 UserId = userId,

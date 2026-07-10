@@ -34,6 +34,11 @@ namespace JazFinanzasApp.API.Domain
         public int? TransactionClassId { get; set; }
         public TransactionClass? TransactionClass { get; set; }
 
+        // Vínculo al consumo de tarjeta de origen cuando la transacción es el pago de una cuota
+        [ForeignKey("CardTransactionId")]
+        public int? CardTransactionId { get; set; }
+        public CardTransaction? CardTransaction { get; set; }
+
         public string? Detail {  get; set; }
 
         [Required]

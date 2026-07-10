@@ -322,6 +322,29 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task RegisterCardPaymentAsync_LinksInstallmentTransactionToCardTransaction()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+
+            var capturedTransactions = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => capturedTransactions.Add(t))
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            var installmentTransaction = capturedTransactions.Single(t => t.Detail!.Contains("Compra"));
+            installmentTransaction.CardTransactionId.Should().Be(20);
+
+            var cardExpensesTransaction = capturedTransactions.Single(t => t.Detail!.Contains("Gastos Tarjeta"));
+            cardExpensesTransaction.CardTransactionId.Should().BeNull();
+        }
+
+        [Fact]
         public async Task RegisterCardPaymentAsync_WithPersonAndDiscountTogether_AppliesBothIndependently()
         {
             SetupRegisterCardPaymentHappyPathDependencies();
