@@ -38,6 +38,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<SharedExpenseReimbursement> SharedExpenseReimbursements { get; set; }
         public DbSet<CardTransactionDiscount> CardTransactionDiscounts { get; set; }
         public DbSet<CardTransactionDiscountInstallment> CardTransactionDiscountInstallments { get; set; }
+        public DbSet<Trip> Trips { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -255,6 +256,12 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(ctdi => ctdi.Transaction)
                 .WithMany()
                 .HasForeignKey(ctdi => ctdi.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<Trip>()
+                .HasOne(t => t.User)
+                .WithMany()
+                .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.NoAction);
         }
     }
