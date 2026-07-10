@@ -751,9 +751,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         private class InvestmentValueContribution
         {
             public int PortfolioId { get; set; }
+            public int AssetId { get; set; }
             public string AssetName { get; set; } = "";
             public string Symbol { get; set; } = "";
             public string AssetTypeName { get; set; } = "";
+            public int AccountId { get; set; }
+            public string AccountName { get; set; } = "";
             public decimal QuantityContribution { get; set; }
             public decimal OriginalValueContribution { get; set; }
             public decimal ActualValueContribution { get; set; }
@@ -761,13 +764,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         // environment == null: sin filtrar por ambiente (usado por las stats de cartera, que combinan
         // efectivo e inversión de cualquier tipo — ver docs/plans/activos/portfolios-estadisticas.md).
+        // portfolioId == null: sin filtrar por cartera (usado por el resumen de todas las carteras, Fase 1);
+        // con valor, acota la consulta a una sola cartera (Fase 2, detalle/holdings).
         private async Task<List<InvestmentValueContribution>> GetInvestmentValueContributionsAsync(
-            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable)
+            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable, int? portfolioId = null)
         {
             var stableSymbols = new[] { "DAI", "USDT", "USDC" };
 
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
+                .Where(t => portfolioId == null || t.PortfolioId == portfolioId)
                 .Where(t => environment == null || t.Asset.AssetType.Environment == environment)
                 .Where(t => assetTypeId == 0 || t.Asset.AssetTypeId == assetTypeId)
                 .Where(t => considerStable || !stableSymbols.Contains(t.Asset.Symbol))
@@ -778,6 +784,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AssetName = t.Asset.Name,
                     t.Asset.Symbol,
                     AssetTypeName = t.Asset.AssetType.Name,
+                    t.AccountId,
+                    AccountName = t.Account.Name,
                     t.Amount,
                     t.QuotePrice,
                     t.Date
@@ -862,9 +870,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     return new InvestmentValueContribution
                     {
                         PortfolioId = t.PortfolioId,
+                        AssetId = t.AssetId,
                         AssetName = t.AssetName,
                         Symbol = t.Symbol,
                         AssetTypeName = t.AssetTypeName,
+                        AccountId = t.AccountId,
+                        AccountName = t.AccountName,
                         QuantityContribution = quantity,
                         OriginalValueContribution = originalValue,
                         ActualValueContribution = actualValue
@@ -908,6 +919,42 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         OriginalValue = Math.Round(value?.OriginalValue ?? 0m, 2),
                         ActualValue = Math.Round(value?.ActualValue ?? 0m, 2)
                     };
+                })
+                .OrderByDescending(r => r.ActualValue)
+                .ToList();
+        }
+
+        // Composición y holdings dentro de una cartera puntual (ver docs/plans/activos/portfolios-estadisticas.md,
+        // Fase 2). Misma granularidad activo + cuenta que ya usan GetBalance/GetAverageQuotePrice — si un
+        // activo está repartido en más de una cuenta dentro de la cartera, se devuelve una fila por cuenta.
+        // Filtra tenencia neta <= 0 (posiciones vendidas del todo), mismo criterio que GetStockStatsAsync.
+        public async Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId)
+        {
+            var contributions = await GetInvestmentValueContributionsAsync(
+                userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, portfolioId: portfolioId);
+
+            return contributions
+                .GroupBy(c => new { c.AssetId, c.AccountId })
+                .Select(g => new
+                {
+                    AssetType = g.First().AssetTypeName,
+                    AssetName = g.First().AssetName,
+                    g.First().Symbol,
+                    AccountName = g.First().AccountName,
+                    RawQuantity = g.Sum(c => c.QuantityContribution),
+                    RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    RawActualValue = g.Sum(c => c.ActualValueContribution)
+                })
+                .Where(x => x.RawQuantity > 0)
+                .Select(x => new PortfolioHoldingResult
+                {
+                    AssetType = x.AssetType,
+                    AssetName = x.AssetName,
+                    Symbol = x.Symbol,
+                    AccountName = x.AccountName,
+                    Quantity = Math.Round(x.RawQuantity, 2),
+                    OriginalValue = Math.Round(x.RawOriginalValue, 2),
+                    ActualValue = Math.Round(x.RawActualValue, 2)
                 })
                 .OrderByDescending(r => r.ActualValue)
                 .ToList();

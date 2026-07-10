@@ -22,5 +22,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<decimal> GetBalance(int accountId, int assetId, int portfolioId);
         Task<decimal> GetAverageQuotePrice(int accountId, int assetId, int portfolioId);
         Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId);
+        Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId);
     }
 }

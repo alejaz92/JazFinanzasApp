@@ -15,6 +15,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IAssetTypeRepository _assetTypeRepository;
+        private readonly IPortfolioRepository _portfolioRepository;
 
         public ReportService(
             ITransactionRepository transactionRepository,
@@ -22,7 +23,8 @@ namespace JazFinanzasApp.API.Business.Services
             IAsset_UserRepository asset_UserRepository,
             ICardTransactionRepository cardTransactionRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IAssetTypeRepository assetTypeRepository)
+            IAssetTypeRepository assetTypeRepository,
+            IPortfolioRepository portfolioRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -30,6 +32,7 @@ namespace JazFinanzasApp.API.Business.Services
             _cardTransactionRepository = cardTransactionRepository;
             _assetQuoteRepository = assetQuoteRepository;
             _assetTypeRepository = assetTypeRepository;
+            _portfolioRepository = portfolioRepository;
         }
 
         public async Task<IEnumerable<TotalsBalanceDTO>> GetTotalsBalanceAsync(int userId)
@@ -301,6 +304,52 @@ namespace JazFinanzasApp.API.Business.Services
                 OriginalValue = r.OriginalValue,
                 ActualValue = r.ActualValue
             });
+        }
+
+        public async Task<PortfolioDetailStatsDTO> GetPortfolioDetailStatsAsync(int userId, int portfolioId)
+        {
+            var portfolio = await _portfolioRepository.GetByIdAsync(portfolioId);
+            if (portfolio == null || portfolio.UserId != userId)
+                throw new NotFoundException("Portfolio not found");
+
+            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
+            int mainReferenceAssetId;
+
+            if (mainReferenceAsset == null)
+            {
+                var dollar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+                mainReferenceAssetId = dollar.Id;
+            }
+            else
+            {
+                mainReferenceAssetId = mainReferenceAsset.AssetId;
+            }
+
+            // Reutiliza GetPortfolioStatsAsync (Fase 1) para el total de la cartera, en vez de recalcularlo
+            // acá: garantiza por construcción que coincide con lo que muestra la columna de valor en
+            // Tenencias, en vez de arriesgar una fórmula duplicada que diverja.
+            var portfolioStats = await _transactionRepository.GetPortfolioStatsAsync(userId, mainReferenceAssetId);
+            var portfolioStat = portfolioStats.FirstOrDefault(s => s.PortfolioId == portfolioId);
+
+            var holdings = await _transactionRepository.GetPortfolioHoldingsAsync(userId, portfolioId, mainReferenceAssetId);
+
+            return new PortfolioDetailStatsDTO
+            {
+                PortfolioId = portfolioId,
+                PortfolioName = portfolio.Name,
+                OriginalValue = portfolioStat?.OriginalValue ?? 0m,
+                ActualValue = portfolioStat?.ActualValue ?? 0m,
+                Holdings = holdings.Select(h => new PortfolioHoldingDTO
+                {
+                    AssetType = h.AssetType,
+                    AssetName = h.AssetName,
+                    Symbol = h.Symbol,
+                    AccountName = h.AccountName,
+                    Quantity = h.Quantity,
+                    OriginalValue = h.OriginalValue,
+                    ActualValue = h.ActualValue
+                }).ToArray()
+            };
         }
 
         private static IncExpStatsDTO MapIncExpResult(IncExpResult r) => new IncExpStatsDTO

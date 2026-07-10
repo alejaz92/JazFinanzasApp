@@ -40,13 +40,26 @@ namespace JazFinanzasApp.Tests.Repositories
             return asset;
         }
 
-        private static Transaction AddTransaction(ApplicationDbContext context, Asset asset, DateTime date, decimal amount, decimal quotePrice, int portfolioId = 1)
+        // Account es una FK requerida de Transaction: GetInvestmentValueContributionsAsync (Fase 2 de
+        // docs/plans/activos/portfolios-estadisticas.md) proyecta t.Account.Name, que EF traduce como INNER
+        // JOIN — sin una fila de Account, la transacción queda excluida en vez de con AccountName null.
+        // Se asegura acá, en el único punto de entrada usado por todos los tests, para no tener que
+        // modificarlos uno por uno.
+        private static void EnsureAccount(ApplicationDbContext context, int accountId)
         {
+            var exists = context.Accounts.Local.Any(a => a.Id == accountId) || context.Accounts.Any(a => a.Id == accountId);
+            if (!exists)
+                context.Accounts.Add(new Account { Id = accountId, Name = $"Cuenta {accountId}", UserId = UserId });
+        }
+
+        private static Transaction AddTransaction(ApplicationDbContext context, Asset asset, DateTime date, decimal amount, decimal quotePrice, int portfolioId = 1, int accountId = 1)
+        {
+            EnsureAccount(context, accountId);
             var transaction = new Transaction
             {
                 UserId = UserId,
                 Asset = asset,
-                AccountId = 1,
+                AccountId = accountId,
                 PortfolioId = portfolioId,
                 Date = date,
                 MovementType = amount >= 0 ? "I" : "E",
@@ -910,6 +923,116 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().ContainSingle();
             // btc: 1 * $60000 = 60000; fci: 100 * $12 = 1200 -- ambos cuentan pese a cotizar con frecuencia distinta
             result[0].ActualValue.Should().Be(61200m);
+        }
+
+        // ── GetPortfolioHoldingsAsync (docs/plans/activos/portfolios-estadisticas.md, Fase 2) ────────
+
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_GroupsByAssetTypeIncludingCash()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var apple = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "Accion USA");
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Jubilacion", UserId = UserId });
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 500m, quotePrice: 1m, portfolioId: 1);
+            AddTransaction(context, apple, date, amount: 10m, quotePrice: 1m / 100m, portfolioId: 1);
+            AddTransaction(context, btc, date, amount: 1m, quotePrice: 1m / 50000m, portfolioId: 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = apple, Date = date, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = date, Type = "NA", Value = 1m / 50000m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            result.Should().HaveCount(3);
+            result.Select(r => r.AssetType).Should().BeEquivalentTo(new[] { "Moneda", "Accion USA", "Criptomoneda" });
+            result.Single(r => r.AssetType == "Moneda").ActualValue.Should().Be(500m);
+            result.Single(r => r.AssetType == "Accion USA").ActualValue.Should().Be(1000m);
+            result.Single(r => r.AssetType == "Criptomoneda").ActualValue.Should().Be(50000m);
+        }
+
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_AssetSplitAcrossAccounts_ReturnsOneRowPerAccount()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Jubilacion", UserId = UserId });
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, btc, date, amount: 0.02m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 1); // Binance
+            AddTransaction(context, btc, date, amount: 0.03m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 2); // Lemon
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = date, Type = "NA", Value = 1m / 50000m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            result.Should().HaveCount(2); // una fila por cuenta, no una sola fila agregada
+            result.Select(r => r.AccountName).Should().BeEquivalentTo(new[] { "Cuenta 1", "Cuenta 2" });
+            result.Single(r => r.AccountName == "Cuenta 1").Quantity.Should().Be(0.02m);
+            result.Single(r => r.AccountName == "Cuenta 2").Quantity.Should().Be(0.03m);
+            result.Sum(r => r.Quantity).Should().Be(0.05m);
+            result.Sum(r => r.ActualValue).Should().Be(2500m); // 0.05 BTC * $50000, repartido entre las dos filas
+        }
+
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_SumOfActualValues_MatchesGetPortfolioStatsAsyncTotal()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var apple = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "Accion USA");
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Jubilacion", UserId = UserId });
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 500m, quotePrice: 1m, portfolioId: 1, accountId: 1);
+            AddTransaction(context, apple, date, amount: 10m, quotePrice: 1m / 100m, portfolioId: 1, accountId: 1);
+            AddTransaction(context, btc, date, amount: 0.02m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 1);
+            AddTransaction(context, btc, date, amount: 0.03m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 2);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = apple, Date = date, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = date, Type = "NA", Value = 1m / 50000m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var stats = (await repo.GetPortfolioStatsAsync(UserId, dollar.Id)).Single(s => s.PortfolioId == 1);
+            var holdings = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            holdings.Sum(h => h.ActualValue).Should().Be(stats.ActualValue);
+        }
+
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_OnlyReturnsHoldingsForRequestedPortfolio()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Corto Plazo", UserId = UserId });
+            context.Portfolios.Add(new Portfolio { Id = 2, Name = "Jubilacion", UserId = UserId });
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 500m, quotePrice: 1m, portfolioId: 1);
+            AddTransaction(context, dollar, date, amount: 900m, quotePrice: 1m, portfolioId: 2);
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].ActualValue.Should().Be(500m);
         }
     }
 }

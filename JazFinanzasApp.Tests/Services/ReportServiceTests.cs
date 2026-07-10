@@ -16,6 +16,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardTransactionRepository> _cardTransactionRepoMock;
         private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock;
         private readonly Mock<IAssetTypeRepository> _assetTypeRepoMock;
+        private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly ReportService _sut;
 
         private const int UserId = 1;
@@ -28,6 +29,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionRepoMock = new Mock<ICardTransactionRepository>();
             _assetQuoteRepoMock = new Mock<IAssetQuoteRepository>();
             _assetTypeRepoMock = new Mock<IAssetTypeRepository>();
+            _portfolioRepoMock = new Mock<IPortfolioRepository>();
 
             _sut = new ReportService(
                 _transactionRepoMock.Object,
@@ -35,7 +37,8 @@ namespace JazFinanzasApp.Tests.Services
                 _assetUserRepoMock.Object,
                 _cardTransactionRepoMock.Object,
                 _assetQuoteRepoMock.Object,
-                _assetTypeRepoMock.Object);
+                _assetTypeRepoMock.Object,
+                _portfolioRepoMock.Object);
         }
 
         // ── GetTotalsBalanceAsync ─────────────────────────────────────────────

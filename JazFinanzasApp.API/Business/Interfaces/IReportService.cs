@@ -13,5 +13,6 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<CryptoStatsDTO> GetCryptoStatsAsync(int userId, int assetId);
         Task<HomeStatsDTO> GetHomeStatsAsync(int userId);
         Task<IEnumerable<PortfolioStatsDTO>> GetPortfolioStatsAsync(int userId);
+        Task<PortfolioDetailStatsDTO> GetPortfolioDetailStatsAsync(int userId, int portfolioId);
     }
 }
