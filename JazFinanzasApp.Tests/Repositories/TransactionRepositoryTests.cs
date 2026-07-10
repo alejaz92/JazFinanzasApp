@@ -1034,5 +1034,40 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().ContainSingle();
             result[0].ActualValue.Should().Be(500m);
         }
+
+        // ── Regresión: hueco en la cotización de referencia antes de la transacción más antigua ──────
+        // Bug real encontrado en datos de producción (Azure): el Dólar (activo de referencia) tiene una
+        // única cotización en el año 2000 y la siguiente recién en abril de 2024 — un hueco de 24 años.
+        // GetInvestmentValueContributionsAsync acotaba las cotizaciones de referencia con
+        // "Date >= earliestTransactionDate" (pensado como optimización), lo que excluía la única
+        // cotización válida (la de 2000) para resolver "la más reciente <= la fecha de la transacción" —
+        // cualquier transacción fechada en el hueco quedaba con OriginalValue = 0. En una cartera real
+        // esto se manifestó como un "Valor Original" total NEGATIVO para un activo (SPY: algunas compras
+        // caían en el hueco, aportando $0, y el resto sumaba menos que la venta posterior).
+        [Fact]
+        public async Task GetStockStatsAsync_WhenReferenceQuoteHasGapBeforeEarliestTransaction_StillResolvesToOlderQuote()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var stock = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA");
+
+            var oldReferenceQuoteDate = new DateTime(2000, 1, 1);
+            var purchaseDate = new DateTime(2021, 6, 1); // cae en el hueco: nada entre 2000 y 2024
+            var laterReferenceQuoteDate = new DateTime(2024, 1, 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = oldReferenceQuoteDate, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = laterReferenceQuoteDate, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m }); // última cotización
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m); // compradas a $100 c/u
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetStockStatsAsync(UserId, 0, "BOLSA", true, reference.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].OriginalValue.Should().Be(1000m); // 10 * $100 -- no debe quedar en 0 por el hueco
+        }
     }
 }

@@ -796,7 +796,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 return new List<InvestmentValueContribution>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
-            var earliestTransactionDate = transactions.Min(t => t.Date);
 
             var splits = await _context.AssetSplitEvents
                 .Where(s => assetIds.Contains(s.AssetId))
@@ -823,12 +822,18 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .GroupBy(q => q.AssetId)
                 .ToDictionary(g => g.Key, g => g.Select(q => q.Value).ToList());
 
-            // Acotado a partir de la transacción más antigua: no hace falta cotización de referencia
-            // anterior a eso. El límite superior queda abierto porque la más reciente puede ser
-            // posterior a la última transacción.
+            // Sin acotar por fecha mínima (bug real encontrado y corregido: acotar por
+            // "Date >= earliestTransactionDate" asumía que nunca hace falta una cotización anterior a la
+            // transacción más antigua, pero eso solo vale si la cotización de referencia no tiene huecos.
+            // El Dólar, en datos reales, tiene una única cotización en el año 2000 y después un salto
+            // directo a abril de 2024 — cualquier transacción fechada en ese hueco (2020-2023) quedaba sin
+            // cotización de referencia válida porque la única candidata anterior (año 2000) se excluía por
+            // este límite, dando OriginalValue = 0 para esas transacciones y, al mezclarse con otras del
+            // mismo activo que sí resuelven bien, un total sin sentido — se detectó con una cartera cuyo
+            // "Valor Original" de SPY daba negativo). El activo de referencia tiene relativamente pocas
+            // cotizaciones (cientos, no miles), así que traer todo el historial es barato.
             var referenceQuotes = await _context.AssetQuotes
                 .Where(q => q.AssetId == referenceAssetId && (q.Type == "BLUE" || q.Type == "NA"))
-                .Where(q => q.Date >= earliestTransactionDate)
                 .OrderByDescending(q => q.Date)
                 .Select(q => new { q.Date, q.Value })
                 .ToListAsync();
