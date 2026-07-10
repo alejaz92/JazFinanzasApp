@@ -15,5 +15,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<IEnumerable<PortfolioStatsDTO>> GetPortfolioStatsAsync(int userId);
         Task<PortfolioDetailStatsDTO> GetPortfolioDetailStatsAsync(int userId, int portfolioId);
         Task<IEnumerable<PortfolioValueByDateDTO>> GetPortfolioValueHistoryAsync(int userId, int portfolioId);
+        Task<IEnumerable<TripsGeneralStatsDTO>> GetTripsGeneralStatsAsync(int userId);
+        Task<TripDetailStatsDTO> GetTripDetailStatsAsync(int userId, int tripId);
     }
 }

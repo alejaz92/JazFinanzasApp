@@ -17,6 +17,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock;
         private readonly Mock<IAssetTypeRepository> _assetTypeRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
+        private readonly Mock<ITripRepository> _tripRepoMock;
         private readonly ReportService _sut;
 
         private const int UserId = 1;
@@ -30,6 +31,7 @@ namespace JazFinanzasApp.Tests.Services
             _assetQuoteRepoMock = new Mock<IAssetQuoteRepository>();
             _assetTypeRepoMock = new Mock<IAssetTypeRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
+            _tripRepoMock = new Mock<ITripRepository>();
 
             _sut = new ReportService(
                 _transactionRepoMock.Object,
@@ -38,7 +40,8 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionRepoMock.Object,
                 _assetQuoteRepoMock.Object,
                 _assetTypeRepoMock.Object,
-                _portfolioRepoMock.Object);
+                _portfolioRepoMock.Object,
+                _tripRepoMock.Object);
         }
 
         // ── GetTotalsBalanceAsync ─────────────────────────────────────────────
@@ -157,6 +160,128 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             await act.Should().ThrowAsync<NotFoundException>();
+        }
+
+        // ── GetTripsGeneralStatsAsync / GetTripDetailStatsAsync ─────────────────
+
+        private static readonly DateTime MovementDate = new(2026, 7, 5);
+
+        private void SetupUsdAsMainReference()
+        {
+            _assetUserRepoMock.Setup(r => r.GetMainReferenceAssetAsync(UserId)).ReturnsAsync((Asset_User?)null);
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Dolar Estadounidense"))
+                .ReturnsAsync(new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" });
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" });
+        }
+
+        private void SetupArsAsMainReference()
+        {
+            _assetUserRepoMock.Setup(r => r.GetMainReferenceAssetAsync(UserId))
+                .ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 3 });
+            _assetRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(new Asset { Id = 3, Name = "Peso Argentino", Symbol = "ARS" });
+        }
+
+        [Fact]
+        public async Task GetTripsGeneralStatsAsync_ReferenceIsUsd_SumsAccountAndCardMovementsAtFaceValue()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", Type = "DOMESTIC", StartDate = MovementDate, EndDate = MovementDate.AddDays(3), UserId = UserId };
+            _tripRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Trip> { trip });
+
+            var transaction = new Transaction { Amount = -100m, QuotePrice = 1m, Date = MovementDate, TransactionClass = new TransactionClass { Description = "Hoteles" } };
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(new List<Transaction> { transaction });
+
+            var cardTransaction = new CardTransaction { TotalAmount = 50m, Date = MovementDate, Asset = new Asset { Name = "Dolar Estadounidense" }, TransactionClass = new TransactionClass { Description = "Vuelos" } };
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(new List<CardTransaction> { cardTransaction });
+
+            var result = (await _sut.GetTripsGeneralStatsAsync(UserId)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].TripId.Should().Be(5);
+            result[0].TotalInReference.Should().Be(150m); // 100 (cuenta) + 50 (tarjeta), sin conversión
+        }
+
+        [Fact]
+        public async Task GetTripsGeneralStatsAsync_ReferenceIsArs_ConvertsUsdAmountToBlueRate()
+        {
+            SetupArsAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", Type = "DOMESTIC", StartDate = MovementDate, EndDate = MovementDate.AddDays(3), UserId = UserId };
+            _tripRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Trip> { trip });
+
+            var transaction = new Transaction { Amount = -100m, QuotePrice = 1m, Date = MovementDate, TransactionClass = new TransactionClass { Description = "Hoteles" } };
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(new List<Transaction> { transaction });
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<CardTransaction>());
+
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(3, MovementDate, "BLUE")).ReturnsAsync(1000m);
+
+            var result = (await _sut.GetTripsGeneralStatsAsync(UserId)).ToList();
+
+            result[0].TotalInReference.Should().Be(100000m); // 100 USD * 1000 ARS/USD
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_ConvertsPesoCardTransactionViaBlueRate()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<Transaction>());
+
+            var cardTransaction = new CardTransaction
+            {
+                Id = 20,
+                TotalAmount = 100000m,
+                AssetId = 3,
+                Date = MovementDate,
+                Asset = new Asset { Name = "Peso Argentino" },
+                TransactionClass = new TransactionClass { Description = "Vuelos" }
+            };
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(new List<CardTransaction> { cardTransaction });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(3, MovementDate, "BLUE")).ReturnsAsync(1000m);
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(100m); // 100.000 ARS / 1000 ARS-por-USD
+            result.Breakdown.Should().ContainSingle(b => b.TransactionClass == "Vuelos" && b.Amount == 100m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_GroupsBreakdownByTransactionClass()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+
+            var transactions = new List<Transaction>
+            {
+                new() { Amount = -30m, QuotePrice = 1m, Date = MovementDate, TransactionClass = new TransactionClass { Description = "Comida" } },
+                new() { Amount = -20m, QuotePrice = 1m, Date = MovementDate, TransactionClass = new TransactionClass { Description = "Comida" } }
+            };
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(transactions);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<CardTransaction>());
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(50m);
+            result.Breakdown.Should().ContainSingle(b => b.TransactionClass == "Comida" && b.Amount == 50m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_TripNotFound_ThrowsNotFoundException()
+        {
+            _tripRepoMock.Setup(r => r.GetByIdAsync(99)).ReturnsAsync((Trip?)null);
+
+            await FluentActions.Invoking(() => _sut.GetTripDetailStatsAsync(UserId, 99))
+                .Should().ThrowAsync<NotFoundException>();
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_TripOfAnotherUser_ThrowsUnauthorizedDomainException()
+        {
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(new Trip { Id = 5, UserId = 999 });
+
+            await FluentActions.Invoking(() => _sut.GetTripDetailStatsAsync(UserId, 5))
+                .Should().ThrowAsync<UnauthorizedDomainException>();
         }
     }
 }

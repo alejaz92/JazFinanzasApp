@@ -17,6 +17,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IAssetTypeRepository _assetTypeRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly ITripRepository _tripRepository;
 
         public ReportService(
             ITransactionRepository transactionRepository,
@@ -25,7 +26,8 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionRepository cardTransactionRepository,
             IAssetQuoteRepository assetQuoteRepository,
             IAssetTypeRepository assetTypeRepository,
-            IPortfolioRepository portfolioRepository)
+            IPortfolioRepository portfolioRepository,
+            ITripRepository tripRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -34,6 +36,7 @@ namespace JazFinanzasApp.API.Business.Services
             _assetQuoteRepository = assetQuoteRepository;
             _assetTypeRepository = assetTypeRepository;
             _portfolioRepository = portfolioRepository;
+            _tripRepository = tripRepository;
         }
 
         public async Task<IEnumerable<TotalsBalanceDTO>> GetTotalsBalanceAsync(int userId)
@@ -355,6 +358,111 @@ namespace JazFinanzasApp.API.Business.Services
             var history = await _transactionRepository.GetPortfolioValueByDateAsync(userId, portfolioId, mainReferenceAssetId, months: 12);
 
             return history.Select(r => new PortfolioValueByDateDTO { Date = r.Date, Value = r.Value });
+        }
+
+        // Estadísticas básicas de Viajes (docs/plans/activos/plan-viajes.md, Fase 6). Devengado en fecha de
+        // compra para consumos de tarjeta (el total del viaje no cuadra mes a mes contra IncExp, es esperado
+        // — ver el análisis completo de la decisión en el plan). Conversión a la moneda de referencia principal
+        // reusando el mismo puente por USD que ya usan las stats de Carteras: cada movimiento se lleva primero
+        // a USD con su propia cotización histórica y de ahí a la moneda de referencia con la cotización de
+        // esta a esa misma fecha — así "referencia == USD" y "referencia == cualquier otra moneda" comparten
+        // una sola fórmula sin casos especiales (salvo el propio USD, que no tiene cotización contra sí mismo).
+        public async Task<IEnumerable<TripsGeneralStatsDTO>> GetTripsGeneralStatsAsync(int userId)
+        {
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
+            var trips = await _tripRepository.GetByUserIdAsync(userId);
+
+            var result = new List<TripsGeneralStatsDTO>();
+            foreach (var trip in trips)
+            {
+                var values = await GetTripMovementValuesAsync(trip.Id, mainReferenceAssetId);
+                result.Add(new TripsGeneralStatsDTO
+                {
+                    TripId = trip.Id,
+                    Name = trip.Name,
+                    Type = trip.Type,
+                    StartDate = trip.StartDate,
+                    EndDate = trip.EndDate,
+                    Status = GetTripStatus(trip),
+                    TotalInReference = Math.Round(values.Sum(v => v.ValueInReference), 2)
+                });
+            }
+
+            return result.OrderByDescending(r => r.StartDate).ToList();
+        }
+
+        public async Task<TripDetailStatsDTO> GetTripDetailStatsAsync(int userId, int tripId)
+        {
+            var trip = await _tripRepository.GetByIdAsync(tripId)
+                ?? throw new NotFoundException("Trip not found");
+            if (trip.UserId != userId) throw new UnauthorizedDomainException();
+
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
+            var values = await GetTripMovementValuesAsync(tripId, mainReferenceAssetId);
+
+            var breakdown = values
+                .GroupBy(v => v.TransactionClass ?? "Sin clase")
+                .Select(g => new TripClassBreakdownDTO { TransactionClass = g.Key, Amount = Math.Round(g.Sum(v => v.ValueInReference), 2) })
+                .OrderByDescending(b => b.Amount)
+                .ToArray();
+
+            return new TripDetailStatsDTO
+            {
+                TripId = tripId,
+                Name = trip.Name,
+                Total = Math.Round(values.Sum(v => v.ValueInReference), 2),
+                Breakdown = breakdown
+            };
+        }
+
+        private class TripMovementValue
+        {
+            public string? TransactionClass { get; set; }
+            public decimal ValueInReference { get; set; }
+        }
+
+        private async Task<List<TripMovementValue>> GetTripMovementValuesAsync(int tripId, int referenceAssetId)
+        {
+            var transactions = await _transactionRepository.GetTransactionsByTripIdAsync(tripId);
+            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsByTripIdAsync(tripId);
+
+            var values = new List<TripMovementValue>();
+
+            foreach (var t in transactions)
+            {
+                var valueInUsd = Math.Abs(t.Amount) / (t.QuotePrice is > 0 ? t.QuotePrice.Value : 1m);
+                var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, t.Date);
+                values.Add(new TripMovementValue { TransactionClass = t.TransactionClass?.Description, ValueInReference = valueInUsd * referenceQuote });
+            }
+
+            foreach (var ct in cardTransactions)
+            {
+                var valueInUsd = ct.Asset.Name == "Dolar Estadounidense"
+                    ? ct.TotalAmount
+                    : ct.TotalAmount / await _assetQuoteRepository.GetQuotePrice(ct.AssetId, ct.Date, "BLUE");
+                var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, ct.Date);
+                values.Add(new TripMovementValue { TransactionClass = ct.TransactionClass?.Description, ValueInReference = valueInUsd * referenceQuote });
+            }
+
+            return values;
+        }
+
+        // USD es la moneda puente: no tiene cotización contra sí misma, se resuelve como identidad.
+        private async Task<decimal> GetReferenceQuoteAsync(int referenceAssetId, DateTime date)
+        {
+            var referenceAsset = await _assetRepository.GetByIdAsync(referenceAssetId);
+            if (referenceAsset.Symbol == "USD") return 1m;
+
+            var type = referenceAsset.Symbol == "ARS" ? "BLUE" : "NA";
+            return await _assetQuoteRepository.GetQuotePrice(referenceAssetId, date, type);
+        }
+
+        private static string GetTripStatus(Trip trip)
+        {
+            var today = DateTime.UtcNow.Date;
+            if (today < trip.StartDate.Date) return "PLANNED";
+            if (today > trip.EndDate.Date) return "FINISHED";
+            return "IN_PROGRESS";
         }
 
         private static IncExpStatsDTO MapIncExpResult(IncExpResult r) => new IncExpStatsDTO

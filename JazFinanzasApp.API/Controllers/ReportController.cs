@@ -95,5 +95,19 @@ namespace JazFinanzasApp.API.Controllers
             var result = await _reportService.GetPortfolioValueHistoryAsync(GetUserId(), portfolioId);
             return Ok(result);
         }
+
+        [HttpGet("trips-general")]
+        public async Task<IActionResult> GetTripsGeneralStats()
+        {
+            var result = await _reportService.GetTripsGeneralStatsAsync(GetUserId());
+            return Ok(result);
+        }
+
+        [HttpGet("trip-detail/{tripId}")]
+        public async Task<IActionResult> GetTripDetailStats(int tripId)
+        {
+            var result = await _reportService.GetTripDetailStatsAsync(GetUserId(), tripId);
+            return Ok(result);
+        }
     }
 }
