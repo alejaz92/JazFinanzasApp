@@ -88,5 +88,12 @@ namespace JazFinanzasApp.API.Controllers
             var result = await _reportService.GetPortfolioDetailStatsAsync(GetUserId(), portfolioId);
             return Ok(result);
         }
+
+        [HttpGet("PortfolioStats/{portfolioId}/history")]
+        public async Task<IActionResult> GetPortfolioValueHistory(int portfolioId)
+        {
+            var result = await _reportService.GetPortfolioValueHistoryAsync(GetUserId(), portfolioId);
+            return Ok(result);
+        }
     }
 }

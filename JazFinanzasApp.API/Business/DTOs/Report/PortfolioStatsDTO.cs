@@ -28,4 +28,10 @@ namespace JazFinanzasApp.API.Business.DTO.Report
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
     }
+
+    public class PortfolioValueByDateDTO
+    {
+        public DateTime Date { get; set; }
+        public decimal Value { get; set; }
+    }
 }

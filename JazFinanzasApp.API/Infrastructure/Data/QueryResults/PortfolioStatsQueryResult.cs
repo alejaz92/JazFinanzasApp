@@ -19,4 +19,10 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
     }
+
+    public class PortfolioValueByDateResult
+    {
+        public DateTime Date { get; set; }
+        public decimal Value { get; set; }
+    }
 }

@@ -1069,5 +1069,106 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().ContainSingle();
             result[0].OriginalValue.Should().Be(1000m); // 10 * $100 -- no debe quedar en 0 por el hueco
         }
+
+        // ── GetPortfolioValueByDateAsync (docs/plans/activos/portfolios-estadisticas.md, Fase 5) ──────
+        // A diferencia de GetInvestmentsHoldingsStats (volumen operado DENTRO de cada mes), este calcula
+        // la tenencia ACUMULADA al cierre de cada mes -- una curva de patrimonio en el tiempo.
+
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_CashOnly_HoldsConstantValueAcrossMonths()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Corto Plazo", UserId = UserId });
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var fundingDate = thisMonthStart.AddMonths(-2).AddDays(3);
+            AddTransaction(context, dollar, fundingDate, amount: 500m, quotePrice: 1m, portfolioId: 1);
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = fundingDate, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioValueByDateAsync(UserId, 1, dollar.Id, months: 3)).ToList();
+
+            result.Should().HaveCount(3);
+            result.Select(r => r.Date).Should().BeInAscendingOrder();
+            result.Select(r => r.Date).Should().BeEquivalentTo(new[] { thisMonthStart.AddMonths(-2), thisMonthStart.AddMonths(-1), thisMonthStart });
+            result.Should().OnlyContain(r => r.Value == 500m); // el efectivo no cambia de valor mes a mes
+        }
+
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_AssetBoughtMidRange_ValuedWithOwnLatestQuotePerMonth()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var stock = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Jubilacion", UserId = UserId });
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var twoMonthsAgo = thisMonthStart.AddMonths(-2);
+            var oneMonthAgo = thisMonthStart.AddMonths(-1);
+            var purchaseDate = oneMonthAgo.AddDays(5); // compra recién en el mes del medio
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m, portfolioId: 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = twoMonthsAgo, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m });      // $100 al comprar
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = thisMonthStart.AddDays(1), Type = "NA", Value = 1m / 150m }); // sube a $150 este mes
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioValueByDateAsync(UserId, 1, dollar.Id, months: 3)).ToList();
+
+            result.Should().HaveCount(3);
+            result[0].Value.Should().Be(0m);      // hace dos meses todavía no se había comprado nada
+            result[1].Value.Should().Be(1000m);   // mes de la compra: 10 * $100 (última cotización disponible a esa altura)
+            result[2].Value.Should().Be(1500m);   // este mes: 10 * $150 (la cotización propia se actualizó)
+        }
+
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_WhenReferenceQuoteTypesShareLatestDate_SumsEachContributionSeparately()
+        {
+            // Caso real: Peso Argentino como moneda de referencia tiene Type=NA y Type=BOLSA el mismo día
+            // en 836 fechas distintas (ver lección de fan-out del plan). Se usa acá como activo de
+            // referencia (no como tenencia) para aislar el fan-out del lado de la referencia, sin mezclarlo
+            // con el fan-out del lado del activo tenido (Dólar, con una sola cotización, sin ambigüedad).
+            using var context = CreateContext();
+            var peso = AddReferenceAsset(context, "Peso Argentino");
+            var dollar = AddReferenceAsset(context, "Dolar Estadounidense");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Corto Plazo", UserId = UserId });
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var date = thisMonthStart.AddDays(1);
+            AddTransaction(context, dollar, date, amount: 500m, quotePrice: 1m, portfolioId: 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "NA", Value = 1000m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BLUE", Value = 1050m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioValueByDateAsync(UserId, 1, peso.Id, months: 1)).ToList();
+
+            result.Should().ContainSingle();
+            // fan-out: 500/1*1000 + 500/1*1050, NO 500/1*(1000+1050) de una sola vez
+            result[0].Value.Should().Be(500m / 1m * 1000m + 500m / 1m * 1050m);
+        }
+
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_WhenNoTransactions_ReturnsEmpty()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Corto Plazo", UserId = UserId });
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetPortfolioValueByDateAsync(UserId, 1, dollar.Id, months: 3);
+
+            result.Should().BeEmpty();
+        }
     }
 }

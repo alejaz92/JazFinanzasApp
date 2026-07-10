@@ -1,6 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.DTO.Report;
 using JazFinanzasApp.API.Business.Interfaces;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Business.Exceptions;
@@ -279,20 +280,27 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        public async Task<IEnumerable<PortfolioStatsDTO>> GetPortfolioStatsAsync(int userId)
+        private async Task<int> GetMainReferenceAssetIdAsync(int userId)
         {
             var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
-            int mainReferenceAssetId;
+            if (mainReferenceAsset != null)
+                return mainReferenceAsset.AssetId;
 
-            if (mainReferenceAsset == null)
-            {
-                var dollar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
-                mainReferenceAssetId = dollar.Id;
-            }
-            else
-            {
-                mainReferenceAssetId = mainReferenceAsset.AssetId;
-            }
+            var dollar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
+            return dollar.Id;
+        }
+
+        private async Task<Portfolio> GetOwnedPortfolioAsync(int userId, int portfolioId)
+        {
+            var portfolio = await _portfolioRepository.GetByIdAsync(portfolioId);
+            if (portfolio == null || portfolio.UserId != userId)
+                throw new NotFoundException("Portfolio not found");
+            return portfolio;
+        }
+
+        public async Task<IEnumerable<PortfolioStatsDTO>> GetPortfolioStatsAsync(int userId)
+        {
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
 
             var portfolioStats = await _transactionRepository.GetPortfolioStatsAsync(userId, mainReferenceAssetId);
 
@@ -308,22 +316,8 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task<PortfolioDetailStatsDTO> GetPortfolioDetailStatsAsync(int userId, int portfolioId)
         {
-            var portfolio = await _portfolioRepository.GetByIdAsync(portfolioId);
-            if (portfolio == null || portfolio.UserId != userId)
-                throw new NotFoundException("Portfolio not found");
-
-            var mainReferenceAsset = await _asset_UserRepository.GetMainReferenceAssetAsync(userId);
-            int mainReferenceAssetId;
-
-            if (mainReferenceAsset == null)
-            {
-                var dollar = await _assetRepository.GetAssetByNameAsync("Dolar Estadounidense");
-                mainReferenceAssetId = dollar.Id;
-            }
-            else
-            {
-                mainReferenceAssetId = mainReferenceAsset.AssetId;
-            }
+            var portfolio = await GetOwnedPortfolioAsync(userId, portfolioId);
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
 
             // Reutiliza GetPortfolioStatsAsync (Fase 1) para el total de la cartera, en vez de recalcularlo
             // acá: garantiza por construcción que coincide con lo que muestra la columna de valor en
@@ -350,6 +344,17 @@ namespace JazFinanzasApp.API.Business.Services
                     ActualValue = h.ActualValue
                 }).ToArray()
             };
+        }
+
+        // Evolución mensual del valor de una cartera, últimos 12 meses (docs/plans/activos/portfolios-estadisticas.md, Fase 5).
+        public async Task<IEnumerable<PortfolioValueByDateDTO>> GetPortfolioValueHistoryAsync(int userId, int portfolioId)
+        {
+            await GetOwnedPortfolioAsync(userId, portfolioId);
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
+
+            var history = await _transactionRepository.GetPortfolioValueByDateAsync(userId, portfolioId, mainReferenceAssetId, months: 12);
+
+            return history.Select(r => new PortfolioValueByDateDTO { Date = r.Date, Value = r.Value });
         }
 
         private static IncExpStatsDTO MapIncExpResult(IncExpResult r) => new IncExpStatsDTO

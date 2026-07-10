@@ -965,6 +965,110 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
         }
 
+        // Evolución histórica del valor de una cartera, mes a mes (ver docs/plans/activos/portfolios-estadisticas.md,
+        // Fase 5). A diferencia de GetInvestmentsHoldingsStats (que suma el volumen operado DENTRO de cada mes,
+        // agrupado por CommerceType), esto calcula la TENENCIA ACUMULADA al cierre de cada mes — un valor de
+        // patrimonio en el tiempo, no volumen de compra/venta — combinando todo tipo de activo (mismo criterio
+        // "sin filtro de Environment" que GetPortfolioStatsAsync/GetPortfolioHoldingsAsync).
+        // Aplica las mismas lecciones de fan-out y "última cotización por activo" que el resto de las stats:
+        // tanto la cotización propia de cada activo como la de referencia se resuelven "la más reciente <= esa
+        // fecha", con fan-out si hay más de una del mismo Type/fecha. Si a un activo con tenencia > 0 todavía
+        // no le llegó ninguna cotización a esa altura del tiempo, ese mes no lo puede valorizar (se excluye su
+        // aporte para ese mes puntual, no para los siguientes) — decisión explícita, no accidental.
+        public async Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId && t.PortfolioId == portfolioId)
+                .Select(t => new { t.AssetId, t.Amount, t.Date })
+                .ToListAsync();
+
+            if (transactions.Count == 0)
+                return Enumerable.Empty<PortfolioValueByDateResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            // Checkpoints ordenados por activo para poder calcular la tenencia acumulada a una fecha dada
+            // (mismo criterio que GetCryptoStatsByDateAsync).
+            var transactionsByAsset = transactions
+                .GroupBy(t => t.AssetId)
+                .ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+
+            decimal GetAccumulatedQuantityAsOf(int assetId, DateTime date)
+            {
+                if (!transactionsByAsset.TryGetValue(assetId, out var checkpoints)) return 0m;
+                return checkpoints
+                    .Where(c => c.Date <= date)
+                    .Sum(c => c.Amount * GetSplitFactor(assetId, c.Date));
+            }
+
+            // Historial completo de cotizaciones de los activos de la cartera, sin acotar por fecha (mismo
+            // motivo que la corrección aplicada al helper de referencia: acotar por una fecha "mínima" puede
+            // excluir la única cotización disponible para resolver un mes temprano si hay huecos en la carga).
+            var quotesByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Select(q => new { q.AssetId, q.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(q => q.Date).ToList());
+
+            List<decimal> GetAssetQuotesOnOrBefore(int assetId, DateTime date)
+            {
+                if (!quotesByAsset.TryGetValue(assetId, out var quotes)) return new List<decimal>();
+                var mostRecentMatch = quotes.FirstOrDefault(q => q.Date <= date);
+                if (mostRecentMatch == null) return new List<decimal>();
+                return quotes.Where(q => q.Date == mostRecentMatch.Date).Select(q => q.Value).ToList();
+            }
+
+            var referenceQuotes = await _context.AssetQuotes
+                .Where(q => q.AssetId == referenceAssetId && (q.Type == "BLUE" || q.Type == "NA"))
+                .OrderByDescending(q => q.Date)
+                .Select(q => new { q.Date, q.Value })
+                .ToListAsync();
+
+            List<decimal> GetReferenceQuotesOnOrBefore(DateTime date)
+            {
+                var mostRecentMatch = referenceQuotes.FirstOrDefault(q => q.Date <= date);
+                if (mostRecentMatch == null) return new List<decimal>();
+                return referenceQuotes.Where(q => q.Date == mostRecentMatch.Date).Select(q => q.Value).ToList();
+            }
+
+            var currentMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var startMonth = currentMonthStart.AddMonths(-(months - 1));
+
+            var result = new List<PortfolioValueByDateResult>();
+            for (var month = startMonth; month <= currentMonthStart; month = month.AddMonths(1))
+            {
+                var monthEnd = month.AddMonths(1).AddDays(-1);
+                var referenceQuotesAtMonth = GetReferenceQuotesOnOrBefore(monthEnd);
+
+                var monthValue = assetIds.Sum(assetId =>
+                {
+                    var quantity = GetAccumulatedQuantityAsOf(assetId, monthEnd);
+                    if (quantity == 0) return 0m;
+
+                    var assetQuotesAtMonth = GetAssetQuotesOnOrBefore(assetId, monthEnd);
+                    if (assetQuotesAtMonth.Count == 0) return 0m; // el activo todavía no tenía cotización cargada a esa altura
+
+                    return assetQuotesAtMonth
+                        .Where(assetQuote => assetQuote > 0)
+                        .SelectMany(assetQuote => referenceQuotesAtMonth.Select(refQuote => (quantity / assetQuote) * refQuote))
+                        .Sum();
+                });
+
+                result.Add(new PortfolioValueByDateResult { Date = month, Value = Math.Round(monthValue, 2) });
+            }
+
+            return result;
+        }
+
         // Reemplaza al stored procedure [dbo].[GetStockStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 1).
         public async Task<IEnumerable<StockStatsListResult>> GetStockStatsAsync(
             int userId,
