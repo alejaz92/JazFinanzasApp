@@ -10,5 +10,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<CardTransactionPendingResult>> GetPendingCardTransactionsAsync(int userId);
         Task<IEnumerable<CardTransaction>> GetCardTransactionsByTripIdAsync(int tripId);
         Task<IEnumerable<CardTransaction>> GetTripSuggestibleCardTransactionsAsync(int userId, DateTime startDate, DateTime endDate);
+        Task<IEnumerable<CardTransaction>> SearchTripAssociableCardTransactionsAsync(int userId, string? search);
     }
 }

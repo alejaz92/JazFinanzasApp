@@ -121,7 +121,9 @@ namespace JazFinanzasApp.API.Business.Services
                 TotalAmount = r.TotalAmount,
                 FirstInstallment = r.FirstInstallment,
                 LastInstallment = r.LastInstallment,
-                InstallmentAmount = r.InstallmentAmount
+                InstallmentAmount = r.InstallmentAmount,
+                TripId = r.TripId,
+                TripName = r.TripName
             });
         }
 

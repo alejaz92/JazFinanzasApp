@@ -17,5 +17,7 @@
         public string? TransactionClassName { get; set; }
         public string Detail { get; set; }
         public decimal Amount { get; set; }
+        public int? TripId { get; set; }
+        public string? TripName { get; set; }
     }
 }

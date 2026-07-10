@@ -20,5 +20,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public DateTime FirstInstallment { get; set; }
         public string LastInstallment { get; set; }
         public decimal InstallmentAmount { get; set; }
+        public int? TripId { get; set; }
+        public string? TripName { get; set; }
     }
 }

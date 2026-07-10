@@ -25,6 +25,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
+                .Include(cm => cm.Trip)
                 .Where(cm => cm.Card.UserId == userId && (
                     cm.Repeat == "YES" &&  (cm.LastInstallment  ==   nullDate || cm.LastInstallment == null ) ||
                     cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today 
@@ -43,7 +44,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     TotalAmount = cm.TotalAmount,
                     FirstInstallment = cm.FirstInstallment,
                     LastInstallment = cm.Repeat == "YES" ? "NA" : cm.LastInstallment.HasValue ? cm.LastInstallment.Value.ToString("MM/yyyy") : "NA",
-                    InstallmentAmount = cm.InstallmentAmount
+                    InstallmentAmount = cm.InstallmentAmount,
+                    TripId = cm.TripId,
+                    TripName = cm.Trip != null ? cm.Trip.Name : null
                 })
                 .OrderBy(cm => cm.Date)
                 .ThenBy(cm => cm.Card)
@@ -159,6 +162,22 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     && ct.Date >= startDate.Date
                     && ct.Date < endExclusive)
                 .OrderBy(ct => ct.Date)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<CardTransaction>> SearchTripAssociableCardTransactionsAsync(int userId, string? search)
+        {
+            var query = _context.CardTransactions
+                .Include(ct => ct.Asset)
+                .Include(ct => ct.TransactionClass)
+                .Where(ct => ct.UserId == userId && ct.TripId == null);
+
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(ct => ct.Detail != null && ct.Detail.Contains(search));
+
+            return await query
+                .OrderByDescending(ct => ct.Date)
+                .Take(50)
                 .ToListAsync();
         }
     }

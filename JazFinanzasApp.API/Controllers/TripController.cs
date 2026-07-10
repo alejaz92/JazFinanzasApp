@@ -62,6 +62,13 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("{id}/candidates")]
+        public async Task<IActionResult> SearchCandidates(int id, [FromQuery] string? search)
+        {
+            var result = await _tripService.SearchAssociableMovementsAsync(GetUserId(), id, search);
+            return Ok(result);
+        }
+
         [HttpPost("{id}/associations")]
         public async Task<IActionResult> Associate(int id, TripAssociationsDTO dto)
         {

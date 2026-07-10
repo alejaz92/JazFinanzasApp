@@ -36,6 +36,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(m => m.Asset)
                 .Include(m => m.TransactionClass)
                 .Include(m => m.Portfolio)
+                .Include(m => m.Trip)
                 .OrderByDescending(m => m.Date)
                 .ThenByDescending(m => m.Id)
                 .Skip((page - 1) * pageSize)
@@ -56,6 +57,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(m => m.Asset)
                 .Include(m => m.Portfolio)
                 .Include(m => m.TransactionClass)
+                .Include(m => m.Trip)
                 .FirstOrDefaultAsync(m => m.Id == id);
         }
 
@@ -1514,6 +1516,28 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     && t.Date >= startDate.Date
                     && t.Date < endExclusive)
                 .OrderBy(t => t.Date)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Transaction>> SearchTripAssociableTransactionsAsync(int userId, string? search)
+        {
+            var query = _context.Transactions
+                .Include(t => t.Asset)
+                .Include(t => t.TransactionClass)
+                .Where(t => t.UserId == userId
+                    && t.TripId == null
+                    && t.MovementType == "E"
+                    && t.CardTransactionId == null
+                    && t.TransactionClassId != null
+                    && !TripMovementRules.ExcludedTransactionClasses.Contains(t.TransactionClass.Description)
+                    && (t.Detail == null || !t.Detail.StartsWith(TripMovementRules.LegacyCardPaymentDetailPrefix)));
+
+            if (!string.IsNullOrWhiteSpace(search))
+                query = query.Where(t => t.Detail != null && t.Detail.Contains(search));
+
+            return await query
+                .OrderByDescending(t => t.Date)
+                .Take(50)
                 .ToListAsync();
         }
     }

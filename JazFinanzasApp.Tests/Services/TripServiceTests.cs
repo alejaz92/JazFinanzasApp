@@ -39,6 +39,10 @@ namespace JazFinanzasApp.Tests.Services
                 .ReturnsAsync(Enumerable.Empty<TripSuggestionDismissal>());
             _dismissalRepoMock.Setup(r => r.GetByTripAndMovementAsync(It.IsAny<int>(), It.IsAny<int?>(), It.IsAny<int?>()))
                 .ReturnsAsync((TripSuggestionDismissal?)null);
+            _transactionRepoMock.Setup(r => r.SearchTripAssociableTransactionsAsync(UserId, It.IsAny<string?>()))
+                .ReturnsAsync(Enumerable.Empty<Transaction>());
+            _cardTransactionRepoMock.Setup(r => r.SearchTripAssociableCardTransactionsAsync(UserId, It.IsAny<string?>()))
+                .ReturnsAsync(Enumerable.Empty<CardTransaction>());
 
             _sut = new TripService(
                 _tripRepoMock.Object,
@@ -626,6 +630,33 @@ namespace JazFinanzasApp.Tests.Services
             result.Should().ContainSingle();
             result[0].Id.Should().Be(11);
             result[0].Origin.Should().Be("ACCOUNT");
+        }
+
+        // ── SearchAssociableMovementsAsync ────────────────────────────────────
+
+        [Fact]
+        public async Task SearchAssociableMovementsAsync_MergesBothOriginsOrderedByDateDescending()
+        {
+            SetupOwnedTrip(BuildTrip());
+            _transactionRepoMock.Setup(r => r.SearchTripAssociableTransactionsAsync(UserId, "hotel"))
+                .ReturnsAsync(new List<Transaction> { BuildExpenseTransaction() }); // día +12
+            _cardTransactionRepoMock.Setup(r => r.SearchTripAssociableCardTransactionsAsync(UserId, "hotel"))
+                .ReturnsAsync(new List<CardTransaction> { BuildCardTransaction() }); // día +11
+
+            var result = (await _sut.SearchAssociableMovementsAsync(UserId, 5, "hotel")).ToList();
+
+            result.Should().HaveCount(2);
+            result[0].Origin.Should().Be("ACCOUNT"); // más reciente primero
+            result[1].Origin.Should().Be("CARD");
+        }
+
+        [Fact]
+        public async Task SearchAssociableMovementsAsync_TripOfAnotherUser_ThrowsUnauthorizedDomainException()
+        {
+            SetupOwnedTrip(BuildTrip(5, userId: 2));
+
+            await FluentActions.Invoking(() => _sut.SearchAssociableMovementsAsync(UserId, 5, null))
+                .Should().ThrowAsync<UnauthorizedDomainException>();
         }
 
         // ── DismissSuggestionAsync ────────────────────────────────────────────

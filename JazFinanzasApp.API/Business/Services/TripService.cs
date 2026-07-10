@@ -204,6 +204,19 @@ namespace JazFinanzasApp.API.Business.Services
                 .ToList();
         }
 
+        public async Task<IEnumerable<TripMovementDTO>> SearchAssociableMovementsAsync(int userId, int tripId, string? search)
+        {
+            await GetOwnedTripAsync(userId, tripId);
+
+            var transactions = await _transactionRepository.SearchTripAssociableTransactionsAsync(userId, search);
+            var cardTransactions = await _cardTransactionRepository.SearchTripAssociableCardTransactionsAsync(userId, search);
+
+            return transactions.Select(MapAccountMovement)
+                .Concat(cardTransactions.Select(MapCardMovement))
+                .OrderByDescending(m => m.Date)
+                .ToList();
+        }
+
         public async Task DismissSuggestionAsync(int userId, int tripId, TripMovementRefDTO dto)
         {
             await GetOwnedTripAsync(userId, tripId);

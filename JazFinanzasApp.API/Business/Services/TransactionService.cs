@@ -66,7 +66,9 @@ namespace JazFinanzasApp.API.Business.Services
                 AssetSymbol = m.Asset.Symbol,
                 TransactionClassId = m.TransactionClassId,
                 TransactionClassName = m.TransactionClass.Description,
-                MovementType = m.MovementType
+                MovementType = m.MovementType,
+                TripId = m.TripId,
+                TripName = m.Trip?.Name
             }).ToList();
 
             return (transactionsDTO, totalCount);
@@ -95,7 +97,9 @@ namespace JazFinanzasApp.API.Business.Services
                 AssetSymbol = transaction.Asset.Symbol,
                 TransactionClassId = transaction.TransactionClassId,
                 TransactionClassName = transaction.TransactionClass.Description,
-                MovementType = transaction.MovementType
+                MovementType = transaction.MovementType,
+                TripId = transaction.TripId,
+                TripName = transaction.Trip?.Name
             };
         }
 
