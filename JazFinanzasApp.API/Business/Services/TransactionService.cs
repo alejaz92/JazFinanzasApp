@@ -18,6 +18,8 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
+        private readonly ITripRepository _tripRepository;
+        private readonly ITripSuggestionDismissalRepository _tripSuggestionDismissalRepository;
 
         public TransactionService(
             ITransactionRepository transactionRepository,
@@ -28,7 +30,9 @@ namespace JazFinanzasApp.API.Business.Services
             IInvestmentTransactionRepository investmentTransactionRepository,
             IPortfolioRepository portfolioRepository,
             IUnitOfWork unitOfWork,
-            ISharedExpenseRepository sharedExpenseRepository)
+            ISharedExpenseRepository sharedExpenseRepository,
+            ITripRepository tripRepository,
+            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -39,6 +43,8 @@ namespace JazFinanzasApp.API.Business.Services
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
             _sharedExpenseRepository = sharedExpenseRepository;
+            _tripRepository = tripRepository;
+            _tripSuggestionDismissalRepository = tripSuggestionDismissalRepository;
         }
 
         public async Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize)
@@ -95,6 +101,9 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task<int> CreateTransactionAsync(int userId, TransactionAddDTO transactionDTO)
         {
+            if (transactionDTO.tripId != null && transactionDTO.movementType != "E")
+                throw new BusinessRuleException("Solo un egreso puede asociarse a un viaje");
+
             var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId)
                 ?? throw new NotFoundException("Default portfolio not found");
 
@@ -150,6 +159,9 @@ namespace JazFinanzasApp.API.Business.Services
                 if (balance < transactionDTO.amount)
                     throw new BusinessRuleException("No hay suficiente saldo en la cuenta");
 
+                if (transactionDTO.tripId != null)
+                    await ValidateTripAssignmentAsync(userId, transactionDTO.tripId.Value, transactionClass);
+
                 var expenseTransaction = await _transactionRepository.AddAsyncReturnObject(new Transaction
                 {
                     AccountId = expenseAccount.Id,
@@ -165,7 +177,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Detail = transactionDTO.detail,
                     Amount = -transactionDTO.amount,
                     UserId = userId,
-                    QuotePrice = quotePrice
+                    QuotePrice = quotePrice,
+                    TripId = transactionDTO.tripId
                 });
                 return expenseTransaction.Id;
             }
@@ -269,6 +282,23 @@ namespace JazFinanzasApp.API.Business.Services
                 transaction.AssetId = transactionDTO.AssetId;
             }
 
+            if (transaction.TripId != transactionDTO.TripId)
+            {
+                if (transactionDTO.TripId != null)
+                {
+                    if (transaction.MovementType != "E")
+                        throw new BusinessRuleException("Solo un egreso puede asociarse a un viaje");
+                    if (transaction.CardTransactionId != null
+                        || (transaction.Detail != null && transaction.Detail.StartsWith(TripMovementRules.LegacyCardPaymentDetailPrefix)))
+                        throw new BusinessRuleException("Los pagos de cuotas de tarjeta no se asocian a viajes: el consumo de tarjeta se asocia directo");
+
+                    var newClass = await _transactionClassRepository.GetByIdAsync(transaction.TransactionClassId.Value)
+                        ?? throw new NotFoundException("Transaction class not found");
+                    await ValidateTripAssignmentAsync(userId, transactionDTO.TripId.Value, newClass);
+                }
+                transaction.TripId = transactionDTO.TripId;
+            }
+
             transaction.Amount = (transaction.MovementType == "E" && transactionDTO.Amount > 0)
                 ? -transactionDTO.Amount
                 : transactionDTO.Amount;
@@ -288,6 +318,7 @@ namespace JazFinanzasApp.API.Business.Services
             try
             {
                 await _sharedExpenseRepository.DeleteByTransactionIdAsync(id);
+                await _tripSuggestionDismissalRepository.DeleteByTransactionIdAsync(id);
                 await _transactionRepository.DeleteAsync(transaction.Id);
                 await _unitOfWork.CommitTransactionAsync();
             }
@@ -431,6 +462,16 @@ namespace JazFinanzasApp.API.Business.Services
                 await _unitOfWork.RollbackTransactionAsync();
                 throw;
             }
+        }
+
+        private async Task ValidateTripAssignmentAsync(int userId, int tripId, TransactionClass transactionClass)
+        {
+            var trip = await _tripRepository.GetByIdAsync(tripId)
+                ?? throw new NotFoundException("Trip not found");
+            if (trip.UserId != userId) throw new UnauthorizedDomainException();
+
+            if (TripMovementRules.ExcludedTransactionClasses.Contains(transactionClass.Description))
+                throw new BusinessRuleException("La clase del movimiento no es asociable a un viaje");
         }
 
         private async Task<decimal> ResolveQuotePriceAsync(Asset asset, decimal quotePrice, DateTime date)

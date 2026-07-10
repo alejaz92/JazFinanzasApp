@@ -39,6 +39,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<CardTransactionDiscount> CardTransactionDiscounts { get; set; }
         public DbSet<CardTransactionDiscountInstallment> CardTransactionDiscountInstallments { get; set; }
         public DbSet<Trip> Trips { get; set; }
+        public DbSet<TripSuggestionDismissal> TripSuggestionDismissals { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -270,6 +271,45 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(t => t.CardTransactionId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Borrar un viaje desasocia los movimientos, no los borra
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.Trip)
+                .WithMany()
+                .HasForeignKey(t => t.TripId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<CardTransaction>()
+                .HasOne(ct => ct.Trip)
+                .WithMany()
+                .HasForeignKey(ct => ct.TripId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Los descartes mueren con el viaje; con los movimientos se limpian desde los services
+            // (NoAction acá para no multiplicar cascade paths en SQL Server)
+            modelBuilder.Entity<TripSuggestionDismissal>()
+                .HasOne(d => d.Trip)
+                .WithMany()
+                .HasForeignKey(d => d.TripId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<TripSuggestionDismissal>()
+                .HasOne(d => d.Transaction)
+                .WithMany()
+                .HasForeignKey(d => d.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<TripSuggestionDismissal>()
+                .HasOne(d => d.CardTransaction)
+                .WithMany()
+                .HasForeignKey(d => d.CardTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<TripSuggestionDismissal>()
+                .HasOne(d => d.User)
+                .WithMany()
+                .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
         }
     }
 }

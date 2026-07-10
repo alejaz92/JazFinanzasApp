@@ -22,6 +22,8 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
         private readonly ICardTransactionDiscountRepository _cardTransactionDiscountRepository;
+        private readonly ITripRepository _tripRepository;
+        private readonly ITripSuggestionDismissalRepository _tripSuggestionDismissalRepository;
 
         public CardTransactionService(
             ICardTransactionRepository cardTransactionRepository,
@@ -37,7 +39,9 @@ namespace JazFinanzasApp.API.Business.Services
             IPortfolioRepository portfolioRepository,
             IUnitOfWork unitOfWork,
             ISharedExpenseRepository sharedExpenseRepository,
-            ICardTransactionDiscountRepository cardTransactionDiscountRepository)
+            ICardTransactionDiscountRepository cardTransactionDiscountRepository,
+            ITripRepository tripRepository,
+            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -53,6 +57,8 @@ namespace JazFinanzasApp.API.Business.Services
             _unitOfWork = unitOfWork;
             _sharedExpenseRepository = sharedExpenseRepository;
             _cardTransactionDiscountRepository = cardTransactionDiscountRepository;
+            _tripRepository = tripRepository;
+            _tripSuggestionDismissalRepository = tripSuggestionDismissalRepository;
         }
 
         public async Task<int> AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
@@ -65,6 +71,13 @@ namespace JazFinanzasApp.API.Business.Services
                 ?? throw new UnauthorizedDomainException();
             var transactionClass = await _transactionClassRepository.GetByIdAsync(dto.TransactionClassId)
                 ?? throw new NotFoundException("Transaction class not found");
+
+            if (dto.TripId != null)
+            {
+                var trip = await _tripRepository.GetByIdAsync(dto.TripId.Value)
+                    ?? throw new NotFoundException("Trip not found");
+                if (trip.UserId != userId) throw new UnauthorizedDomainException();
+            }
 
             dto.FirstInstallment = new DateTime(dto.FirstInstallment.Year, dto.FirstInstallment.Month, 1);
             dto.LastInstallment = new DateTime(dto.LastInstallment.Year, dto.LastInstallment.Month, 1);
@@ -85,7 +98,8 @@ namespace JazFinanzasApp.API.Business.Services
                 LastInstallment = dto.LastInstallment,
                 Repeat = dto.Repeat,
                 UserId = userId,
-                InstallmentAmount = dto.TotalAmount / dto.Installments
+                InstallmentAmount = dto.TotalAmount / dto.Installments,
+                TripId = dto.TripId
             });
 
             return cardTransaction.Id;
@@ -303,6 +317,7 @@ namespace JazFinanzasApp.API.Business.Services
             var cardTransaction = await _cardTransactionRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Card transaction not found");
             if (cardTransaction.UserId != userId) throw new UnauthorizedDomainException();
+            await _tripSuggestionDismissalRepository.DeleteByCardTransactionIdAsync(id);
             await _cardTransactionRepository.DeleteAsync(id);
         }
 

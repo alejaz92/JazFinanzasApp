@@ -54,5 +54,33 @@ namespace JazFinanzasApp.API.Controllers
             await _tripService.DeleteTripAsync(GetUserId(), id);
             return Ok();
         }
+
+        [HttpGet("{id}/suggestions")]
+        public async Task<IActionResult> GetSuggestions(int id)
+        {
+            var result = await _tripService.GetSuggestionsAsync(GetUserId(), id);
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/associations")]
+        public async Task<IActionResult> Associate(int id, TripAssociationsDTO dto)
+        {
+            await _tripService.AssociateMovementsAsync(GetUserId(), id, dto);
+            return Ok();
+        }
+
+        [HttpDelete("{id}/associations")]
+        public async Task<IActionResult> Disassociate(int id, TripAssociationsDTO dto)
+        {
+            await _tripService.DisassociateMovementsAsync(GetUserId(), id, dto);
+            return Ok();
+        }
+
+        [HttpPost("{id}/dismissals")]
+        public async Task<IActionResult> DismissSuggestion(int id, TripMovementRefDTO dto)
+        {
+            await _tripService.DismissSuggestionAsync(GetUserId(), id, dto);
+            return Ok();
+        }
     }
 }

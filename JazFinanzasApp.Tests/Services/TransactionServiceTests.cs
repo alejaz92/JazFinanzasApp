@@ -19,6 +19,8 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
         private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
+        private readonly Mock<ITripRepository> _tripRepoMock;
+        private readonly Mock<ITripSuggestionDismissalRepository> _tripSuggestionDismissalRepoMock;
         private readonly TransactionService _sut;
 
         private const int UserId = 1;
@@ -34,6 +36,8 @@ namespace JazFinanzasApp.Tests.Services
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
             _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
+            _tripRepoMock = new Mock<ITripRepository>();
+            _tripSuggestionDismissalRepoMock = new Mock<ITripSuggestionDismissalRepository>();
 
             _sut = new TransactionService(
                 _transactionRepoMock.Object,
@@ -44,7 +48,9 @@ namespace JazFinanzasApp.Tests.Services
                 _investmentTransactionRepoMock.Object,
                 _portfolioRepoMock.Object,
                 _unitOfWorkMock.Object,
-                _sharedExpenseRepoMock.Object);
+                _sharedExpenseRepoMock.Object,
+                _tripRepoMock.Object,
+                _tripSuggestionDismissalRepoMock.Object);
         }
 
         // ── GetTransactionByIdAsync ───────────────────────────────────────────
@@ -213,6 +219,212 @@ namespace JazFinanzasApp.Tests.Services
             await act.Should().ThrowAsync<NotFoundException>().WithMessage("*portfolio*");
         }
 
+        // ── CreateTransactionAsync (viaje) ────────────────────────────────────
+
+        private void SetupExpenseHappyPath(out TransactionAddDTO dto)
+        {
+            dto = new TransactionAddDTO
+            {
+                movementType = "E",
+                assetId = 1,
+                expenseAccountId = 2,
+                transactionClassId = 3,
+                date = new DateTime(2026, 1, 15),
+                amount = 100m,
+                quotePrice = 1m
+            };
+
+            var defaultPortfolio = new Portfolio { Id = 1, Name = "Default", IsDefault = true, UserId = UserId };
+            var asset = new Asset { Id = 1, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var account = new Account { Id = 2, UserId = UserId, Name = "Cuenta USD" };
+            var transactionClass = new TransactionClass { Id = 3, UserId = UserId, IncExp = "E", Description = "Hoteles" };
+
+            _portfolioRepoMock.Setup(r => r.GetDefaultPortfolio(UserId)).ReturnsAsync(defaultPortfolio);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(asset);
+            _accountRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(account);
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(transactionClass);
+            _transactionRepoMock.Setup(r => r.GetBalance(2, 1, 1)).ReturnsAsync(100000m);
+            _transactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<Transaction>()))
+                .ReturnsAsync((Transaction t) => t);
+        }
+
+        [Fact]
+        public async Task CreateTransactionAsync_ExpenseWithTrip_SetsTripId()
+        {
+            // Arrange
+            SetupExpenseHappyPath(out var dto);
+            dto.tripId = 7;
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = UserId, Name = "Bariloche" });
+
+            // Act
+            await _sut.CreateTransactionAsync(UserId, dto);
+
+            // Assert
+            _transactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.Is<Transaction>(t => t.TripId == 7)), Times.Once);
+        }
+
+        [Fact]
+        public async Task CreateTransactionAsync_IncomeWithTrip_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var dto = new TransactionAddDTO { movementType = "I", assetId = 1, incomeAccountId = 2, transactionClassId = 3, amount = 100m, tripId = 7 };
+
+            // Act
+            var act = () => _sut.CreateTransactionAsync(UserId, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>().WithMessage("*egreso*");
+        }
+
+        [Fact]
+        public async Task CreateTransactionAsync_ExpenseWithTripOfAnotherUser_ThrowsUnauthorized()
+        {
+            // Arrange
+            SetupExpenseHappyPath(out var dto);
+            dto.tripId = 7;
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = 999, Name = "Bariloche" });
+
+            // Act
+            var act = () => _sut.CreateTransactionAsync(UserId, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<UnauthorizedDomainException>();
+        }
+
+        [Fact]
+        public async Task CreateTransactionAsync_ExpenseWithTripAndExcludedClass_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            SetupExpenseHappyPath(out var dto);
+            dto.tripId = 7;
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3))
+                .ReturnsAsync(new TransactionClass { Id = 3, UserId = UserId, IncExp = "E", Description = "Gastos Tarjeta" });
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = UserId, Name = "Bariloche" });
+
+            // Act
+            var act = () => _sut.CreateTransactionAsync(UserId, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        // ── EditTransactionAsync (viaje) ──────────────────────────────────────
+
+        [Fact]
+        public async Task EditTransactionAsync_SetTripOnExpense_AssignsTripId()
+        {
+            // Arrange
+            var transaction = new Transaction
+            {
+                Id = 5,
+                UserId = UserId,
+                MovementType = "E",
+                Amount = -100m,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountId = 2,
+                TransactionClassId = 3,
+                Detail = "Hotel"
+            };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(3))
+                .ReturnsAsync(new TransactionClass { Id = 3, UserId = UserId, IncExp = "E", Description = "Hoteles" });
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = UserId, Name = "Bariloche" });
+
+            var dto = new TransactionEditDTO
+            {
+                Id = 5,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountID = 2,
+                TransactionClassId = 3,
+                Detail = "Hotel",
+                Amount = 100m,
+                TripId = 7
+            };
+
+            // Act
+            await _sut.EditTransactionAsync(UserId, 5, dto);
+
+            // Assert
+            _transactionRepoMock.Verify(r => r.UpdateAsync(It.Is<Transaction>(t => t.TripId == 7)), Times.Once);
+        }
+
+        [Fact]
+        public async Task EditTransactionAsync_ClearTrip_RemovesTripId()
+        {
+            // Arrange
+            var transaction = new Transaction
+            {
+                Id = 5,
+                UserId = UserId,
+                MovementType = "E",
+                Amount = -100m,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountId = 2,
+                TransactionClassId = 3,
+                Detail = "Hotel",
+                TripId = 7
+            };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+
+            var dto = new TransactionEditDTO
+            {
+                Id = 5,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountID = 2,
+                TransactionClassId = 3,
+                Detail = "Hotel",
+                Amount = 100m,
+                TripId = null
+            };
+
+            // Act
+            await _sut.EditTransactionAsync(UserId, 5, dto);
+
+            // Assert
+            _transactionRepoMock.Verify(r => r.UpdateAsync(It.Is<Transaction>(t => t.TripId == null)), Times.Once);
+        }
+
+        [Fact]
+        public async Task EditTransactionAsync_SetTripOnLegacyCardPayment_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var transaction = new Transaction
+            {
+                Id = 5,
+                UserId = UserId,
+                MovementType = "E",
+                Amount = -100m,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountId = 2,
+                TransactionClassId = 3,
+                Detail = "(Tarjeta | 2/12) Vuelo"
+            };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+
+            var dto = new TransactionEditDTO
+            {
+                Id = 5,
+                Date = new DateTime(2026, 1, 15),
+                AssetId = 1,
+                AccountID = 2,
+                TransactionClassId = 3,
+                Detail = "(Tarjeta | 2/12) Vuelo",
+                Amount = 100m,
+                TripId = 7
+            };
+
+            // Act
+            var act = () => _sut.EditTransactionAsync(UserId, 5, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+        }
+
         // ── DeleteTransactionAsync ────────────────────────────────────────────
 
         [Fact]
@@ -228,6 +440,7 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             _transactionRepoMock.Verify(r => r.DeleteAsync(5), Times.Once);
+            _tripSuggestionDismissalRepoMock.Verify(r => r.DeleteByTransactionIdAsync(5), Times.Once);
         }
 
         [Fact]

@@ -52,6 +52,7 @@ builder.Services.AddScoped<IPersonRepository, PersonRepository>();
 builder.Services.AddScoped<ISharedExpenseRepository, SharedExpenseRepository>();
 builder.Services.AddScoped<ICardTransactionDiscountRepository, CardTransactionDiscountRepository>();
 builder.Services.AddScoped<ITripRepository, TripRepository>();
+builder.Services.AddScoped<ITripSuggestionDismissalRepository, TripSuggestionDismissalRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios

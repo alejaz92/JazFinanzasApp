@@ -138,9 +138,29 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return (endDate.Year - startDate.Year) * 12 + endDate.Month - startDate.Month;
         }
 
+        public async Task<IEnumerable<CardTransaction>> GetCardTransactionsByTripIdAsync(int tripId)
+        {
+            return await _context.CardTransactions
+                .Include(ct => ct.Asset)
+                .Include(ct => ct.TransactionClass)
+                .Where(ct => ct.TripId == tripId)
+                .OrderBy(ct => ct.Date)
+                .ToListAsync();
+        }
 
-
-
+        public async Task<IEnumerable<CardTransaction>> GetTripSuggestibleCardTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
+        {
+            var endExclusive = endDate.Date.AddDays(1);
+            return await _context.CardTransactions
+                .Include(ct => ct.Asset)
+                .Include(ct => ct.TransactionClass)
+                .Where(ct => ct.UserId == userId
+                    && ct.TripId == null
+                    && ct.Date >= startDate.Date
+                    && ct.Date < endExclusive)
+                .OrderBy(ct => ct.Date)
+                .ToListAsync();
+        }
     }
 
 }

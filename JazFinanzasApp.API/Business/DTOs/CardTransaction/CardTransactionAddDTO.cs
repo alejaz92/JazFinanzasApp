@@ -12,5 +12,6 @@
         public DateTime FirstInstallment { get; set; }
         public DateTime LastInstallment { get; set; }
         public string Repeat { get; set; }
+        public int? TripId { get; set; }
     }
 }

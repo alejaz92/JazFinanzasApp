@@ -39,6 +39,10 @@ namespace JazFinanzasApp.API.Domain
         public int? CardTransactionId { get; set; }
         public CardTransaction? CardTransaction { get; set; }
 
+        [ForeignKey("TripId")]
+        public int? TripId { get; set; }
+        public Trip? Trip { get; set; }
+
         public string? Detail {  get; set; }
 
         [Required]

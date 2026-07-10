@@ -13,5 +13,7 @@
         public string Detail { get; set; }
 
         public decimal Amount { get; set; }
+
+        public int? TripId { get; set; }
     }
 }

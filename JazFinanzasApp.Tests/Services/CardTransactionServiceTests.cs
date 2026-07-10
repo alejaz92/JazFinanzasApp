@@ -24,6 +24,8 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
         private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
         private readonly Mock<ICardTransactionDiscountRepository> _cardTransactionDiscountRepoMock;
+        private readonly Mock<ITripRepository> _tripRepoMock;
+        private readonly Mock<ITripSuggestionDismissalRepository> _tripSuggestionDismissalRepoMock;
         private readonly CardTransactionService _sut;
 
         private const int UserId = 1;
@@ -44,6 +46,8 @@ namespace JazFinanzasApp.Tests.Services
             _unitOfWorkMock = new Mock<IUnitOfWork>();
             _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
             _cardTransactionDiscountRepoMock = new Mock<ICardTransactionDiscountRepository>();
+            _tripRepoMock = new Mock<ITripRepository>();
+            _tripSuggestionDismissalRepoMock = new Mock<ITripSuggestionDismissalRepository>();
 
             _sut = new CardTransactionService(
                 _cardTransactionRepoMock.Object,
@@ -59,7 +63,9 @@ namespace JazFinanzasApp.Tests.Services
                 _portfolioRepoMock.Object,
                 _unitOfWorkMock.Object,
                 _sharedExpenseRepoMock.Object,
-                _cardTransactionDiscountRepoMock.Object);
+                _cardTransactionDiscountRepoMock.Object,
+                _tripRepoMock.Object,
+                _tripSuggestionDismissalRepoMock.Object);
         }
 
         // ── AddCardTransactionAsync ───────────────────────────────────────────
@@ -105,6 +111,68 @@ namespace JazFinanzasApp.Tests.Services
                 ct.TotalAmount == 6000m &&
                 ct.InstallmentAmount == 2000m &&
                 ct.Installments == 3)), Times.Once);
+        }
+
+        [Fact]
+        public async Task AddCardTransactionAsync_WithTrip_SetsTripId()
+        {
+            // Arrange
+            var dto = new CardTransactionAddDTO
+            {
+                Date = new DateTime(2026, 1, 10),
+                Detail = "Vuelo",
+                CardId = 1,
+                TransactionClassId = 2,
+                AssetId = 3,
+                TotalAmount = 6000m,
+                Installments = 3,
+                FirstInstallment = new DateTime(2026, 2, 15),
+                LastInstallment = new DateTime(2026, 4, 15),
+                Repeat = "NO",
+                TripId = 7
+            };
+
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Card { Id = 1, UserId = UserId, Name = "Visa" });
+            _assetRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(new Asset { Id = 3, Name = "Peso Argentino", Symbol = "ARS" });
+            _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 3)).ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 3 });
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new TransactionClass { Id = 2, UserId = UserId, Description = "Vuelos" });
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = UserId, Name = "Bariloche" });
+            _cardTransactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<CardTransaction>()))
+                .ReturnsAsync((CardTransaction ct) => ct);
+
+            // Act
+            await _sut.AddCardTransactionAsync(UserId, dto);
+
+            // Assert
+            _cardTransactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.Is<CardTransaction>(ct => ct.TripId == 7)), Times.Once);
+        }
+
+        [Fact]
+        public async Task AddCardTransactionAsync_WithTripOfAnotherUser_ThrowsUnauthorized()
+        {
+            // Arrange
+            var dto = new CardTransactionAddDTO
+            {
+                CardId = 1,
+                TransactionClassId = 2,
+                AssetId = 3,
+                TotalAmount = 6000m,
+                Installments = 3,
+                Repeat = "NO",
+                TripId = 7
+            };
+
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Card { Id = 1, UserId = UserId, Name = "Visa" });
+            _assetRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(new Asset { Id = 3, Name = "Peso Argentino", Symbol = "ARS" });
+            _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 3)).ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 3 });
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new TransactionClass { Id = 2, UserId = UserId, Description = "Vuelos" });
+            _tripRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(new Trip { Id = 7, UserId = 999, Name = "Bariloche" });
+
+            // Act
+            var act = () => _sut.AddCardTransactionAsync(UserId, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<UnauthorizedDomainException>();
         }
 
         [Fact]
@@ -154,6 +222,7 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             _cardTransactionRepoMock.Verify(r => r.DeleteAsync(7), Times.Once);
+            _tripSuggestionDismissalRepoMock.Verify(r => r.DeleteByCardTransactionIdAsync(7), Times.Once);
         }
 
         [Fact]

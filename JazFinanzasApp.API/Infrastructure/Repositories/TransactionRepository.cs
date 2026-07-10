@@ -1487,5 +1487,34 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 return t.QuotePrice.Value * factor;
             });
         }
+
+        public async Task<IEnumerable<Transaction>> GetTransactionsByTripIdAsync(int tripId)
+        {
+            return await _context.Transactions
+                .Include(t => t.Asset)
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TripId == tripId)
+                .OrderBy(t => t.Date)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
+        {
+            var endExclusive = endDate.Date.AddDays(1);
+            return await _context.Transactions
+                .Include(t => t.Asset)
+                .Include(t => t.TransactionClass)
+                .Where(t => t.UserId == userId
+                    && t.TripId == null
+                    && t.MovementType == "E"
+                    && t.CardTransactionId == null
+                    && t.TransactionClassId != null
+                    && !TripMovementRules.ExcludedTransactionClasses.Contains(t.TransactionClass.Description)
+                    && (t.Detail == null || !t.Detail.StartsWith(TripMovementRules.LegacyCardPaymentDetailPrefix))
+                    && t.Date >= startDate.Date
+                    && t.Date < endExclusive)
+                .OrderBy(t => t.Date)
+                .ToListAsync();
+        }
     }
 }

@@ -41,6 +41,10 @@ namespace JazFinanzasApp.API.Domain
 
         public decimal InstallmentAmount { get; set; }
 
+        [ForeignKey("TripId")]
+        public int? TripId { get; set; }
+        public Trip? Trip { get; set; }
+
         [Required]
         [ForeignKey("UserId")]
         public int UserId { get; set; }

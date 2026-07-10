@@ -12,5 +12,6 @@
         public string detail { get; set; }
         public decimal amount { get; set; }
         public decimal quotePrice { get; set; }
+        public int? tripId { get; set; }
     }
 }
