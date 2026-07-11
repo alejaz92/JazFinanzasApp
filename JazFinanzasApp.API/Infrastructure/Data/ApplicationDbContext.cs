@@ -40,6 +40,12 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<CardTransactionDiscountInstallment> CardTransactionDiscountInstallments { get; set; }
         public DbSet<Trip> Trips { get; set; }
         public DbSet<TripSuggestionDismissal> TripSuggestionDismissals { get; set; }
+        public DbSet<SharedEvent> SharedEvents { get; set; }
+        public DbSet<SharedEventParticipant> SharedEventParticipants { get; set; }
+        public DbSet<SharedEventMovement> SharedEventMovements { get; set; }
+        public DbSet<SharedEventMovementShare> SharedEventMovementShares { get; set; }
+        public DbSet<SharedEventPayment> SharedEventPayments { get; set; }
+        public DbSet<SharedEventPaymentAllocation> SharedEventPaymentAllocations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -309,6 +315,174 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(d => d.User)
                 .WithMany()
                 .HasForeignKey(d => d.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Eventos compartidos
+
+            modelBuilder.Entity<SharedEvent>()
+                .HasOne(e => e.User)
+                .WithMany()
+                .HasForeignKey(e => e.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventParticipant>()
+                .HasOne(p => p.SharedEvent)
+                .WithMany(e => e.Participants)
+                .HasForeignKey(p => p.SharedEventId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventParticipant>()
+                .HasOne(p => p.Person)
+                .WithMany()
+                .HasForeignKey(p => p.PersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventParticipant>()
+                .HasIndex(p => new { p.SharedEventId, p.PersonId })
+                .IsUnique();
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.SharedEvent)
+                .WithMany(e => e.Movements)
+                .HasForeignKey(m => m.SharedEventId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.TransactionClass)
+                .WithMany()
+                .HasForeignKey(m => m.TransactionClassId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.Asset)
+                .WithMany()
+                .HasForeignKey(m => m.AssetId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.PayerPerson)
+                .WithMany()
+                .HasForeignKey(m => m.PayerPersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.Transaction)
+                .WithMany()
+                .HasForeignKey(m => m.TransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.CardTransaction)
+                .WithMany()
+                .HasForeignKey(m => m.CardTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.SharedExpense)
+                .WithMany()
+                .HasForeignKey(m => m.SharedExpenseId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovement>()
+                .HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovementShare>()
+                .HasOne(s => s.SharedEventMovement)
+                .WithMany(m => m.Shares)
+                .HasForeignKey(s => s.SharedEventMovementId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovementShare>()
+                .HasOne(s => s.Person)
+                .WithMany()
+                .HasForeignKey(s => s.PersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventMovementShare>()
+                .HasOne(s => s.SharedExpenseSplit)
+                .WithMany()
+                .HasForeignKey(s => s.SharedExpenseSplitId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.SharedEvent)
+                .WithMany(e => e.Payments)
+                .HasForeignKey(p => p.SharedEventId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.Asset)
+                .WithMany()
+                .HasForeignKey(p => p.AssetId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.FromPerson)
+                .WithMany()
+                .HasForeignKey(p => p.FromPersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.ToPerson)
+                .WithMany()
+                .HasForeignKey(p => p.ToPersonId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.Account)
+                .WithMany()
+                .HasForeignKey(p => p.AccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPayment>()
+                .HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.SharedEventPayment)
+                .WithMany(p => p.Allocations)
+                .HasForeignKey(a => a.SharedEventPaymentId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.SharedExpenseSplit)
+                .WithMany()
+                .HasForeignKey(a => a.SharedExpenseSplitId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.SharedEventMovementShare)
+                .WithMany()
+                .HasForeignKey(a => a.SharedEventMovementShareId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.CreatedExpenseTransaction)
+                .WithMany()
+                .HasForeignKey(a => a.CreatedExpenseTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.CreatedIncomeTransaction)
+                .WithMany()
+                .HasForeignKey(a => a.CreatedIncomeTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.CreatedExchangeOutTransaction)
+                .WithMany()
+                .HasForeignKey(a => a.CreatedExchangeOutTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.CreatedExchangeInTransaction)
+                .WithMany()
+                .HasForeignKey(a => a.CreatedExchangeInTransactionId)
                 .OnDelete(DeleteBehavior.NoAction);
         }
     }
