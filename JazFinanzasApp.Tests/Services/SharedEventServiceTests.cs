@@ -373,6 +373,75 @@ namespace JazFinanzasApp.Tests.Services
             result.Balances.First(b => b.PersonId == 9).NetBalance.Should().Be(-10000m);
         }
 
+        // ── Resumen consolidado ───────────────────────────────────────────────
+
+        [Fact]
+        public async Task GetActiveSummaryAsync_ReturnsOnlyUsersOwnBalancePerOpenEvent()
+        {
+            var asset = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" };
+            var transactionClass = new TransactionClass { Id = 5, UserId = UserId, Description = "Comida" };
+
+            var movement = new SharedEventMovement
+            {
+                Id = 1, AssetId = 1, Asset = asset, TransactionClassId = 5, TransactionClass = transactionClass,
+                TotalAmount = 15000m, PayerPersonId = null,
+                Shares = new List<SharedEventMovementShare>
+                {
+                    new() { PersonId = null, Amount = 10000m },
+                    new() { PersonId = 8, Amount = 5000m, Person = Juan }
+                }
+            };
+
+            var sharedEvent = BuildEvent(Juan);
+            sharedEvent.Movements = new List<SharedEventMovement> { movement };
+
+            _sharedEventRepoMock.Setup(r => r.GetOpenEventsDetailAsync(UserId))
+                .ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var result = (await _sut.GetActiveSummaryAsync(UserId)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].EventId.Should().Be(EventId);
+            result[0].Balances.Should().ContainSingle(b => b.AssetId == 1 && b.MyBalance == 5000m); // 15000 - 10000
+        }
+
+        [Fact]
+        public async Task GetConsolidatedDebtsAsync_CombinesEventBalanceWithLooseV1Debt()
+        {
+            var asset = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" };
+            var transactionClass = new TransactionClass { Id = 5, UserId = UserId, Description = "Comida" };
+
+            // evento: Juan debe 5000 al usuario (no puso nada, consumió 5000)
+            var movement = new SharedEventMovement
+            {
+                Id = 1, AssetId = 1, Asset = asset, TransactionClassId = 5, TransactionClass = transactionClass,
+                TotalAmount = 5000m, PayerPersonId = null,
+                Shares = new List<SharedEventMovementShare> { new() { PersonId = 8, Amount = 5000m, Person = Juan } }
+            };
+            var sharedEvent = BuildEvent(Juan);
+            sharedEvent.Movements = new List<SharedEventMovement> { movement };
+
+            _sharedEventRepoMock.Setup(r => r.GetOpenEventsDetailAsync(UserId))
+                .ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            // suelto V1: Juan debe 2000 adicionales (gasto sin evento)
+            var looseSplit = new SharedExpenseSplit
+            {
+                Id = 99, PersonId = 8, Person = Juan, Amount = 2000m, AmountReimbursed = 0,
+                SharedExpense = new SharedExpense { Transaction = new Transaction { AssetId = 1 } }
+            };
+            _sharedExpenseRepoMock.Setup(r => r.GetPendingSplitsByUserIdAsync(UserId))
+                .ReturnsAsync(new List<SharedExpenseSplit> { looseSplit });
+
+            var result = (await _sut.GetConsolidatedDebtsAsync(UserId)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].PersonId.Should().Be(8);
+            result[0].AssetId.Should().Be(1);
+            result[0].PendingInFavor.Should().Be(7000m); // 2000 suelto + 5000 del evento
+            result[0].PendingAgainst.Should().Be(0m);
+        }
+
         // ── Guardas de edición/borrado ────────────────────────────────────────
 
         [Fact]

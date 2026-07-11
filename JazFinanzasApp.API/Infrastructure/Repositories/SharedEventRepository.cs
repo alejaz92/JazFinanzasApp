@@ -29,7 +29,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         public async Task<SharedEvent?> GetDetailByIdAsync(int id)
         {
-            return await _context.SharedEvents
+            return await WithFullDetail(_context.SharedEvents)
+                .FirstOrDefaultAsync(e => e.Id == id);
+        }
+
+        public async Task<List<SharedEvent>> GetOpenEventsDetailAsync(int userId)
+        {
+            return await WithFullDetail(_context.SharedEvents)
+                .Where(e => e.UserId == userId && !e.IsClosed)
+                .ToListAsync();
+        }
+
+        private static IQueryable<SharedEvent> WithFullDetail(IQueryable<SharedEvent> query)
+        {
+            return query
                 .Include(e => e.Participants)
                     .ThenInclude(p => p.Person)
                 .Include(e => e.Movements)
@@ -48,8 +61,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(e => e.Payments)
                     .ThenInclude(p => p.ToPerson)
                 .Include(e => e.Payments)
-                    .ThenInclude(p => p.Allocations)
-                .FirstOrDefaultAsync(e => e.Id == id);
+                    .ThenInclude(p => p.Allocations);
         }
 
         public async Task<SharedEventParticipant?> GetParticipantAsync(int sharedEventId, int personId)

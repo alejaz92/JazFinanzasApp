@@ -321,6 +321,100 @@ namespace JazFinanzasApp.API.Business.Services
             }
         }
 
+        public async Task<IEnumerable<SharedEventActiveSummaryDTO>> GetActiveSummaryAsync(int userId)
+        {
+            var events = await _sharedEventRepository.GetOpenEventsDetailAsync(userId);
+
+            return events.Select(e =>
+            {
+                var movements = e.Movements?.ToList() ?? new List<SharedEventMovement>();
+                var balances = ComputeBalances(e, movements);
+
+                return new SharedEventActiveSummaryDTO
+                {
+                    EventId = e.Id,
+                    Name = e.Name,
+                    Balances = balances
+                        .Where(b => b.PersonId == null)
+                        .Select(b => new SharedEventActiveSummaryBalanceDTO
+                        {
+                            AssetId = b.AssetId,
+                            AssetName = b.AssetName,
+                            AssetSymbol = b.AssetSymbol,
+                            MyBalance = b.NetBalance
+                        }).ToList()
+                };
+            }).ToList();
+        }
+
+        public async Task<IEnumerable<SharedEventConsolidatedDebtDTO>> GetConsolidatedDebtsAsync(int userId)
+        {
+            var events = await _sharedEventRepository.GetOpenEventsDetailAsync(userId);
+
+            var eventNet = new Dictionary<(int PersonId, int AssetId), decimal>();
+            var assetInfo = new Dictionary<int, (string Name, string Symbol)>();
+            var personInfo = new Dictionary<int, string>();
+
+            foreach (var e in events)
+            {
+                var movements = e.Movements?.ToList() ?? new List<SharedEventMovement>();
+                var balances = ComputeBalances(e, movements);
+
+                foreach (var b in balances.Where(b => b.PersonId != null))
+                {
+                    var key = (b.PersonId!.Value, b.AssetId);
+                    eventNet[key] = eventNet.GetValueOrDefault(key) + b.NetBalance;
+                    assetInfo[b.AssetId] = (b.AssetName, b.AssetSymbol);
+                    personInfo[b.PersonId.Value] = b.PersonName ?? string.Empty;
+                }
+            }
+
+            var pendingSplits = await _sharedExpenseRepository.GetPendingSplitsByUserIdAsync(userId);
+            var loosePending = new Dictionary<(int PersonId, int AssetId), decimal>();
+
+            foreach (var split in pendingSplits)
+            {
+                var assetId = split.SharedExpense.Transaction?.AssetId ?? split.SharedExpense.CardTransaction?.AssetId;
+                if (assetId == null) continue;
+
+                var key = (split.PersonId, assetId.Value);
+                loosePending[key] = loosePending.GetValueOrDefault(key) + (split.Amount - split.AmountReimbursed);
+
+                if (!personInfo.ContainsKey(split.PersonId))
+                    personInfo[split.PersonId] = split.Person?.Alias ?? split.Person?.Name ?? string.Empty;
+
+                if (!assetInfo.ContainsKey(assetId.Value))
+                {
+                    var asset = await _assetRepository.GetByIdAsync(assetId.Value);
+                    assetInfo[assetId.Value] = (asset?.Name ?? string.Empty, asset?.Symbol ?? string.Empty);
+                }
+            }
+
+            var allKeys = eventNet.Keys.Concat(loosePending.Keys).Distinct().ToList();
+            var result = new List<SharedEventConsolidatedDebtDTO>();
+
+            foreach (var key in allKeys)
+            {
+                var loose = loosePending.GetValueOrDefault(key);
+                var eventBalance = eventNet.GetValueOrDefault(key);
+                var combined = Math.Round(loose - eventBalance, 2);
+                if (combined == 0) continue;
+
+                result.Add(new SharedEventConsolidatedDebtDTO
+                {
+                    PersonId = key.PersonId,
+                    PersonName = personInfo.GetValueOrDefault(key.PersonId, string.Empty),
+                    AssetId = key.AssetId,
+                    AssetName = assetInfo[key.AssetId].Name,
+                    AssetSymbol = assetInfo[key.AssetId].Symbol,
+                    PendingInFavor = combined > 0 ? combined : 0,
+                    PendingAgainst = combined < 0 ? -combined : 0
+                });
+            }
+
+            return result.OrderBy(r => r.PersonName).ThenBy(r => r.AssetId).ToList();
+        }
+
         // ── Derivación contable ──────────────────────────────────────────────
 
         private sealed record DerivedRecords(int? TransactionId, int? CardTransactionId, int? SharedExpenseId, Dictionary<int, int> SplitIdByPerson);

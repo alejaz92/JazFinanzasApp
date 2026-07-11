@@ -12,5 +12,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<bool> HasMovementsOrPaymentsAsync(int sharedEventId);
         Task<bool> ParticipantHasActivityAsync(int sharedEventId, int personId);
         Task DeleteEventWithParticipantsAsync(int sharedEventId);
+        Task<List<SharedEvent>> GetOpenEventsDetailAsync(int userId);
     }
 }

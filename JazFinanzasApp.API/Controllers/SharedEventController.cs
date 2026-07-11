@@ -29,6 +29,20 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("active-summary")]
+        public async Task<IActionResult> GetActiveSummary()
+        {
+            var result = await _sharedEventService.GetActiveSummaryAsync(GetUserId());
+            return Ok(result);
+        }
+
+        [HttpGet("consolidated-debts")]
+        public async Task<IActionResult> GetConsolidatedDebts()
+        {
+            var result = await _sharedEventService.GetConsolidatedDebtsAsync(GetUserId());
+            return Ok(result);
+        }
+
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {

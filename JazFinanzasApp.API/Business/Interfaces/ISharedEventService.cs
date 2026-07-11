@@ -16,5 +16,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<SharedEventMovementDTO> CreateMovementAsync(int userId, int sharedEventId, SharedEventMovementAddDTO dto);
         Task<SharedEventMovementDTO> UpdateMovementAsync(int userId, int sharedEventId, int movementId, SharedEventMovementAddDTO dto);
         Task DeleteMovementAsync(int userId, int sharedEventId, int movementId);
+        Task<IEnumerable<SharedEventActiveSummaryDTO>> GetActiveSummaryAsync(int userId);
+        Task<IEnumerable<SharedEventConsolidatedDebtDTO>> GetConsolidatedDebtsAsync(int userId);
     }
 }

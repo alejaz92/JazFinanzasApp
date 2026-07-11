@@ -59,7 +59,7 @@ namespace JazFinanzasApp.Tests.Services
             _portfolioRepoMock.Verify(r => r.AddAsync(It.Is<Portfolio>(p =>
                 p.UserId == 42 && p.IsDefault && p.Name == "Default")), Times.Once);
 
-            _transactionClassRepoMock.Verify(r => r.AddAsync(It.IsAny<TransactionClass>()), Times.Exactly(5));
+            _transactionClassRepoMock.Verify(r => r.AddAsync(It.IsAny<TransactionClass>()), Times.Exactly(6));
         }
 
         [Fact]
