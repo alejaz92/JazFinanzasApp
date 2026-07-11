@@ -456,6 +456,12 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .OnDelete(DeleteBehavior.NoAction);
 
             modelBuilder.Entity<SharedEventPaymentAllocation>()
+                .HasOne(a => a.TouchedTransaction)
+                .WithMany()
+                .HasForeignKey(a => a.TouchedTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<SharedEventPaymentAllocation>()
                 .HasOne(a => a.SharedEventMovementShare)
                 .WithMany()
                 .HasForeignKey(a => a.SharedEventMovementShareId)

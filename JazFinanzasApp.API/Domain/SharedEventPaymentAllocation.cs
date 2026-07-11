@@ -24,6 +24,12 @@ namespace JazFinanzasApp.API.Domain
         [Column(TypeName = "decimal(18,2)")]
         public decimal Amount { get; set; }
 
+        // transacción preexistente reducida directamente (egreso de cuenta, o cuota de tarjeta ya pagada);
+        // necesaria para poder revertir sin ambigüedad (a diferencia de las demás FK de esta tabla, no la crea el pago)
+        [ForeignKey("TouchedTransactionId")]
+        public int? TouchedTransactionId { get; set; }
+        public Transaction? TouchedTransaction { get; set; }
+
         // egreso categorizado creado (deuda mía)
         [ForeignKey("CreatedExpenseTransactionId")]
         public int? CreatedExpenseTransactionId { get; set; }

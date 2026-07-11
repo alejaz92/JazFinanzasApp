@@ -26,6 +26,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+        private readonly Mock<ISharedEventPaymentRepository> _sharedEventPaymentRepoMock;
         private readonly SharedEventService _sut;
 
         private const int UserId = 1;
@@ -47,6 +48,7 @@ namespace JazFinanzasApp.Tests.Services
             _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
+            _sharedEventPaymentRepoMock = new Mock<ISharedEventPaymentRepository>();
 
             _sut = new SharedEventService(
                 _sharedEventRepoMock.Object,
@@ -62,7 +64,8 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionServiceMock.Object,
                 _sharedExpenseRepoMock.Object,
                 _portfolioRepoMock.Object,
-                _unitOfWorkMock.Object);
+                _unitOfWorkMock.Object,
+                _sharedEventPaymentRepoMock.Object);
         }
 
         private static SharedEvent BuildEvent(params Person[] people)

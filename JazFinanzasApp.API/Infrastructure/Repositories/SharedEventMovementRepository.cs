@@ -69,5 +69,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             return await _context.SharedEventMovements.AnyAsync(m => m.CardTransactionId == cardTransactionId);
         }
+
+        public async Task<SharedEventMovementShare?> GetShareByIdAsync(int id)
+        {
+            return await _context.SharedEventMovementShares.FindAsync(id);
+        }
+
+        public async Task UpdateShareAsync(SharedEventMovementShare share)
+        {
+            _context.SharedEventMovementShares.Update(share);
+            await _context.SaveChangesAsync();
+        }
     }
 }

@@ -23,6 +23,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
+        private readonly ISharedEventPaymentRepository _sharedEventPaymentRepository;
 
         public SharedEventService(
             ISharedEventRepository sharedEventRepository,
@@ -38,7 +39,8 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionService cardTransactionService,
             ISharedExpenseRepository sharedExpenseRepository,
             IPortfolioRepository portfolioRepository,
-            IUnitOfWork unitOfWork)
+            IUnitOfWork unitOfWork,
+            ISharedEventPaymentRepository sharedEventPaymentRepository)
         {
             _sharedEventRepository = sharedEventRepository;
             _sharedEventMovementRepository = sharedEventMovementRepository;
@@ -54,6 +56,7 @@ namespace JazFinanzasApp.API.Business.Services
             _sharedExpenseRepository = sharedExpenseRepository;
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
+            _sharedEventPaymentRepository = sharedEventPaymentRepository;
         }
 
         public async Task<IEnumerable<SharedEventListDTO>> GetAllForUserAsync(int userId, bool includeClosed)
@@ -130,15 +133,29 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task CloseAsync(int userId, int id)
         {
-            var sharedEvent = await GetOwnedEventAsync(userId, id);
+            var sharedEvent = await GetOwnedDetailAsync(userId, id);
             if (sharedEvent.IsClosed)
                 throw new BusinessRuleException("El evento ya está cerrado");
 
-            // Fase 3: los balances D1 ya se pueden calcular, pero la validación completa de cierre
-            // (saldos en cero en todas las monedas, sin ítems cruzados pendientes) se completa en la Fase 4,
-            // cuando existan los pagos. Por ahora, cerrar con movimientos cargados no está soportado.
-            if (await _sharedEventRepository.HasMovementsOrPaymentsAsync(id))
-                throw new BusinessRuleException("El cierre con movimientos o pagos pendientes se habilita en una fase posterior");
+            var movements = sharedEvent.Movements?.ToList() ?? new List<SharedEventMovement>();
+            var balances = ComputeBalances(sharedEvent, movements);
+            if (balances.Any(b => b.NetBalance != 0))
+                throw new BusinessRuleException("No se puede cerrar el evento: hay saldos pendientes en el evento. Registrar los pagos faltantes primero.");
+
+            var assetIds = movements.Select(m => m.AssetId).Distinct().ToList();
+            foreach (var assetId in assetIds)
+            {
+                var creditMovements = await _sharedEventPaymentRepository.GetMovementsWithPendingCreditsAsync(id, assetId);
+                var hasCredits = creditMovements.Any(m => m.SharedExpense!.Splits.Any(s => s.Amount - s.AmountReimbursed > 0));
+
+                var debtMovements = await _sharedEventPaymentRepository.GetMovementsWithPendingDebtsAsync(id, assetId);
+                var hasDebts = debtMovements.Any(m => m.Shares.Any(s => s.PersonId == null && s.Amount - s.AmountSettled > 0));
+
+                if (hasCredits && hasDebts)
+                    throw new BusinessRuleException("Hay ítems cruzados pendientes (a favor y en contra) en el evento; registrar una compensación interna antes de cerrar");
+                if (hasCredits || hasDebts)
+                    throw new BusinessRuleException("Hay ítems pendientes en el evento; registrar el pago correspondiente antes de cerrar");
+            }
 
             sharedEvent.IsClosed = true;
             sharedEvent.UpdatedAt = DateTime.UtcNow;
@@ -568,7 +585,38 @@ namespace JazFinanzasApp.API.Business.Services
                     }).ToList() ?? new(),
                 Movements = movements.Select(MapMovementToDTO).ToList(),
                 Balances = ComputeBalances(e, movements),
-                CategoryTotals = ComputeCategoryTotals(movements)
+                CategoryTotals = ComputeCategoryTotals(movements),
+                Payments = (e.Payments ?? new List<SharedEventPayment>())
+                    .OrderBy(p => p.Date).ThenBy(p => p.Id)
+                    .Select(MapPaymentToDTO)
+                    .ToList()
+            };
+        }
+
+        private static SharedEventPaymentDTO MapPaymentToDTO(SharedEventPayment p)
+        {
+            return new SharedEventPaymentDTO
+            {
+                Id = p.Id,
+                Date = p.Date,
+                AssetId = p.AssetId,
+                AssetName = p.Asset?.Name ?? string.Empty,
+                AssetSymbol = p.Asset?.Symbol ?? string.Empty,
+                Amount = p.Amount,
+                FromPersonId = p.FromPersonId,
+                FromPersonName = p.FromPerson?.Alias ?? p.FromPerson?.Name,
+                ToPersonId = p.ToPersonId,
+                ToPersonName = p.ToPerson?.Alias ?? p.ToPerson?.Name,
+                AccountId = p.AccountId,
+                IsInternalCompensation = p.IsInternalCompensation,
+                Notes = p.Notes,
+                Allocations = (p.Allocations ?? new List<SharedEventPaymentAllocation>()).Select(a => new SharedEventPaymentAllocationDTO
+                {
+                    Id = a.Id,
+                    SplitId = a.SharedExpenseSplitId,
+                    ShareId = a.SharedEventMovementShareId,
+                    Amount = a.Amount
+                }).ToList()
             };
         }
 

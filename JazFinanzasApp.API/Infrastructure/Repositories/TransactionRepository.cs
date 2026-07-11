@@ -1540,5 +1540,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Take(50)
                 .ToListAsync();
         }
+
+        public async Task<IEnumerable<Transaction>> GetByCardTransactionIdAsync(int cardTransactionId)
+        {
+            return await _context.Transactions
+                .Where(t => t.CardTransactionId == cardTransactionId)
+                .OrderBy(t => t.Date)
+                .ThenBy(t => t.Id)
+                .ToListAsync();
+        }
     }
 }

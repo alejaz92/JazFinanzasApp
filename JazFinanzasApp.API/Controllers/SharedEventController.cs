@@ -12,10 +12,12 @@ namespace JazFinanzasApp.API.Controllers
     public class SharedEventController : ControllerBase
     {
         private readonly ISharedEventService _sharedEventService;
+        private readonly ISharedEventPaymentService _sharedEventPaymentService;
 
-        public SharedEventController(ISharedEventService sharedEventService)
+        public SharedEventController(ISharedEventService sharedEventService, ISharedEventPaymentService sharedEventPaymentService)
         {
             _sharedEventService = sharedEventService;
+            _sharedEventPaymentService = sharedEventPaymentService;
         }
 
         private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -101,6 +103,27 @@ namespace JazFinanzasApp.API.Controllers
         public async Task<IActionResult> DeleteMovement(int id, int movementId)
         {
             await _sharedEventService.DeleteMovementAsync(GetUserId(), id, movementId);
+            return Ok();
+        }
+
+        [HttpPost("{id}/payments/preview")]
+        public async Task<IActionResult> PreviewPayment(int id, SharedEventPaymentAddDTO dto)
+        {
+            var result = await _sharedEventPaymentService.PreviewPaymentAsync(GetUserId(), id, dto);
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/payments")]
+        public async Task<IActionResult> CreatePayment(int id, SharedEventPaymentAddDTO dto)
+        {
+            var created = await _sharedEventPaymentService.CreatePaymentAsync(GetUserId(), id, dto);
+            return Ok(created);
+        }
+
+        [HttpDelete("{id}/payments/{paymentId}")]
+        public async Task<IActionResult> DeletePayment(int id, int paymentId)
+        {
+            await _sharedEventPaymentService.DeletePaymentAsync(GetUserId(), id, paymentId);
             return Ok();
         }
     }

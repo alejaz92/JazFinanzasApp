@@ -9,5 +9,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task RemoveSharesAsync(IEnumerable<SharedEventMovementShare> shares);
         Task<bool> IsTransactionReferencedAsync(int transactionId);
         Task<bool> IsCardTransactionReferencedAsync(int cardTransactionId);
+        Task<SharedEventMovementShare?> GetShareByIdAsync(int id);
+        Task UpdateShareAsync(SharedEventMovementShare share);
     }
 }

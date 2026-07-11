@@ -42,6 +42,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(e => e.Movements)
                     .ThenInclude(m => m.PayerPerson)
                 .Include(e => e.Payments)
+                    .ThenInclude(p => p.Asset)
+                .Include(e => e.Payments)
+                    .ThenInclude(p => p.FromPerson)
+                .Include(e => e.Payments)
+                    .ThenInclude(p => p.ToPerson)
+                .Include(e => e.Payments)
+                    .ThenInclude(p => p.Allocations)
                 .FirstOrDefaultAsync(e => e.Id == id);
         }
 

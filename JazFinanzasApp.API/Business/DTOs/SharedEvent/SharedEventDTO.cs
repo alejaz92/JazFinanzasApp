@@ -10,5 +10,6 @@ namespace JazFinanzasApp.API.Business.DTO.SharedEvent
         public List<SharedEventMovementDTO> Movements { get; set; } = new();
         public List<SharedEventBalanceDTO> Balances { get; set; } = new();
         public List<SharedEventCategoryTotalDTO> CategoryTotals { get; set; } = new();
+        public List<SharedEventPaymentDTO> Payments { get; set; } = new();
     }
 }
