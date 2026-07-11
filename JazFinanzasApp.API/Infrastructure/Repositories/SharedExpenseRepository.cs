@@ -70,8 +70,28 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     .ThenInclude(se => se.Transaction)
                 .Include(s => s.SharedExpense)
                     .ThenInclude(se => se.CardTransaction)
-                .Where(s => s.SharedExpense.UserId == userId)
+                .Where(s => s.SharedExpense.UserId == userId
+                    && !_context.SharedEventMovements.Any(m => m.SharedExpenseId == s.SharedExpenseId))
                 .ToListAsync();
+        }
+
+        public async Task<bool> IsLinkedToSharedEventAsync(int sharedExpenseId)
+        {
+            return await _context.SharedEventMovements.AnyAsync(m => m.SharedExpenseId == sharedExpenseId);
+        }
+
+        public async Task DeleteByIdWithSplitsAsync(int id)
+        {
+            var sharedExpense = await _context.SharedExpenses
+                .Include(se => se.Splits)
+                .FirstOrDefaultAsync(se => se.Id == id);
+
+            if (sharedExpense == null)
+                return;
+
+            _context.SharedExpenseSplits.RemoveRange(sharedExpense.Splits);
+            _context.SharedExpenses.Remove(sharedExpense);
+            await _context.SaveChangesAsync();
         }
 
         public async Task UpdateSplitAsync(SharedExpenseSplit split)

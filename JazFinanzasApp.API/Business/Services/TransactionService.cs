@@ -20,6 +20,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
         private readonly ITripRepository _tripRepository;
         private readonly ITripSuggestionDismissalRepository _tripSuggestionDismissalRepository;
+        private readonly ISharedEventMovementRepository _sharedEventMovementRepository;
 
         public TransactionService(
             ITransactionRepository transactionRepository,
@@ -32,7 +33,8 @@ namespace JazFinanzasApp.API.Business.Services
             IUnitOfWork unitOfWork,
             ISharedExpenseRepository sharedExpenseRepository,
             ITripRepository tripRepository,
-            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository)
+            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository,
+            ISharedEventMovementRepository sharedEventMovementRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -45,6 +47,7 @@ namespace JazFinanzasApp.API.Business.Services
             _sharedExpenseRepository = sharedExpenseRepository;
             _tripRepository = tripRepository;
             _tripSuggestionDismissalRepository = tripSuggestionDismissalRepository;
+            _sharedEventMovementRepository = sharedEventMovementRepository;
         }
 
         public async Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize)
@@ -260,6 +263,9 @@ namespace JazFinanzasApp.API.Business.Services
                 ?? throw new NotFoundException("Transaction not found");
             if (transaction.UserId != userId) throw new UnauthorizedDomainException();
 
+            if (await _sharedEventMovementRepository.IsTransactionReferencedAsync(id))
+                throw new BusinessRuleException("Esta transacción pertenece a un evento compartido; se edita desde el evento");
+
             if (transaction.TransactionClassId != transactionDTO.TransactionClassId)
             {
                 var transactionClass = await _transactionClassRepository.GetByIdAsync(transactionDTO.TransactionClassId)
@@ -317,6 +323,9 @@ namespace JazFinanzasApp.API.Business.Services
             var transaction = await _transactionRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Transaction not found");
             if (transaction.UserId != userId) throw new UnauthorizedDomainException();
+
+            if (await _sharedEventMovementRepository.IsTransactionReferencedAsync(id))
+                throw new BusinessRuleException("Esta transacción pertenece a un evento compartido; se elimina desde el evento");
 
             await _unitOfWork.BeginTransactionAsync();
             try

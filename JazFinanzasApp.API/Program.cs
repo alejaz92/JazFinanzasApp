@@ -54,6 +54,7 @@ builder.Services.AddScoped<ICardTransactionDiscountRepository, CardTransactionDi
 builder.Services.AddScoped<ITripRepository, TripRepository>();
 builder.Services.AddScoped<ITripSuggestionDismissalRepository, TripSuggestionDismissalRepository>();
 builder.Services.AddScoped<ISharedEventRepository, SharedEventRepository>();
+builder.Services.AddScoped<ISharedEventMovementRepository, SharedEventMovementRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios

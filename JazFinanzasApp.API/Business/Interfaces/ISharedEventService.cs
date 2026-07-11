@@ -13,5 +13,8 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task CloseAsync(int userId, int id);
         Task ReopenAsync(int userId, int id);
         Task DeleteAsync(int userId, int id);
+        Task<SharedEventMovementDTO> CreateMovementAsync(int userId, int sharedEventId, SharedEventMovementAddDTO dto);
+        Task<SharedEventMovementDTO> UpdateMovementAsync(int userId, int sharedEventId, int movementId, SharedEventMovementAddDTO dto);
+        Task DeleteMovementAsync(int userId, int sharedEventId, int movementId);
     }
 }

@@ -32,6 +32,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.SharedEvents
                 .Include(e => e.Participants)
                     .ThenInclude(p => p.Person)
+                .Include(e => e.Movements)
+                    .ThenInclude(m => m.Shares)
+                        .ThenInclude(s => s.Person)
+                .Include(e => e.Movements)
+                    .ThenInclude(m => m.TransactionClass)
+                .Include(e => e.Movements)
+                    .ThenInclude(m => m.Asset)
+                .Include(e => e.Movements)
+                    .ThenInclude(m => m.PayerPerson)
+                .Include(e => e.Payments)
                 .FirstOrDefaultAsync(e => e.Id == id);
         }
 

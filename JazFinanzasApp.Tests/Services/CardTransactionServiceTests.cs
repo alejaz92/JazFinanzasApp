@@ -26,6 +26,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardTransactionDiscountRepository> _cardTransactionDiscountRepoMock;
         private readonly Mock<ITripRepository> _tripRepoMock;
         private readonly Mock<ITripSuggestionDismissalRepository> _tripSuggestionDismissalRepoMock;
+        private readonly Mock<ISharedEventMovementRepository> _sharedEventMovementRepoMock;
         private readonly CardTransactionService _sut;
 
         private const int UserId = 1;
@@ -48,6 +49,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionDiscountRepoMock = new Mock<ICardTransactionDiscountRepository>();
             _tripRepoMock = new Mock<ITripRepository>();
             _tripSuggestionDismissalRepoMock = new Mock<ITripSuggestionDismissalRepository>();
+            _sharedEventMovementRepoMock = new Mock<ISharedEventMovementRepository>();
 
             _sut = new CardTransactionService(
                 _cardTransactionRepoMock.Object,
@@ -65,7 +67,8 @@ namespace JazFinanzasApp.Tests.Services
                 _sharedExpenseRepoMock.Object,
                 _cardTransactionDiscountRepoMock.Object,
                 _tripRepoMock.Object,
-                _tripSuggestionDismissalRepoMock.Object);
+                _tripSuggestionDismissalRepoMock.Object,
+                _sharedEventMovementRepoMock.Object);
         }
 
         // ── AddCardTransactionAsync ───────────────────────────────────────────
@@ -250,6 +253,22 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             await act.Should().ThrowAsync<NotFoundException>();
+        }
+
+        [Fact]
+        public async Task DeleteCardTransactionAsync_WhenReferencedBySharedEvent_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var cardTransaction = new CardTransaction { Id = 7, UserId = UserId };
+            _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(cardTransaction);
+            _sharedEventMovementRepoMock.Setup(r => r.IsCardTransactionReferencedAsync(7)).ReturnsAsync(true);
+
+            // Act
+            var act = () => _sut.DeleteCardTransactionAsync(UserId, 7);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _cardTransactionRepoMock.Verify(r => r.DeleteAsync(It.IsAny<int>()), Times.Never);
         }
 
         // ── GetRecurrentTransactionAsync ──────────────────────────────────────

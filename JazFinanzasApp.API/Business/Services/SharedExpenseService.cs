@@ -256,6 +256,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (sharedExpense.UserId != userId)
                 throw new UnauthorizedDomainException();
 
+            if (await _sharedExpenseRepository.IsLinkedToSharedEventAsync(id))
+                throw new BusinessRuleException("Este gasto compartido pertenece a un evento compartido; se administra desde el evento");
+
             var full = sharedExpense.TransactionId.HasValue
                 ? await _sharedExpenseRepository.GetByTransactionIdAsync(sharedExpense.TransactionId.Value)
                 : await _sharedExpenseRepository.GetByCardTransactionIdAsync(sharedExpense.CardTransactionId!.Value);

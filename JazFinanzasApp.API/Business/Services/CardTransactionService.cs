@@ -24,6 +24,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionDiscountRepository _cardTransactionDiscountRepository;
         private readonly ITripRepository _tripRepository;
         private readonly ITripSuggestionDismissalRepository _tripSuggestionDismissalRepository;
+        private readonly ISharedEventMovementRepository _sharedEventMovementRepository;
 
         public CardTransactionService(
             ICardTransactionRepository cardTransactionRepository,
@@ -41,7 +42,8 @@ namespace JazFinanzasApp.API.Business.Services
             ISharedExpenseRepository sharedExpenseRepository,
             ICardTransactionDiscountRepository cardTransactionDiscountRepository,
             ITripRepository tripRepository,
-            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository)
+            ITripSuggestionDismissalRepository tripSuggestionDismissalRepository,
+            ISharedEventMovementRepository sharedEventMovementRepository)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -59,6 +61,7 @@ namespace JazFinanzasApp.API.Business.Services
             _cardTransactionDiscountRepository = cardTransactionDiscountRepository;
             _tripRepository = tripRepository;
             _tripSuggestionDismissalRepository = tripSuggestionDismissalRepository;
+            _sharedEventMovementRepository = sharedEventMovementRepository;
         }
 
         public async Task<int> AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
@@ -319,6 +322,10 @@ namespace JazFinanzasApp.API.Business.Services
             var cardTransaction = await _cardTransactionRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Card transaction not found");
             if (cardTransaction.UserId != userId) throw new UnauthorizedDomainException();
+
+            if (await _sharedEventMovementRepository.IsCardTransactionReferencedAsync(id))
+                throw new BusinessRuleException("Este gasto de tarjeta pertenece a un evento compartido; se elimina desde el evento");
+
             await _tripSuggestionDismissalRepository.DeleteByCardTransactionIdAsync(id);
             await _cardTransactionRepository.DeleteAsync(id);
         }

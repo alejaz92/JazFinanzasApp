@@ -82,5 +82,26 @@ namespace JazFinanzasApp.API.Controllers
             await _sharedEventService.DeleteAsync(GetUserId(), id);
             return Ok();
         }
+
+        [HttpPost("{id}/movements")]
+        public async Task<IActionResult> CreateMovement(int id, SharedEventMovementAddDTO dto)
+        {
+            var created = await _sharedEventService.CreateMovementAsync(GetUserId(), id, dto);
+            return Ok(created);
+        }
+
+        [HttpPut("{id}/movements/{movementId}")]
+        public async Task<IActionResult> UpdateMovement(int id, int movementId, SharedEventMovementAddDTO dto)
+        {
+            var updated = await _sharedEventService.UpdateMovementAsync(GetUserId(), id, movementId, dto);
+            return Ok(updated);
+        }
+
+        [HttpDelete("{id}/movements/{movementId}")]
+        public async Task<IActionResult> DeleteMovement(int id, int movementId)
+        {
+            await _sharedEventService.DeleteMovementAsync(GetUserId(), id, movementId);
+            return Ok();
+        }
     }
 }

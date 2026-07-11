@@ -21,6 +21,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ISharedExpenseRepository> _sharedExpenseRepoMock;
         private readonly Mock<ITripRepository> _tripRepoMock;
         private readonly Mock<ITripSuggestionDismissalRepository> _tripSuggestionDismissalRepoMock;
+        private readonly Mock<ISharedEventMovementRepository> _sharedEventMovementRepoMock;
         private readonly TransactionService _sut;
 
         private const int UserId = 1;
@@ -38,6 +39,7 @@ namespace JazFinanzasApp.Tests.Services
             _sharedExpenseRepoMock = new Mock<ISharedExpenseRepository>();
             _tripRepoMock = new Mock<ITripRepository>();
             _tripSuggestionDismissalRepoMock = new Mock<ITripSuggestionDismissalRepository>();
+            _sharedEventMovementRepoMock = new Mock<ISharedEventMovementRepository>();
 
             _sut = new TransactionService(
                 _transactionRepoMock.Object,
@@ -50,7 +52,8 @@ namespace JazFinanzasApp.Tests.Services
                 _unitOfWorkMock.Object,
                 _sharedExpenseRepoMock.Object,
                 _tripRepoMock.Object,
-                _tripSuggestionDismissalRepoMock.Object);
+                _tripSuggestionDismissalRepoMock.Object,
+                _sharedEventMovementRepoMock.Object);
         }
 
         // ── GetTransactionByIdAsync ───────────────────────────────────────────
@@ -455,6 +458,39 @@ namespace JazFinanzasApp.Tests.Services
 
             // Assert
             await act.Should().ThrowAsync<UnauthorizedDomainException>();
+        }
+
+        [Fact]
+        public async Task DeleteTransactionAsync_WhenReferencedBySharedEvent_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var transaction = new Transaction { Id = 5, UserId = UserId };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+            _sharedEventMovementRepoMock.Setup(r => r.IsTransactionReferencedAsync(5)).ReturnsAsync(true);
+
+            // Act
+            var act = () => _sut.DeleteTransactionAsync(UserId, 5);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _transactionRepoMock.Verify(r => r.DeleteAsync(It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task EditTransactionAsync_WhenReferencedBySharedEvent_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var transaction = new Transaction { Id = 5, UserId = UserId, MovementType = "E", TransactionClassId = 1, AccountId = 1, AssetId = 1 };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+            _sharedEventMovementRepoMock.Setup(r => r.IsTransactionReferencedAsync(5)).ReturnsAsync(true);
+
+            var dto = new TransactionEditDTO { TransactionClassId = 1, AccountID = 1, AssetId = 1, Date = DateTime.Today, Amount = 100m, Detail = "x" };
+
+            // Act
+            var act = () => _sut.EditTransactionAsync(UserId, 5, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
         }
 
         // ── GetPaginatedTransactionsAsync ─────────────────────────────────────
