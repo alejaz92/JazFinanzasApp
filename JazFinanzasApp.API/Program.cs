@@ -53,6 +53,7 @@ builder.Services.AddScoped<ISharedExpenseRepository, SharedExpenseRepository>();
 builder.Services.AddScoped<ICardTransactionDiscountRepository, CardTransactionDiscountRepository>();
 builder.Services.AddScoped<ITripRepository, TripRepository>();
 builder.Services.AddScoped<ITripSuggestionDismissalRepository, TripSuggestionDismissalRepository>();
+builder.Services.AddScoped<ISharedEventRepository, SharedEventRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios
@@ -73,6 +74,7 @@ builder.Services.AddScoped<IPersonService, PersonService>();
 builder.Services.AddScoped<ISharedExpenseService, SharedExpenseService>();
 builder.Services.AddScoped<ICardTransactionDiscountService, CardTransactionDiscountService>();
 builder.Services.AddScoped<ITripService, TripService>();
+builder.Services.AddScoped<ISharedEventService, SharedEventService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
