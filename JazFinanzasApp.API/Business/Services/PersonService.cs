@@ -63,6 +63,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (await _personRepository.HasActiveSplitsAsync(id))
                 throw new BusinessRuleException("No se puede eliminar una persona con deudas pendientes");
 
+            if (await _personRepository.IsParticipantOfSharedEventAsync(id))
+                throw new BusinessRuleException("No se puede eliminar una persona que participa en un evento compartido");
+
             await _personRepository.DeleteAsync(id);
         }
     }

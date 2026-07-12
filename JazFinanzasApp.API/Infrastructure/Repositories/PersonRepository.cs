@@ -27,5 +27,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.SharedExpenseSplits
                 .AnyAsync(s => s.PersonId == personId && s.Status != SharedExpenseSplitStatus.Paid);
         }
+
+        public async Task<bool> IsParticipantOfSharedEventAsync(int personId)
+        {
+            return await _context.SharedEventParticipants.AnyAsync(p => p.PersonId == personId);
+        }
     }
 }

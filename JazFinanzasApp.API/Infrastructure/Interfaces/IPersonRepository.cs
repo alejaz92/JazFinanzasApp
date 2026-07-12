@@ -6,5 +6,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     {
         Task<IEnumerable<Person>> GetByUserIdAsync(int userId);
         Task<bool> HasActiveSplitsAsync(int personId);
+        Task<bool> IsParticipantOfSharedEventAsync(int personId);
     }
 }
