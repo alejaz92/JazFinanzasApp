@@ -473,5 +473,40 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionDiscountRepoMock.Verify(r => r.UpdateAsync(It.Is<CardTransactionDiscount>(d => d.AmountApplied == 200m)), Times.Once);
             _sharedExpenseRepoMock.Verify(r => r.UpdateSplitAsync(It.Is<SharedExpenseSplit>(s => s.AmountApplied == 50m)), Times.Once);
         }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithManualEntry_StoresNullCardTransactionIdInsteadOfZero()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+            dto.CardTransactions.Add(new CardTransactionPaymentListDTO
+            {
+                CardTransactionId = 0, // fila manual agregada a mano en el formulario de pago, sin CardTransaction real
+                Date = new DateTime(2026, 1, 1),
+                CardId = 1,
+                TransactionClassId = 3,
+                Detail = "Gasto manual",
+                AssetId = 1,
+                Installment = "1/1",
+                InstallmentNumber = 1,
+                InstallmentAmount = 50m,
+                ValueInPesos = 50m
+            });
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(0)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(0)).ReturnsAsync((SharedExpense?)null);
+
+            var capturedTransactions = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => capturedTransactions.Add(t))
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            var manualTransaction = capturedTransactions.Single(t => t.Detail!.Contains("Gasto manual"));
+            manualTransaction.CardTransactionId.Should().BeNull();
+        }
     }
 }

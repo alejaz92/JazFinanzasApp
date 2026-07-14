@@ -420,7 +420,9 @@ namespace JazFinanzasApp.API.Business.Services
                 Detail = $"(Tarjeta | {cardTx.Installment}) {cardTx.Detail}",
                 AccountId = paymentDTO.accountId,
                 PortfolioId = portfolioId,
-                CardTransactionId = cardTx.CardTransactionId,
+                // Las filas manuales del formulario de pago no tienen un CardTransaction real (llegan con Id 0);
+                // la FK a CardTransactions no admite ese valor, así que se guarda null.
+                CardTransactionId = cardTx.CardTransactionId == 0 ? null : cardTx.CardTransactionId,
                 TransactionClassId = cardTx.TransactionClassId,
                 MovementType = "E",
                 UserId = userId,
