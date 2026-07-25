@@ -1,4 +1,5 @@
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
+using JazFinanzasApp.API.Business.DTO.SharedEvent.Import;
 using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,11 +14,16 @@ namespace JazFinanzasApp.API.Controllers
     {
         private readonly ISharedEventService _sharedEventService;
         private readonly ISharedEventPaymentService _sharedEventPaymentService;
+        private readonly ISharedEventImportService _sharedEventImportService;
 
-        public SharedEventController(ISharedEventService sharedEventService, ISharedEventPaymentService sharedEventPaymentService)
+        public SharedEventController(
+            ISharedEventService sharedEventService,
+            ISharedEventPaymentService sharedEventPaymentService,
+            ISharedEventImportService sharedEventImportService)
         {
             _sharedEventService = sharedEventService;
             _sharedEventPaymentService = sharedEventPaymentService;
+            _sharedEventImportService = sharedEventImportService;
         }
 
         private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -139,6 +145,20 @@ namespace JazFinanzasApp.API.Controllers
         {
             await _sharedEventPaymentService.DeletePaymentAsync(GetUserId(), id, paymentId);
             return Ok();
+        }
+
+        [HttpPost("import/parse")]
+        public async Task<IActionResult> ImportParse(SharedEventImportParseDTO dto)
+        {
+            var result = await _sharedEventImportService.ParseAsync(GetUserId(), dto);
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/import/confirm")]
+        public async Task<IActionResult> ImportConfirm(int id, SharedEventImportConfirmDTO dto)
+        {
+            var result = await _sharedEventImportService.ConfirmAsync(GetUserId(), id, dto);
+            return Ok(result);
         }
     }
 }

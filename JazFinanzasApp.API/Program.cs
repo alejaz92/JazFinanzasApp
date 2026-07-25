@@ -78,6 +78,7 @@ builder.Services.AddScoped<ICardTransactionDiscountService, CardTransactionDisco
 builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ISharedEventService, SharedEventService>();
 builder.Services.AddScoped<ISharedEventPaymentService, SharedEventPaymentService>();
+builder.Services.AddScoped<ISharedEventImportService, SharedEventImportService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
