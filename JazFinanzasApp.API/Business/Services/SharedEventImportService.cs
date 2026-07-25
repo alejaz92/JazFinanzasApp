@@ -390,9 +390,19 @@ namespace JazFinanzasApp.API.Business.Services
             SharedEventMovementPaymentInputDTO? payment = null;
             if (payerPersonId == null)
             {
-                if (decision.AccountId == null)
-                    throw new BusinessRuleException("Debe indicar la cuenta con la que se pagó este gasto");
-                payment = new SharedEventMovementPaymentInputDTO { AccountId = decision.AccountId };
+                var isAccountMode = decision.AccountId.HasValue;
+                var isCardMode = decision.CardId.HasValue;
+                if (isAccountMode == isCardMode)
+                    throw new BusinessRuleException("Debe indicar exactamente una cuenta o una tarjeta para pagar este gasto");
+
+                payment = isAccountMode
+                    ? new SharedEventMovementPaymentInputDTO { AccountId = decision.AccountId }
+                    : new SharedEventMovementPaymentInputDTO
+                    {
+                        CardId = decision.CardId,
+                        Installments = decision.Installments,
+                        FirstInstallment = decision.FirstInstallment
+                    };
             }
 
             await _sharedEventService.CreateMovementAsync(userId, sharedEventId, new SharedEventMovementAddDTO

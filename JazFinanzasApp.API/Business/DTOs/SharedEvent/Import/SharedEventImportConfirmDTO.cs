@@ -41,8 +41,11 @@ namespace JazFinanzasApp.API.Business.DTO.SharedEvent.Import
         public int? TransactionId { get; set; }
         public int? CardTransactionId { get; set; }
 
-        // requerido si Action = CreateNew y el pagador/origen/destino del pago es el usuario
+        // Action = CreateNew y el gasto lo pagó el usuario: exactamente uno de AccountId o CardId (+ Installments/FirstInstallment)
         public int? AccountId { get; set; }
+        public int? CardId { get; set; }
+        public int? Installments { get; set; }
+        public DateTime? FirstInstallment { get; set; }
     }
 
     public class SharedEventImportConfirmDTO

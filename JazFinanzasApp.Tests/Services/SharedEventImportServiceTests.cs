@@ -201,6 +201,56 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task ConfirmAsync_ExpenseRowPaidByUserWithCard_BuildsCardPaymentInput()
+        {
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
+            _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
+            _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });
+
+            var dto = BuildConfirmDto(rowDecisions: new List<SharedEventImportRowDecisionDTO>
+            {
+                new() { RowIndex = 1, Action = SharedEventImportRowAction.CreateNew, CardId = 7, Installments = 3, FirstInstallment = new DateTime(2026, 2, 1) },
+                new() { RowIndex = 2, Action = SharedEventImportRowAction.Skip }
+            });
+
+            SharedEventMovementAddDTO? captured = null;
+            _sharedEventServiceMock.Setup(s => s.CreateMovementAsync(UserId, EventId, It.IsAny<SharedEventMovementAddDTO>()))
+                .Callback<int, int, SharedEventMovementAddDTO>((_, _, d) => captured = d)
+                .ReturnsAsync(new SharedEventMovementDTO());
+
+            var result = await _sut.ConfirmAsync(UserId, EventId, dto);
+
+            result.MovementsCreated.Should().Be(1);
+            captured.Should().NotBeNull();
+            captured!.Payment!.AccountId.Should().BeNull();
+            captured.Payment.CardId.Should().Be(7);
+            captured.Payment.Installments.Should().Be(3);
+            captured.Payment.FirstInstallment.Should().Be(new DateTime(2026, 2, 1));
+        }
+
+        [Fact]
+        public async Task ConfirmAsync_ExpenseRowPaidByUserWithBothAccountAndCard_RecordsErrorInsteadOfCreating()
+        {
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
+            _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
+            _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });
+
+            var dto = BuildConfirmDto(rowDecisions: new List<SharedEventImportRowDecisionDTO>
+            {
+                new() { RowIndex = 1, Action = SharedEventImportRowAction.CreateNew, AccountId = 2, CardId = 7 },
+                new() { RowIndex = 2, Action = SharedEventImportRowAction.Skip }
+            });
+
+            var result = await _sut.ConfirmAsync(UserId, EventId, dto);
+
+            result.MovementsCreated.Should().Be(0);
+            result.Errors.Should().ContainSingle(e => e.Contains("exactamente una cuenta o una tarjeta"));
+            _sharedEventServiceMock.Verify(s => s.CreateMovementAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<SharedEventMovementAddDTO>()), Times.Never);
+        }
+
+        [Fact]
         public async Task ConfirmAsync_PaymentRow_CreatesPaymentFromReceiverToPayer()
         {
             _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
