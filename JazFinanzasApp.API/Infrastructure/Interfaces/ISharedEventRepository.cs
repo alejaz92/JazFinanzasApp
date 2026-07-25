@@ -6,6 +6,11 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     {
         Task<IEnumerable<SharedEvent>> GetByUserIdAsync(int userId, bool includeClosed);
         Task<SharedEvent?> GetDetailByIdAsync(int id);
+
+        // Carga liviana: evento + participantes, sin movimientos/pagos/splits/allocations.
+        // Usar en vez de GetDetailByIdAsync cuando solo hace falta validar dueño/cerrado/participantes
+        // (evita recargar el grafo completo del evento, que se vuelve lento con muchos movimientos).
+        Task<SharedEvent?> GetWithParticipantsAsync(int id);
         Task<SharedEventParticipant?> GetParticipantAsync(int sharedEventId, int personId);
         Task AddParticipantAsync(SharedEventParticipant participant);
         Task RemoveParticipantAsync(SharedEventParticipant participant);

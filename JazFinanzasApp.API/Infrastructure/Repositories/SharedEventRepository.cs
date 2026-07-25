@@ -33,6 +33,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .FirstOrDefaultAsync(e => e.Id == id);
         }
 
+        public async Task<SharedEvent?> GetWithParticipantsAsync(int id)
+        {
+            return await _context.SharedEvents
+                .Include(e => e.Participants)
+                    .ThenInclude(p => p.Person)
+                .FirstOrDefaultAsync(e => e.Id == id);
+        }
+
         public async Task<List<SharedEvent>> GetOpenEventsDetailAsync(int userId)
         {
             return await WithFullDetail(_context.SharedEvents)

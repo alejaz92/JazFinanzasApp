@@ -99,7 +99,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_MultilateralExample_ReducesCarneAndCreatesCombustibleExpense()
         {
             var sharedEvent = BuildEvent(Juan, Pedro);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var carneTransaction = new Transaction { Id = 500, AccountId = 2, AssetId = 1, Amount = -30000m };
             var carneSharedExpense = new SharedExpense
@@ -170,7 +170,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_PartialIncomingPayment_AppliesFifoToOldestCreditFirst()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var tx1 = new Transaction { Id = 501, AccountId = 2, AssetId = 1, Amount = -2000m };
             var tx2 = new Transaction { Id = 502, AccountId = 2, AssetId = 1, Amount = -2000m };
@@ -207,7 +207,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_OutgoingPayment_SettlesUserDebtWithNewExpense()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var movement = new SharedEventMovement
             {
@@ -237,7 +237,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_OutgoingPaymentExceedingDebt_ThrowsBusinessRuleException()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var movement = new SharedEventMovement
             {
@@ -263,7 +263,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_InternalCompensation_SettlesCrossedItemsWithoutRealMoney()
         {
             var sharedEvent = BuildEvent(Juan, Pedro);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var carneTransaction = new Transaction { Id = 500, AccountId = 2, AssetId = 1, Amount = -5000m };
             var carneSharedExpense = new SharedExpense
@@ -316,7 +316,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_CardCredit_BeforeAnyInstallmentPaid_CreatesPlaceholderOnly()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var cardTransaction = new CardTransaction { Id = 70, AssetId = 1, Detail = "Compra" };
             var split = new SharedExpenseSplit { Id = 40, PersonId = 8, Amount = 600m, AmountReimbursed = 0, AmountApplied = 0, InstallmentSplitAmount = 100m };
@@ -353,7 +353,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_CardCredit_AfterInstallmentsPaid_ReducesPaidInstallmentsDirectly()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var cardTransaction = new CardTransaction { Id = 70, AssetId = 1, Detail = "Compra" };
             var split = new SharedExpenseSplit { Id = 40, PersonId = 8, Amount = 600m, AmountReimbursed = 0, AmountApplied = 0, InstallmentSplitAmount = 100m };
@@ -395,7 +395,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreatePaymentAsync_CardCredit_MixedTiming_AppliesDirectThenReserve()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var cardTransaction = new CardTransaction { Id = 70, AssetId = 1, Detail = "Compra" };
             var split = new SharedExpenseSplit { Id = 40, PersonId = 8, Amount = 600m, AmountReimbursed = 0, AmountApplied = 0, InstallmentSplitAmount = 100m };
@@ -438,7 +438,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task DeletePaymentAsync_WhenNotLastPayment_ThrowsBusinessRuleException()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var payment = new SharedEventPayment { Id = 5, SharedEventId = EventId, Allocations = new List<SharedEventPaymentAllocation>() };
             _sharedEventPaymentRepoMock.Setup(r => r.GetDetailByIdAsync(5)).ReturnsAsync(payment);
@@ -452,7 +452,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task DeletePaymentAsync_ReversesAccountCreditAllocation()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var split = new SharedExpenseSplit
             {
@@ -482,7 +482,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task DeletePaymentAsync_ReversesDebtAllocation_DeletesCreatedExpense()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var share = new SharedEventMovementShare { Id = 20, PersonId = null, Amount = 5000m, AmountSettled = 5000m };
             var allocation = new SharedEventPaymentAllocation { Id = 2, SharedEventMovementShareId = 20, Amount = 5000m, CreatedExpenseTransactionId = 700 };

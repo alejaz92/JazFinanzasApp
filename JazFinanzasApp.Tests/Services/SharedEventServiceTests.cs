@@ -112,7 +112,7 @@ namespace JazFinanzasApp.Tests.Services
                 Payment = new SharedEventMovementPaymentInputDTO { AccountId = 2 }
             };
 
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
             _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(asset);
             _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 1)).ReturnsAsync(new Asset_User());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transactionClass);
@@ -193,7 +193,7 @@ namespace JazFinanzasApp.Tests.Services
                 }
             };
 
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
             _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(asset);
             _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 1)).ReturnsAsync(new Asset_User());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transactionClass);
@@ -251,7 +251,7 @@ namespace JazFinanzasApp.Tests.Services
                 Payment = null
             };
 
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
             _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(asset);
             _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 1)).ReturnsAsync(new Asset_User());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transactionClass);
@@ -280,7 +280,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreateMovementAsync_SharesSumMismatch_ThrowsBusinessRuleException()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var dto = new SharedEventMovementAddDTO
             {
@@ -302,7 +302,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task CreateMovementAsync_PayerNotParticipant_ThrowsBusinessRuleException()
         {
             var sharedEvent = BuildEvent(Juan);
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
 
             var dto = new SharedEventMovementAddDTO
             {
@@ -450,7 +450,7 @@ namespace JazFinanzasApp.Tests.Services
             var sharedEvent = BuildEvent(Juan);
             var movement = new SharedEventMovement { Id = 1, SharedEventId = EventId, Shares = new List<SharedEventMovementShare>() };
 
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
             _sharedEventMovementRepoMock.Setup(r => r.GetDetailByIdAsync(1)).ReturnsAsync(movement);
             _sharedEventMovementRepoMock.Setup(r => r.HasActivityAsync(1)).ReturnsAsync(true);
 

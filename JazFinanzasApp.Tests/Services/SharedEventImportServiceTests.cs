@@ -102,7 +102,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task ConfirmAsync_EventClosed_Throws()
         {
             var closedEvent = new SharedEvent { Id = EventId, UserId = UserId, IsClosed = true };
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(closedEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(closedEvent);
 
             var act = () => _sut.ConfirmAsync(UserId, EventId, BuildConfirmDto());
 
@@ -113,7 +113,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task ConfirmAsync_EventOwnedByOtherUser_Throws()
         {
             var foreignEvent = new SharedEvent { Id = EventId, UserId = 999, IsClosed = false };
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(foreignEvent);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(foreignEvent);
 
             var act = () => _sut.ConfirmAsync(UserId, EventId, BuildConfirmDto());
 
@@ -123,7 +123,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_NoCurrentUserMapping_Throws()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             var dto = BuildConfirmDto();
             dto.MemberMappings = dto.MemberMappings.Select(m => { m.IsCurrentUser = false; m.PersonId = PepeId; return m; }).ToList();
 
@@ -135,7 +135,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_UnmappedMember_Throws()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             var dto = BuildConfirmDto();
             dto.MemberMappings = new List<SharedEventImportMemberMappingDTO> { new() { MemberName = "Yo", IsCurrentUser = true } }; // falta "Pepe"
 
@@ -147,7 +147,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_NewPersonMapping_CreatesPersonAndAddsAsParticipant()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
             _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, 42)).ReturnsAsync((SharedEventParticipant?)null);
             _personRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<Person>()))
@@ -169,7 +169,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_ExpenseRowPaidByUser_CreatesMovementWithSharesForBothMembers()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
             _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
             _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });
@@ -203,7 +203,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_PaymentRow_CreatesPaymentFromReceiverToPayer()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
             _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
             _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });
@@ -233,7 +233,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_RowWithoutDecision_IsSkippedAndNotProcessed()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
             _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
             _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });
@@ -252,7 +252,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task ConfirmAsync_UnderlyingServiceThrows_RecordsErrorInsteadOfPropagating()
         {
-            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(BuildOpenEvent());
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(BuildOpenEvent());
             _transactionClassRepoMock.Setup(r => r.GetByIdAsync(Comida.Id)).ReturnsAsync(Comida);
             _sharedEventRepoMock.Setup(r => r.GetParticipantAsync(EventId, PepeId)).ReturnsAsync(new SharedEventParticipant { SharedEventId = EventId, PersonId = PepeId });
             _personRepoMock.Setup(r => r.GetByIdAsync(PepeId)).ReturnsAsync(new Person { Id = PepeId, UserId = UserId, Name = "Pepe" });

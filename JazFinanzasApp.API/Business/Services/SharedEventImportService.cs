@@ -213,7 +213,7 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task<SharedEventImportConfirmResultDTO> ConfirmAsync(int userId, int sharedEventId, SharedEventImportConfirmDTO dto)
         {
-            var sharedEvent = await _sharedEventRepository.GetDetailByIdAsync(sharedEventId)
+            var sharedEvent = await _sharedEventRepository.GetWithParticipantsAsync(sharedEventId)
                 ?? throw new NotFoundException("Evento compartido no encontrado");
             if (sharedEvent.UserId != userId) throw new UnauthorizedDomainException();
             if (sharedEvent.IsClosed) throw new BusinessRuleException("El evento está cerrado");

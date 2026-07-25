@@ -183,7 +183,7 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task<SharedEventMovementDTO> CreateMovementAsync(int userId, int sharedEventId, SharedEventMovementAddDTO dto)
         {
-            var sharedEvent = await GetOwnedDetailAsync(userId, sharedEventId);
+            var sharedEvent = await GetOwnedWithParticipantsAsync(userId, sharedEventId);
             if (sharedEvent.IsClosed)
                 throw new BusinessRuleException("El evento está cerrado");
 
@@ -236,7 +236,7 @@ namespace JazFinanzasApp.API.Business.Services
 
         public async Task<SharedEventMovementDTO> UpdateMovementAsync(int userId, int sharedEventId, int movementId, SharedEventMovementAddDTO dto)
         {
-            var sharedEvent = await GetOwnedDetailAsync(userId, sharedEventId);
+            var sharedEvent = await GetOwnedWithParticipantsAsync(userId, sharedEventId);
             if (sharedEvent.IsClosed)
                 throw new BusinessRuleException("El evento está cerrado");
 
@@ -641,6 +641,17 @@ namespace JazFinanzasApp.API.Business.Services
         private async Task<SharedEvent> GetOwnedDetailAsync(int userId, int id)
         {
             var sharedEvent = await _sharedEventRepository.GetDetailByIdAsync(id)
+                ?? throw new NotFoundException("Evento compartido no encontrado");
+            if (sharedEvent.UserId != userId) throw new UnauthorizedDomainException();
+            return sharedEvent;
+        }
+
+        // Igual que GetOwnedDetailAsync pero sin cargar movimientos/pagos -- usar cuando el método
+        // solo necesita Participants/IsClosed/Name (ej. alta/edición de un movimiento), para no pagar
+        // el costo de recargar el evento completo en cada llamada.
+        private async Task<SharedEvent> GetOwnedWithParticipantsAsync(int userId, int id)
+        {
+            var sharedEvent = await _sharedEventRepository.GetWithParticipantsAsync(id)
                 ?? throw new NotFoundException("Evento compartido no encontrado");
             if (sharedEvent.UserId != userId) throw new UnauthorizedDomainException();
             return sharedEvent;

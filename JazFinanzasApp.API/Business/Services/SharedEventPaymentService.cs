@@ -674,9 +674,13 @@ namespace JazFinanzasApp.API.Business.Services
             }
         }
 
+        // Carga liviana (evento + participantes, sin movimientos/pagos): ningún método de este servicio
+        // necesita sharedEvent.Movements/Payments directamente (los ítems pendientes se resuelven aparte,
+        // vía ISharedEventPaymentRepository), así que recargar el grafo completo del evento en cada
+        // preview/alta/borrado de pago era trabajo desperdiciado -- y se vuelve lento con muchos movimientos.
         private async Task<SharedEvent> GetOwnedEventAsync(int userId, int id)
         {
-            var sharedEvent = await _sharedEventRepository.GetDetailByIdAsync(id)
+            var sharedEvent = await _sharedEventRepository.GetWithParticipantsAsync(id)
                 ?? throw new NotFoundException("Evento compartido no encontrado");
             if (sharedEvent.UserId != userId) throw new UnauthorizedDomainException();
             return sharedEvent;
