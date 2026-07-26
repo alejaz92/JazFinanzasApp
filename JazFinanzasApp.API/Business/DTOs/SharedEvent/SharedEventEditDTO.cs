@@ -7,5 +7,6 @@ namespace JazFinanzasApp.API.Business.DTO.SharedEvent
         [Required]
         public string Name { get; set; }
         public string? Notes { get; set; }
+        public int? TripId { get; set; }
     }
 }

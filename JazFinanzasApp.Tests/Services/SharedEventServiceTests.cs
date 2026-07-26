@@ -27,6 +27,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
         private readonly Mock<ISharedEventPaymentRepository> _sharedEventPaymentRepoMock;
+        private readonly Mock<ITripRepository> _tripRepoMock;
         private readonly SharedEventService _sut;
 
         private const int UserId = 1;
@@ -49,6 +50,7 @@ namespace JazFinanzasApp.Tests.Services
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
             _sharedEventPaymentRepoMock = new Mock<ISharedEventPaymentRepository>();
+            _tripRepoMock = new Mock<ITripRepository>();
 
             _sut = new SharedEventService(
                 _sharedEventRepoMock.Object,
@@ -65,7 +67,8 @@ namespace JazFinanzasApp.Tests.Services
                 _sharedExpenseRepoMock.Object,
                 _portfolioRepoMock.Object,
                 _unitOfWorkMock.Object,
-                _sharedEventPaymentRepoMock.Object);
+                _sharedEventPaymentRepoMock.Object,
+                _tripRepoMock.Object);
         }
 
         private static SharedEvent BuildEvent(params Person[] people)
@@ -481,6 +484,64 @@ namespace JazFinanzasApp.Tests.Services
 
             await FluentActions.Invoking(() => _sut.DeleteMovementAsync(UserId, EventId, 1))
                 .Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        // ── Vínculo con Viaje (TripId) ────────────────────────────────────────
+
+        [Fact]
+        public async Task CreateAsync_WithOwnTripId_LinksTrip()
+        {
+            var trip = new Trip { Id = 50, UserId = UserId, Name = "Bariloche 2026" };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(50)).ReturnsAsync(trip);
+
+            var created = new SharedEvent { Id = EventId, UserId = UserId, Name = "Asado", TripId = 50, Participants = new List<SharedEventParticipant>() };
+            _sharedEventRepoMock.Setup(r => r.AddAsyncReturnObject(It.Is<SharedEvent>(e => e.TripId == 50)))
+                .ReturnsAsync(created);
+            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(created);
+
+            var dto = new SharedEventAddDTO { Name = "Asado", TripId = 50 };
+
+            var result = await _sut.CreateAsync(UserId, dto);
+
+            result.TripId.Should().Be(50);
+        }
+
+        [Fact]
+        public async Task CreateAsync_WithTripIdOfAnotherUser_ThrowsUnauthorizedDomainException()
+        {
+            var trip = new Trip { Id = 50, UserId = UserId + 1, Name = "Viaje ajeno" };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(50)).ReturnsAsync(trip);
+
+            var dto = new SharedEventAddDTO { Name = "Asado", TripId = 50 };
+
+            await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
+                .Should().ThrowAsync<UnauthorizedDomainException>();
+        }
+
+        [Fact]
+        public async Task CreateAsync_WithNonexistentTripId_ThrowsNotFoundException()
+        {
+            _tripRepoMock.Setup(r => r.GetByIdAsync(999)).ReturnsAsync((Trip?)null);
+
+            var dto = new SharedEventAddDTO { Name = "Asado", TripId = 999 };
+
+            await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
+                .Should().ThrowAsync<NotFoundException>();
+        }
+
+        [Fact]
+        public async Task UpdateAsync_WithTripIdOfAnotherUser_ThrowsUnauthorizedDomainException()
+        {
+            var sharedEvent = BuildEvent(Juan);
+            _sharedEventRepoMock.Setup(r => r.GetByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+
+            var trip = new Trip { Id = 50, UserId = UserId + 1, Name = "Viaje ajeno" };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(50)).ReturnsAsync(trip);
+
+            var dto = new SharedEventEditDTO { Name = "Asado", TripId = 50 };
+
+            await FluentActions.Invoking(() => _sut.UpdateAsync(UserId, EventId, dto))
+                .Should().ThrowAsync<UnauthorizedDomainException>();
         }
     }
 }

@@ -5,6 +5,8 @@ namespace JazFinanzasApp.API.Business.DTO.SharedEvent
         public int Id { get; set; }
         public string Name { get; set; }
         public bool IsClosed { get; set; }
+        public int? TripId { get; set; }
+        public string? TripName { get; set; }
         public int ParticipantCount { get; set; }
         public int MovementCount { get; set; }
     }

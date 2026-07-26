@@ -18,6 +18,10 @@ namespace JazFinanzasApp.API.Domain
         public int UserId { get; set; }
         public User User { get; set; }
 
+        [ForeignKey("TripId")]
+        public int? TripId { get; set; }
+        public Trip? Trip { get; set; }
+
         public ICollection<SharedEventParticipant> Participants { get; set; }
         public ICollection<SharedEventMovement> Movements { get; set; }
         public ICollection<SharedEventPayment> Payments { get; set; }

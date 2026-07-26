@@ -325,6 +325,13 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasForeignKey(e => e.UserId)
                 .OnDelete(DeleteBehavior.NoAction);
 
+            // Borrar un viaje desvincula el evento, no lo borra
+            modelBuilder.Entity<SharedEvent>()
+                .HasOne(e => e.Trip)
+                .WithMany()
+                .HasForeignKey(e => e.TripId)
+                .OnDelete(DeleteBehavior.SetNull);
+
             modelBuilder.Entity<SharedEventParticipant>()
                 .HasOne(p => p.SharedEvent)
                 .WithMany(e => e.Participants)

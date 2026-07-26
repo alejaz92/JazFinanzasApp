@@ -24,6 +24,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISharedEventPaymentRepository _sharedEventPaymentRepository;
+        private readonly ITripRepository _tripRepository;
 
         public SharedEventService(
             ISharedEventRepository sharedEventRepository,
@@ -40,7 +41,8 @@ namespace JazFinanzasApp.API.Business.Services
             ISharedExpenseRepository sharedExpenseRepository,
             IPortfolioRepository portfolioRepository,
             IUnitOfWork unitOfWork,
-            ISharedEventPaymentRepository sharedEventPaymentRepository)
+            ISharedEventPaymentRepository sharedEventPaymentRepository,
+            ITripRepository tripRepository)
         {
             _sharedEventRepository = sharedEventRepository;
             _sharedEventMovementRepository = sharedEventMovementRepository;
@@ -57,6 +59,7 @@ namespace JazFinanzasApp.API.Business.Services
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
             _sharedEventPaymentRepository = sharedEventPaymentRepository;
+            _tripRepository = tripRepository;
         }
 
         public async Task<IEnumerable<SharedEventListDTO>> GetAllForUserAsync(int userId, bool includeClosed)
@@ -75,12 +78,14 @@ namespace JazFinanzasApp.API.Business.Services
         {
             var personIds = dto.PersonIds.Distinct().ToList();
             await ValidatePersonsAsync(userId, personIds);
+            await ValidateTripAsync(userId, dto.TripId);
 
             var sharedEvent = new SharedEvent
             {
                 Name = dto.Name,
                 Notes = dto.Notes,
                 UserId = userId,
+                TripId = dto.TripId,
                 Participants = personIds.Select(pid => new SharedEventParticipant { PersonId = pid }).ToList()
             };
 
@@ -92,9 +97,11 @@ namespace JazFinanzasApp.API.Business.Services
         public async Task UpdateAsync(int userId, int id, SharedEventEditDTO dto)
         {
             var sharedEvent = await GetOwnedEventAsync(userId, id);
+            await ValidateTripAsync(userId, dto.TripId);
 
             sharedEvent.Name = dto.Name;
             sharedEvent.Notes = dto.Notes;
+            sharedEvent.TripId = dto.TripId;
             sharedEvent.UpdatedAt = DateTime.UtcNow;
             await _sharedEventRepository.UpdateAsync(sharedEvent);
         }
@@ -630,6 +637,16 @@ namespace JazFinanzasApp.API.Business.Services
             }
         }
 
+        private async Task ValidateTripAsync(int userId, int? tripId)
+        {
+            if (tripId == null) return;
+
+            var trip = await _tripRepository.GetByIdAsync(tripId.Value)
+                ?? throw new NotFoundException("Viaje no encontrado");
+            if (trip.UserId != userId)
+                throw new UnauthorizedDomainException();
+        }
+
         private async Task<SharedEvent> GetOwnedEventAsync(int userId, int id)
         {
             var sharedEvent = await _sharedEventRepository.GetByIdAsync(id)
@@ -666,6 +683,8 @@ namespace JazFinanzasApp.API.Business.Services
                 Id = e.Id,
                 Name = e.Name,
                 IsClosed = e.IsClosed,
+                TripId = e.TripId,
+                TripName = e.Trip?.Name,
                 ParticipantCount = e.Participants?.Count ?? 0,
                 MovementCount = e.Movements?.Count ?? 0
             };
@@ -681,6 +700,8 @@ namespace JazFinanzasApp.API.Business.Services
                 Name = e.Name,
                 Notes = e.Notes,
                 IsClosed = e.IsClosed,
+                TripId = e.TripId,
+                TripName = e.Trip?.Name,
                 Participants = e.Participants?
                     .OrderBy(p => p.Person?.Alias ?? p.Person?.Name)
                     .Select(p => new SharedEventParticipantDTO

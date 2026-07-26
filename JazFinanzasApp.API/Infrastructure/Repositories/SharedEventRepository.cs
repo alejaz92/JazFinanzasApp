@@ -19,6 +19,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var query = _context.SharedEvents
                 .Include(e => e.Participants)
                 .Include(e => e.Movements)
+                .Include(e => e.Trip)
                 .Where(e => e.UserId == userId);
 
             if (!includeClosed)
@@ -51,6 +52,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         private static IQueryable<SharedEvent> WithFullDetail(IQueryable<SharedEvent> query)
         {
             return query
+                .Include(e => e.Trip)
                 .Include(e => e.Participants)
                     .ThenInclude(p => p.Person)
                 .Include(e => e.Movements)
