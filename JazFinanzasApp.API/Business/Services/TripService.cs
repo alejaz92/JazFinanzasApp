@@ -17,17 +17,20 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITransactionRepository _transactionRepository;
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly ITripSuggestionDismissalRepository _dismissalRepository;
+        private readonly ISharedEventRepository _sharedEventRepository;
 
         public TripService(
             ITripRepository tripRepository,
             ITransactionRepository transactionRepository,
             ICardTransactionRepository cardTransactionRepository,
-            ITripSuggestionDismissalRepository dismissalRepository)
+            ITripSuggestionDismissalRepository dismissalRepository,
+            ISharedEventRepository sharedEventRepository)
         {
             _tripRepository = tripRepository;
             _transactionRepository = transactionRepository;
             _cardTransactionRepository = cardTransactionRepository;
             _dismissalRepository = dismissalRepository;
+            _sharedEventRepository = sharedEventRepository;
         }
 
         public async Task<IEnumerable<TripDTO>> GetAllForUserAsync(int userId)
@@ -43,6 +46,8 @@ namespace JazFinanzasApp.API.Business.Services
             var transactions = await _transactionRepository.GetTransactionsByTripIdAsync(id);
             var cardTransactions = await _cardTransactionRepository.GetCardTransactionsByTripIdAsync(id);
 
+            var linkedEvents = await GetLinkedEventsAsync(id);
+
             var detail = new TripDetailDTO
             {
                 Id = trip.Id,
@@ -54,9 +59,35 @@ namespace JazFinanzasApp.API.Business.Services
                 Movements = transactions.Select(MapAccountMovement)
                     .Concat(cardTransactions.Select(MapCardMovement))
                     .OrderBy(m => m.Date)
-                    .ToList()
+                    .ToList(),
+                LinkedEvents = linkedEvents
             };
             return detail;
+        }
+
+        private async Task<List<TripLinkedEventDTO>> GetLinkedEventsAsync(int tripId)
+        {
+            var events = await _sharedEventRepository.GetDetailByTripIdAsync(tripId);
+
+            return events.Select(e => new TripLinkedEventDTO
+            {
+                Id = e.Id,
+                Name = e.Name,
+                IsClosed = e.IsClosed,
+                ParticipantCount = e.Participants?.Count ?? 0,
+                MovementCount = e.Movements?.Count ?? 0,
+                Totals = (e.Movements ?? new List<SharedEventMovement>())
+                    .GroupBy(m => m.AssetId)
+                    .Select(g => new TripLinkedEventTotalDTO
+                    {
+                        AssetId = g.Key,
+                        AssetName = g.First().Asset?.Name ?? string.Empty,
+                        AssetSymbol = g.First().Asset?.Symbol ?? string.Empty,
+                        Amount = g.Sum(m => m.TotalAmount)
+                    })
+                    .OrderBy(t => t.AssetId)
+                    .ToList()
+            }).ToList();
         }
 
         public async Task<TripDTO> CreateTripAsync(int userId, TripAddDTO dto)
