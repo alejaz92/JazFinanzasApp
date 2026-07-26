@@ -18,6 +18,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetTypeRepository _assetTypeRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly ITripRepository _tripRepository;
+        private readonly ISharedEventRepository _sharedEventRepository;
 
         public ReportService(
             ITransactionRepository transactionRepository,
@@ -27,7 +28,8 @@ namespace JazFinanzasApp.API.Business.Services
             IAssetQuoteRepository assetQuoteRepository,
             IAssetTypeRepository assetTypeRepository,
             IPortfolioRepository portfolioRepository,
-            ITripRepository tripRepository)
+            ITripRepository tripRepository,
+            ISharedEventRepository sharedEventRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -37,6 +39,7 @@ namespace JazFinanzasApp.API.Business.Services
             _assetTypeRepository = assetTypeRepository;
             _portfolioRepository = portfolioRepository;
             _tripRepository = tripRepository;
+            _sharedEventRepository = sharedEventRepository;
         }
 
         public async Task<IEnumerable<TotalsBalanceDTO>> GetTotalsBalanceAsync(int userId)
@@ -376,6 +379,7 @@ namespace JazFinanzasApp.API.Business.Services
             foreach (var trip in trips)
             {
                 var values = await GetTripMovementValuesAsync(trip.Id, mainReferenceAssetId);
+                var eventNets = await GetTripEventNetsAsync(trip.Id, mainReferenceAssetId);
                 result.Add(new TripsGeneralStatsDTO
                 {
                     TripId = trip.Id,
@@ -384,7 +388,8 @@ namespace JazFinanzasApp.API.Business.Services
                     StartDate = trip.StartDate,
                     EndDate = trip.EndDate,
                     Status = GetTripStatus(trip),
-                    TotalInReference = Math.Round(values.Sum(v => v.ValueInReference), 2)
+                    TotalInReference = Math.Round(values.Sum(v => v.ValueInReference), 2),
+                    NetAmount = Math.Round(eventNets.Sum(n => n.Amount), 2)
                 });
             }
 
@@ -406,13 +411,48 @@ namespace JazFinanzasApp.API.Business.Services
                 .OrderByDescending(b => b.Amount)
                 .ToArray();
 
+            var eventNets = await GetTripEventNetsAsync(tripId, mainReferenceAssetId);
+
             return new TripDetailStatsDTO
             {
                 TripId = tripId,
                 Name = trip.Name,
                 Total = Math.Round(values.Sum(v => v.ValueInReference), 2),
-                Breakdown = breakdown
+                Breakdown = breakdown,
+                NetAmount = Math.Round(eventNets.Sum(n => n.Amount), 2),
+                NetBreakdown = eventNets.ToArray()
             };
+        }
+
+        // Neto de Eventos Compartidos vinculados a un viaje (docs/plans/activos/plan-viajes-eventos.md, D1/D2).
+        // "Consumido" es la misma definición que SharedEventService.ComputeBalances usa para la parte del
+        // usuario (Shares.Where(PersonId == null)), sin reinventar la fórmula — pero acá se convierte
+        // movimiento por movimiento (no el agregado por evento) porque la cotización depende de la fecha
+        // de cada movimiento, igual que ya hace GetTripMovementValuesAsync para el bruto de CardTransaction.
+        private async Task<List<TripEventNetDTO>> GetTripEventNetsAsync(int tripId, int referenceAssetId)
+        {
+            var events = await _sharedEventRepository.GetDetailByTripIdAsync(tripId);
+
+            var result = new List<TripEventNetDTO>();
+            foreach (var e in events)
+            {
+                decimal netInReference = 0;
+                foreach (var m in e.Movements ?? new List<SharedEventMovement>())
+                {
+                    var userAmount = m.Shares?.Where(s => s.PersonId == null).Sum(s => s.Amount) ?? 0;
+                    if (userAmount == 0) continue;
+
+                    var valueInUsd = m.Asset?.Name == "Dolar Estadounidense"
+                        ? userAmount
+                        : userAmount / await _assetQuoteRepository.GetQuotePrice(m.AssetId, m.Date, "BLUE");
+                    var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, m.Date);
+                    netInReference += valueInUsd * referenceQuote;
+                }
+
+                result.Add(new TripEventNetDTO { EventId = e.Id, EventName = e.Name, Amount = Math.Round(netInReference, 2) });
+            }
+
+            return result;
         }
 
         private class TripMovementValue

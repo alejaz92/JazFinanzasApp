@@ -9,6 +9,7 @@ namespace JazFinanzasApp.API.Business.DTO.Report
         public DateTime EndDate { get; set; }
         public string Status { get; set; }
         public decimal TotalInReference { get; set; }
+        public decimal NetAmount { get; set; }
     }
 
     public class TripDetailStatsDTO
@@ -17,11 +18,20 @@ namespace JazFinanzasApp.API.Business.DTO.Report
         public string Name { get; set; }
         public decimal Total { get; set; }
         public TripClassBreakdownDTO[] Breakdown { get; set; }
+        public decimal NetAmount { get; set; }
+        public TripEventNetDTO[] NetBreakdown { get; set; }
     }
 
     public class TripClassBreakdownDTO
     {
         public string TransactionClass { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    public class TripEventNetDTO
+    {
+        public int EventId { get; set; }
+        public string EventName { get; set; }
         public decimal Amount { get; set; }
     }
 }

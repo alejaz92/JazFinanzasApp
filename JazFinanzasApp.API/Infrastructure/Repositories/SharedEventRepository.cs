@@ -49,6 +49,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<SharedEvent>> GetDetailByTripIdAsync(int tripId)
+        {
+            return await WithFullDetail(_context.SharedEvents)
+                .Where(e => e.TripId == tripId)
+                .ToListAsync();
+        }
+
         private static IQueryable<SharedEvent> WithFullDetail(IQueryable<SharedEvent> query)
         {
             return query

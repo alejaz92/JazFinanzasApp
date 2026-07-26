@@ -18,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAssetTypeRepository> _assetTypeRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<ITripRepository> _tripRepoMock;
+        private readonly Mock<ISharedEventRepository> _sharedEventRepoMock;
         private readonly ReportService _sut;
 
         private const int UserId = 1;
@@ -32,6 +33,8 @@ namespace JazFinanzasApp.Tests.Services
             _assetTypeRepoMock = new Mock<IAssetTypeRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _tripRepoMock = new Mock<ITripRepository>();
+            _sharedEventRepoMock = new Mock<ISharedEventRepository>();
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(It.IsAny<int>())).ReturnsAsync(new List<SharedEvent>());
 
             _sut = new ReportService(
                 _transactionRepoMock.Object,
@@ -41,7 +44,8 @@ namespace JazFinanzasApp.Tests.Services
                 _assetQuoteRepoMock.Object,
                 _assetTypeRepoMock.Object,
                 _portfolioRepoMock.Object,
-                _tripRepoMock.Object);
+                _tripRepoMock.Object,
+                _sharedEventRepoMock.Object);
         }
 
         // ── GetTotalsBalanceAsync ─────────────────────────────────────────────
@@ -282,6 +286,111 @@ namespace JazFinanzasApp.Tests.Services
 
             await FluentActions.Invoking(() => _sut.GetTripDetailStatsAsync(UserId, 5))
                 .Should().ThrowAsync<UnauthorizedDomainException>();
+        }
+
+        // ── Neto según Eventos Compartidos vinculados (plan-viajes-eventos.md, Fase 2) ──
+
+        [Fact]
+        public async Task GetTripsGeneralStatsAsync_WithNoLinkedEvents_NetAmountIsZero()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", Type = "DOMESTIC", StartDate = MovementDate, EndDate = MovementDate.AddDays(3), UserId = UserId };
+            _tripRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Trip> { trip });
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<Transaction>());
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<CardTransaction>());
+
+            var result = (await _sut.GetTripsGeneralStatsAsync(UserId)).ToList();
+
+            result[0].NetAmount.Should().Be(0m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_SumsNetAcrossLinkedEvents_OpenAndClosed_MultipleCurrencies()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<Transaction>());
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<CardTransaction>());
+
+            var usdAsset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var arsAsset = new Asset { Id = 3, Name = "Peso Argentino", Symbol = "ARS" };
+
+            var openEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Vuelos",
+                IsClosed = false,
+                Movements = new List<SharedEventMovement>
+                {
+                    new()
+                    {
+                        AssetId = 2, Asset = usdAsset, Date = MovementDate,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 100m } }
+                    }
+                }
+            };
+
+            var closedEvent = new SharedEvent
+            {
+                Id = 11,
+                Name = "Auto",
+                IsClosed = true,
+                Movements = new List<SharedEventMovement>
+                {
+                    new()
+                    {
+                        AssetId = 3, Asset = arsAsset, Date = MovementDate,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 50000m } }
+                    }
+                }
+            };
+
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5))
+                .ReturnsAsync(new List<SharedEvent> { openEvent, closedEvent });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(3, MovementDate, "BLUE")).ReturnsAsync(1000m);
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.NetAmount.Should().Be(150m); // 100 USD + (50.000 ARS / 1000 ARS-por-USD)
+            result.NetBreakdown.Should().ContainSingle(b => b.EventId == 10 && b.EventName == "Vuelos" && b.Amount == 100m);
+            result.NetBreakdown.Should().ContainSingle(b => b.EventId == 11 && b.EventName == "Auto" && b.Amount == 50m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_IgnoresSharesOfOtherPeople_OnlyCountsUsersOwnConsumed()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<Transaction>());
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(Enumerable.Empty<CardTransaction>());
+
+            var usdAsset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Hospedaje",
+                Movements = new List<SharedEventMovement>
+                {
+                    new()
+                    {
+                        AssetId = 2, Asset = usdAsset, Date = MovementDate,
+                        Shares = new List<SharedEventMovementShare>
+                        {
+                            new() { PersonId = null, Amount = 20m },
+                            new() { PersonId = 8, Amount = 80m }
+                        }
+                    }
+                }
+            };
+
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5))
+                .ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.NetAmount.Should().Be(20m);
         }
     }
 }
