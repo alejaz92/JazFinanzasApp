@@ -12,5 +12,8 @@ namespace JazFinanzasApp.API.Domain
         [ForeignKey("UserId")]
         public int UserId { get; set; }
         public User User { get; set; }
+
+        public DateTime? NextClosingDate { get; set; }
+        public DateTime? NextDueDate { get; set; }
     }
 }

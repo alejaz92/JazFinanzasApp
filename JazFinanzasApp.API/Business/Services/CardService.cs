@@ -18,7 +18,14 @@ namespace JazFinanzasApp.API.Business.Services
         public async Task<IEnumerable<CardDTO>> GetAllForUserAsync(int userId)
         {
             var cards = await _cardRepository.GetByUserIdAsync(userId);
-            return cards.Select(c => new CardDTO { Id = c.Id, Name = c.Name });
+            return cards.Select(c => new CardDTO
+            {
+                Id = c.Id,
+                Name = c.Name,
+                NextClosingDate = c.NextClosingDate,
+                NextDueDate = c.NextDueDate,
+                IsCurrentPeriodPaid = false
+            });
         }
 
         public async Task<CardDTO> GetByIdAsync(int userId, int id)
@@ -26,14 +33,28 @@ namespace JazFinanzasApp.API.Business.Services
             var card = await _cardRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Card not found");
             if (card.UserId != userId) throw new UnauthorizedDomainException();
-            return new CardDTO { Id = card.Id, Name = card.Name };
+            return new CardDTO
+            {
+                Id = card.Id,
+                Name = card.Name,
+                NextClosingDate = card.NextClosingDate,
+                NextDueDate = card.NextDueDate,
+                IsCurrentPeriodPaid = false
+            };
         }
 
         public async Task CreateCardAsync(int userId, CardDTO dto)
         {
             var checkExists = await _cardRepository.FindAsync(c => c.Name == dto.Name && c.UserId == userId);
             if (checkExists.Any()) throw new BusinessRuleException("Card already exists");
-            await _cardRepository.AddAsync(new Card { Name = dto.Name, UserId = userId });
+            ValidateClosingDates(dto);
+            await _cardRepository.AddAsync(new Card
+            {
+                Name = dto.Name,
+                UserId = userId,
+                NextClosingDate = dto.NextClosingDate,
+                NextDueDate = dto.NextDueDate
+            });
         }
 
         public async Task UpdateCardAsync(int userId, int id, CardDTO dto)
@@ -41,9 +62,21 @@ namespace JazFinanzasApp.API.Business.Services
             var card = await _cardRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Card not found");
             if (card.UserId != userId) throw new UnauthorizedDomainException();
+            ValidateClosingDates(dto);
             card.Name = dto.Name;
+            card.NextClosingDate = dto.NextClosingDate;
+            card.NextDueDate = dto.NextDueDate;
             card.UpdatedAt = DateTime.UtcNow;
             await _cardRepository.UpdateAsync(card);
+        }
+
+        private static void ValidateClosingDates(CardDTO dto)
+        {
+            if (dto.NextClosingDate.HasValue && dto.NextDueDate.HasValue
+                && dto.NextDueDate.Value < dto.NextClosingDate.Value)
+            {
+                throw new BusinessRuleException("NextDueDate must be on or after NextClosingDate");
+            }
         }
 
         public async Task DeleteCardAsync(int userId, int id)
