@@ -172,6 +172,12 @@ namespace JazFinanzasApp.API.Business.Services
             var card = await _cardRepository.GetByIdAsync(dto.CardId)
                 ?? throw new NotFoundException("Card not found");
 
+            if (dto.NextClosingDate.HasValue && dto.NextDueDate.HasValue
+                && dto.NextDueDate.Value < dto.NextClosingDate.Value)
+            {
+                throw new BusinessRuleException("NextDueDate must be on or after NextClosingDate");
+            }
+
             var account = await _accountRepository.GetByIdAsync(dto.accountId)
                 ?? throw new NotFoundException("Account not found");
 
@@ -243,6 +249,14 @@ namespace JazFinanzasApp.API.Business.Services
                     Card = card,
                     Date = dto.PaymentMonth
                 });
+
+                if (dto.NextClosingDate.HasValue || dto.NextDueDate.HasValue)
+                {
+                    if (dto.NextClosingDate.HasValue) card.NextClosingDate = dto.NextClosingDate.Value;
+                    if (dto.NextDueDate.HasValue) card.NextDueDate = dto.NextDueDate.Value;
+                    card.UpdatedAt = DateTime.UtcNow;
+                    await _cardRepository.UpdateAsync(card);
+                }
             }
             catch
             {

@@ -9,23 +9,30 @@ namespace JazFinanzasApp.API.Business.Services
     public class CardService : ICardService
     {
         private readonly ICardRepository _cardRepository;
+        private readonly ICardPaymentRepository _cardPaymentRepository;
 
-        public CardService(ICardRepository cardRepository)
+        public CardService(ICardRepository cardRepository, ICardPaymentRepository cardPaymentRepository)
         {
             _cardRepository = cardRepository;
+            _cardPaymentRepository = cardPaymentRepository;
         }
 
         public async Task<IEnumerable<CardDTO>> GetAllForUserAsync(int userId)
         {
             var cards = await _cardRepository.GetByUserIdAsync(userId);
-            return cards.Select(c => new CardDTO
+            var dtos = new List<CardDTO>();
+            foreach (var c in cards)
             {
-                Id = c.Id,
-                Name = c.Name,
-                NextClosingDate = c.NextClosingDate,
-                NextDueDate = c.NextDueDate,
-                IsCurrentPeriodPaid = false
-            });
+                dtos.Add(new CardDTO
+                {
+                    Id = c.Id,
+                    Name = c.Name,
+                    NextClosingDate = c.NextClosingDate,
+                    NextDueDate = c.NextDueDate,
+                    IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(c)
+                });
+            }
+            return dtos;
         }
 
         public async Task<CardDTO> GetByIdAsync(int userId, int id)
@@ -39,8 +46,14 @@ namespace JazFinanzasApp.API.Business.Services
                 Name = card.Name,
                 NextClosingDate = card.NextClosingDate,
                 NextDueDate = card.NextDueDate,
-                IsCurrentPeriodPaid = false
+                IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(card)
             };
+        }
+
+        private async Task<bool> IsCurrentPeriodPaidAsync(Card card)
+        {
+            if (!card.NextClosingDate.HasValue) return false;
+            return await _cardPaymentRepository.IsPaymentAlreadyMadeAsync(card.Id, card.NextClosingDate.Value);
         }
 
         public async Task CreateCardAsync(int userId, CardDTO dto)

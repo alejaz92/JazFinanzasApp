@@ -508,5 +508,52 @@ namespace JazFinanzasApp.Tests.Services
             var manualTransaction = capturedTransactions.Single(t => t.Detail!.Contains("Gasto manual"));
             manualTransaction.CardTransactionId.Should().BeNull();
         }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithNextClosingAndDueDate_UpdatesCard()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+            dto.NextClosingDate = new DateTime(2026, 2, 20);
+            dto.NextDueDate = new DateTime(2026, 2, 27);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>())).Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            _cardRepoMock.Verify(r => r.UpdateAsync(It.Is<Card>(c =>
+                c.NextClosingDate == dto.NextClosingDate && c.NextDueDate == dto.NextDueDate)), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithoutNextClosingAndDueDate_DoesNotUpdateCard()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>())).Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            _cardRepoMock.Verify(r => r.UpdateAsync(It.IsAny<Card>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithNextDueDateBeforeNextClosingDate_ThrowsBusinessRuleException()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+            dto.NextClosingDate = new DateTime(2026, 2, 27);
+            dto.NextDueDate = new DateTime(2026, 2, 20);
+
+            var act = () => _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _cardPaymentRepoMock.Verify(r => r.AddAsync(It.IsAny<CardPayment>()), Times.Never);
+        }
     }
 }

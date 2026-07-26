@@ -10,6 +10,8 @@
         public decimal PesosAmount { get; set; }
         public decimal? DolarAmount { get; set; }
         public decimal CardExpenses { get; set; }
+        public DateTime? NextClosingDate { get; set; }
+        public DateTime? NextDueDate { get; set; }
 
         public List<CardTransactionPaymentListDTO> CardTransactions { get; set; }
      
