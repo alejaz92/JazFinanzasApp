@@ -363,13 +363,12 @@ namespace JazFinanzasApp.API.Business.Services
             return history.Select(r => new PortfolioValueByDateDTO { Date = r.Date, Value = r.Value });
         }
 
-        // Estadísticas básicas de Viajes (docs/plans/activos/plan-viajes.md, Fase 6). Devengado en fecha de
-        // compra para consumos de tarjeta (el total del viaje no cuadra mes a mes contra IncExp, es esperado
-        // — ver el análisis completo de la decisión en el plan). Conversión a la moneda de referencia principal
-        // reusando el mismo puente por USD que ya usan las stats de Carteras: cada movimiento se lleva primero
-        // a USD con su propia cotización histórica y de ahí a la moneda de referencia con la cotización de
-        // esta a esa misma fecha — así "referencia == USD" y "referencia == cualquier otra moneda" comparten
-        // una sola fórmula sin casos especiales (salvo el propio USD, que no tiene cotización contra sí mismo).
+        // Estadísticas básicas de Viajes (docs/plans/activos/plan-viajes.md, Fase 6; revisado en
+        // docs/plans/completados/backfill-bariloche-2026.md para pasar de bruto a neto). "Total" es el neto
+        // según Eventos Compartidos — lo que el usuario realmente consumió, sin importar quién pagó ni si ya
+        // se saldó la deuda — no lo que salió de sus cuentas/tarjetas. Un viaje sin ningún Evento vinculado
+        // da Total = 0 (no hay forma de derivar "lo que me costó" sin el reparto del evento). Conversión a la
+        // moneda de referencia principal reusando el mismo puente por USD que ya usan las stats de Carteras.
         public async Task<IEnumerable<TripsGeneralStatsDTO>> GetTripsGeneralStatsAsync(int userId)
         {
             var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
@@ -378,8 +377,7 @@ namespace JazFinanzasApp.API.Business.Services
             var result = new List<TripsGeneralStatsDTO>();
             foreach (var trip in trips)
             {
-                var values = await GetTripMovementValuesAsync(trip.Id, mainReferenceAssetId);
-                var eventNets = await GetTripEventNetsAsync(trip.Id, mainReferenceAssetId);
+                var nets = await GetTripMovementNetsAsync(trip.Id, mainReferenceAssetId);
                 result.Add(new TripsGeneralStatsDTO
                 {
                     TripId = trip.Id,
@@ -388,8 +386,7 @@ namespace JazFinanzasApp.API.Business.Services
                     StartDate = trip.StartDate,
                     EndDate = trip.EndDate,
                     Status = GetTripStatus(trip),
-                    TotalInReference = Math.Round(values.Sum(v => v.ValueInReference), 2),
-                    NetAmount = Math.Round(eventNets.Sum(n => n.Amount), 2)
+                    TotalInReference = Math.Round(nets.Sum(n => n.ValueInReference), 2)
                 });
             }
 
@@ -403,40 +400,50 @@ namespace JazFinanzasApp.API.Business.Services
             if (trip.UserId != userId) throw new UnauthorizedDomainException();
 
             var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
-            var values = await GetTripMovementValuesAsync(tripId, mainReferenceAssetId);
+            var nets = await GetTripMovementNetsAsync(tripId, mainReferenceAssetId);
 
-            var breakdown = values
-                .GroupBy(v => v.TransactionClass ?? "Sin clase")
-                .Select(g => new TripClassBreakdownDTO { TransactionClass = g.Key, Amount = Math.Round(g.Sum(v => v.ValueInReference), 2) })
+            var breakdown = nets
+                .GroupBy(n => n.TransactionClass ?? "Sin clase")
+                .Select(g => new TripClassBreakdownDTO { TransactionClass = g.Key, Amount = Math.Round(g.Sum(n => n.ValueInReference), 2) })
                 .OrderByDescending(b => b.Amount)
                 .ToArray();
 
-            var eventNets = await GetTripEventNetsAsync(tripId, mainReferenceAssetId);
+            var eventBreakdown = nets
+                .GroupBy(n => new { n.EventId, n.EventName })
+                .Select(g => new TripEventNetDTO { EventId = g.Key.EventId, EventName = g.Key.EventName, Amount = Math.Round(g.Sum(n => n.ValueInReference), 2) })
+                .ToArray();
 
             return new TripDetailStatsDTO
             {
                 TripId = tripId,
                 Name = trip.Name,
-                Total = Math.Round(values.Sum(v => v.ValueInReference), 2),
+                Total = Math.Round(nets.Sum(n => n.ValueInReference), 2),
                 Breakdown = breakdown,
-                NetAmount = Math.Round(eventNets.Sum(n => n.Amount), 2),
-                NetBreakdown = eventNets.ToArray()
+                NetBreakdown = eventBreakdown
             };
         }
 
-        // Neto de Eventos Compartidos vinculados a un viaje (docs/plans/activos/plan-viajes-eventos.md, D1/D2).
-        // "Consumido" es la misma definición que SharedEventService.ComputeBalances usa para la parte del
-        // usuario (Shares.Where(PersonId == null)), sin reinventar la fórmula — pero acá se convierte
-        // movimiento por movimiento (no el agregado por evento) porque la cotización depende de la fecha
-        // de cada movimiento, igual que ya hace GetTripMovementValuesAsync para el bruto de CardTransaction.
-        private async Task<List<TripEventNetDTO>> GetTripEventNetsAsync(int tripId, int referenceAssetId)
+        private class TripMovementNet
+        {
+            public string? TransactionClass { get; set; }
+            public int EventId { get; set; }
+            public string EventName { get; set; } = string.Empty;
+            public decimal ValueInReference { get; set; }
+        }
+
+        // Neto de Eventos Compartidos vinculados a un viaje (docs/plans/activos/plan-viajes-eventos.md, D1/D2),
+        // movimiento por movimiento (no el agregado por evento) porque la cotización depende de la fecha de
+        // cada movimiento. "Consumido" es la misma definición que SharedEventService.ComputeBalances usa para
+        // la parte del usuario (Shares.Where(PersonId == null)), sin reinventar la fórmula. Se devuelve por
+        // movimiento (no ya sumado) para poder agrupar tanto por clase (Breakdown) como por evento (NetBreakdown)
+        // sin recorrer los movimientos ni pedir cotizaciones dos veces.
+        private async Task<List<TripMovementNet>> GetTripMovementNetsAsync(int tripId, int referenceAssetId)
         {
             var events = await _sharedEventRepository.GetDetailByTripIdAsync(tripId);
 
-            var result = new List<TripEventNetDTO>();
+            var result = new List<TripMovementNet>();
             foreach (var e in events)
             {
-                decimal netInReference = 0;
                 foreach (var m in e.Movements ?? new List<SharedEventMovement>())
                 {
                     var userAmount = m.Shares?.Where(s => s.PersonId == null).Sum(s => s.Amount) ?? 0;
@@ -446,45 +453,18 @@ namespace JazFinanzasApp.API.Business.Services
                         ? userAmount
                         : userAmount / await _assetQuoteRepository.GetQuotePrice(m.AssetId, m.Date, "BLUE");
                     var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, m.Date);
-                    netInReference += valueInUsd * referenceQuote;
-                }
 
-                result.Add(new TripEventNetDTO { EventId = e.Id, EventName = e.Name, Amount = Math.Round(netInReference, 2) });
+                    result.Add(new TripMovementNet
+                    {
+                        TransactionClass = m.TransactionClass?.Description,
+                        EventId = e.Id,
+                        EventName = e.Name,
+                        ValueInReference = valueInUsd * referenceQuote
+                    });
+                }
             }
 
             return result;
-        }
-
-        private class TripMovementValue
-        {
-            public string? TransactionClass { get; set; }
-            public decimal ValueInReference { get; set; }
-        }
-
-        private async Task<List<TripMovementValue>> GetTripMovementValuesAsync(int tripId, int referenceAssetId)
-        {
-            var transactions = await _transactionRepository.GetTransactionsByTripIdAsync(tripId);
-            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsByTripIdAsync(tripId);
-
-            var values = new List<TripMovementValue>();
-
-            foreach (var t in transactions)
-            {
-                var valueInUsd = Math.Abs(t.Amount) / (t.QuotePrice is > 0 ? t.QuotePrice.Value : 1m);
-                var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, t.Date);
-                values.Add(new TripMovementValue { TransactionClass = t.TransactionClass?.Description, ValueInReference = valueInUsd * referenceQuote });
-            }
-
-            foreach (var ct in cardTransactions)
-            {
-                var valueInUsd = ct.Asset.Name == "Dolar Estadounidense"
-                    ? ct.TotalAmount
-                    : ct.TotalAmount / await _assetQuoteRepository.GetQuotePrice(ct.AssetId, ct.Date, "BLUE");
-                var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, ct.Date);
-                values.Add(new TripMovementValue { TransactionClass = ct.TransactionClass?.Description, ValueInReference = valueInUsd * referenceQuote });
-            }
-
-            return values;
         }
 
         // USD es la moneda puente: no tiene cotización contra sí misma, se resuelve como identidad.
