@@ -78,7 +78,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(e => e.Payments)
                     .ThenInclude(p => p.ToPerson)
                 .Include(e => e.Payments)
-                    .ThenInclude(p => p.Allocations);
+                    .ThenInclude(p => p.Allocations)
+                .AsSplitQuery();
         }
 
         public async Task<SharedEventParticipant?> GetParticipantAsync(int sharedEventId, int personId)
