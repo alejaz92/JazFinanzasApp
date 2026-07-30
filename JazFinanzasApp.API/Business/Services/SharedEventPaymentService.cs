@@ -16,6 +16,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly IAssetRepository _assetRepository;
+        private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IUnitOfWork _unitOfWork;
@@ -29,6 +30,7 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionRepository cardTransactionRepository,
             ITransactionClassRepository transactionClassRepository,
             IAssetRepository assetRepository,
+            IAssetQuoteRepository assetQuoteRepository,
             IAccountRepository accountRepository,
             IPortfolioRepository portfolioRepository,
             IUnitOfWork unitOfWork)
@@ -41,9 +43,22 @@ namespace JazFinanzasApp.API.Business.Services
             _cardTransactionRepository = cardTransactionRepository;
             _transactionClassRepository = transactionClassRepository;
             _assetRepository = assetRepository;
+            _assetQuoteRepository = assetQuoteRepository;
             _accountRepository = accountRepository;
             _portfolioRepository = portfolioRepository;
             _unitOfWork = unitOfWork;
+        }
+
+        // Mismo criterio que TransactionService.ResolveQuotePriceAsync: USD no cotiza contra sí mismo,
+        // ARS usa la cotización BLUE histórica a la fecha. Sin esto, Transaction.QuotePrice queda null y
+        // los reportes de Viajes (que usan QuotePrice como fallback a 1 cuando no hay valor) inflan el
+        // monto en pesos como si ya estuviera en dólares.
+        private async Task<decimal> ResolveQuotePriceAsync(int assetId, DateTime date)
+        {
+            var asset = await _assetRepository.GetByIdAsync(assetId);
+            if (asset.Symbol == "USD") return 1;
+            var type = asset.Symbol == "ARS" ? "BLUE" : "NA";
+            return await _assetQuoteRepository.GetQuotePrice(assetId, date, type);
         }
 
         public async Task<SharedEventPaymentPreviewDTO> PreviewPaymentAsync(int userId, int sharedEventId, SharedEventPaymentAddDTO dto)
@@ -474,7 +489,8 @@ namespace JazFinanzasApp.API.Business.Services
                         TransactionClassId = reintegroClass.Id,
                         Detail = $"Reintegro - {cardTransaction.Detail}",
                         Amount = futureAmount,
-                        UserId = userId
+                        UserId = userId,
+                        QuotePrice = await ResolveQuotePriceAsync(cardTransaction.AssetId, dto.Date)
                     });
 
                     await _sharedExpenseRepository.AddReimbursementAsync(new SharedExpenseReimbursement
@@ -517,7 +533,8 @@ namespace JazFinanzasApp.API.Business.Services
                 TransactionClassId = movement.TransactionClassId,
                 Detail = $"(Evento: {eventName}) {movement.Description}",
                 Amount = -x,
-                UserId = userId
+                UserId = userId,
+                QuotePrice = await ResolveQuotePriceAsync(movement.AssetId, dto.Date)
             });
 
             share.AmountSettled += x;

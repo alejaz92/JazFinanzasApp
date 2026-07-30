@@ -19,6 +19,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardTransactionRepository> _cardTransactionRepoMock;
         private readonly Mock<ITransactionClassRepository> _transactionClassRepoMock;
         private readonly Mock<IAssetRepository> _assetRepoMock;
+        private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock;
         private readonly Mock<IAccountRepository> _accountRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
@@ -40,6 +41,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionRepoMock = new Mock<ICardTransactionRepository>();
             _transactionClassRepoMock = new Mock<ITransactionClassRepository>();
             _assetRepoMock = new Mock<IAssetRepository>();
+            _assetQuoteRepoMock = new Mock<IAssetQuoteRepository>();
             _accountRepoMock = new Mock<IAccountRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
@@ -53,6 +55,7 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionRepoMock.Object,
                 _transactionClassRepoMock.Object,
                 _assetRepoMock.Object,
+                _assetQuoteRepoMock.Object,
                 _accountRepoMock.Object,
                 _portfolioRepoMock.Object,
                 _unitOfWorkMock.Object);
@@ -60,6 +63,7 @@ namespace JazFinanzasApp.Tests.Services
             _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" });
             _accountRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new Account { Id = 2, UserId = UserId });
             _portfolioRepoMock.Setup(r => r.GetDefaultPortfolio(UserId)).ReturnsAsync(new Portfolio { Id = 1, UserId = UserId });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<string>())).ReturnsAsync(1000m);
         }
 
         private static SharedEvent BuildEvent(params Person[] people)
