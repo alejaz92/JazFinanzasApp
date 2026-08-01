@@ -22,6 +22,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionService _cardTransactionService;
         private readonly ISharedExpenseRepository _sharedExpenseRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly IQuotePriceResolver _quotePriceResolver;
         private readonly IUnitOfWork _unitOfWork;
         private readonly ISharedEventPaymentRepository _sharedEventPaymentRepository;
         private readonly ITripRepository _tripRepository;
@@ -40,6 +41,7 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionService cardTransactionService,
             ISharedExpenseRepository sharedExpenseRepository,
             IPortfolioRepository portfolioRepository,
+            IQuotePriceResolver quotePriceResolver,
             IUnitOfWork unitOfWork,
             ISharedEventPaymentRepository sharedEventPaymentRepository,
             ITripRepository tripRepository)
@@ -57,6 +59,7 @@ namespace JazFinanzasApp.API.Business.Services
             _cardTransactionService = cardTransactionService;
             _sharedExpenseRepository = sharedExpenseRepository;
             _portfolioRepository = portfolioRepository;
+            _quotePriceResolver = quotePriceResolver;
             _unitOfWork = unitOfWork;
             _sharedEventPaymentRepository = sharedEventPaymentRepository;
             _tripRepository = tripRepository;
@@ -457,7 +460,8 @@ namespace JazFinanzasApp.API.Business.Services
                     TransactionClassId = transactionClass.Id,
                     Detail = detail,
                     Amount = -dto.TotalAmount,
-                    UserId = userId
+                    UserId = userId,
+                    QuotePrice = await _quotePriceResolver.ResolveAsync(asset.Id, dto.Date)
                 });
 
                 var (sharedExpenseId, splitIdByPerson) = await CreateSharedExpenseForAccountAsync(userId, transaction.Id, thirdPartyShares);

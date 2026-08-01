@@ -1,3 +1,4 @@
+using JazFinanzasApp.API.Business.Interfaces;
 using FluentAssertions;
 using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.Exceptions;
@@ -17,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAccountRepository> _accountRepoMock;
         private readonly Mock<ITransactionClassRepository> _transactionClassRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
+        private readonly Mock<IQuotePriceResolver> _quotePriceResolverMock;
         private readonly SharedExpenseService _sut;
 
         private const int UserId = 1;
@@ -30,6 +32,9 @@ namespace JazFinanzasApp.Tests.Services
             _accountRepoMock = new Mock<IAccountRepository>();
             _transactionClassRepoMock = new Mock<ITransactionClassRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
+            _quotePriceResolverMock = new Mock<IQuotePriceResolver>();
+            _quotePriceResolverMock.Setup(r => r.ResolveAsync(It.IsAny<int>(), It.IsAny<DateTime>()))
+                .ReturnsAsync(1000m);
 
             _sut = new SharedExpenseService(
                 _sharedExpenseRepoMock.Object,
@@ -38,7 +43,8 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionRepoMock.Object,
                 _accountRepoMock.Object,
                 _transactionClassRepoMock.Object,
-                _portfolioRepoMock.Object);
+                _portfolioRepoMock.Object,
+                _quotePriceResolverMock.Object);
         }
 
         // ── CreateAsync (cuenta) ──────────────────────────────────────────────

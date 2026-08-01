@@ -23,6 +23,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAccountRepository> _accountRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+        private readonly Mock<IQuotePriceResolver> _quotePriceResolverMock;
         private readonly SharedEventPaymentService _sut;
 
         private const int UserId = 1;
@@ -45,6 +46,9 @@ namespace JazFinanzasApp.Tests.Services
             _accountRepoMock = new Mock<IAccountRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
             _unitOfWorkMock = new Mock<IUnitOfWork>();
+            _quotePriceResolverMock = new Mock<IQuotePriceResolver>();
+            _quotePriceResolverMock.Setup(r => r.ResolveAsync(It.IsAny<int>(), It.IsAny<DateTime>()))
+                .ReturnsAsync(1000m);
 
             _sut = new SharedEventPaymentService(
                 _sharedEventRepoMock.Object,
@@ -58,6 +62,7 @@ namespace JazFinanzasApp.Tests.Services
                 _assetQuoteRepoMock.Object,
                 _accountRepoMock.Object,
                 _portfolioRepoMock.Object,
+                _quotePriceResolverMock.Object,
                 _unitOfWorkMock.Object);
 
             _assetRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" });

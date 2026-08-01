@@ -19,6 +19,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IAccountRepository _accountRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly IQuotePriceResolver _quotePriceResolver;
         private readonly IUnitOfWork _unitOfWork;
 
         public SharedEventPaymentService(
@@ -33,6 +34,7 @@ namespace JazFinanzasApp.API.Business.Services
             IAssetQuoteRepository assetQuoteRepository,
             IAccountRepository accountRepository,
             IPortfolioRepository portfolioRepository,
+            IQuotePriceResolver quotePriceResolver,
             IUnitOfWork unitOfWork)
         {
             _sharedEventRepository = sharedEventRepository;
@@ -46,19 +48,8 @@ namespace JazFinanzasApp.API.Business.Services
             _assetQuoteRepository = assetQuoteRepository;
             _accountRepository = accountRepository;
             _portfolioRepository = portfolioRepository;
+            _quotePriceResolver = quotePriceResolver;
             _unitOfWork = unitOfWork;
-        }
-
-        // Mismo criterio que TransactionService.ResolveQuotePriceAsync: USD no cotiza contra sí mismo,
-        // ARS usa la cotización BLUE histórica a la fecha. Sin esto, Transaction.QuotePrice queda null y
-        // los reportes de Viajes (que usan QuotePrice como fallback a 1 cuando no hay valor) inflan el
-        // monto en pesos como si ya estuviera en dólares.
-        private async Task<decimal> ResolveQuotePriceAsync(int assetId, DateTime date)
-        {
-            var asset = await _assetRepository.GetByIdAsync(assetId);
-            if (asset.Symbol == "USD") return 1;
-            var type = asset.Symbol == "ARS" ? "BLUE" : "NA";
-            return await _assetQuoteRepository.GetQuotePrice(assetId, date, type);
         }
 
         public async Task<SharedEventPaymentPreviewDTO> PreviewPaymentAsync(int userId, int sharedEventId, SharedEventPaymentAddDTO dto)
@@ -490,7 +481,7 @@ namespace JazFinanzasApp.API.Business.Services
                         Detail = $"Reintegro - {cardTransaction.Detail}",
                         Amount = futureAmount,
                         UserId = userId,
-                        QuotePrice = await ResolveQuotePriceAsync(cardTransaction.AssetId, dto.Date)
+                        QuotePrice = await _quotePriceResolver.ResolveAsync(cardTransaction.AssetId, dto.Date)
                     });
 
                     await _sharedExpenseRepository.AddReimbursementAsync(new SharedExpenseReimbursement
@@ -534,7 +525,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Detail = $"(Evento: {eventName}) {movement.Description}",
                 Amount = -x,
                 UserId = userId,
-                QuotePrice = await ResolveQuotePriceAsync(movement.AssetId, dto.Date)
+                QuotePrice = await _quotePriceResolver.ResolveAsync(movement.AssetId, dto.Date)
             });
 
             share.AmountSettled += x;
@@ -553,6 +544,7 @@ namespace JazFinanzasApp.API.Business.Services
             int fromAccountId, int toAccountId, int assetId, DateTime date, decimal amount, int portfolioId, int userId)
         {
             var time = DateTime.UtcNow;
+            var quotePrice = await _quotePriceResolver.ResolveAsync(assetId, date);
             var exOut = await _transactionRepository.AddAsyncReturnObject(new Transaction
             {
                 AccountId = fromAccountId,
@@ -564,6 +556,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Detail = "Evento compartido",
                 Amount = -amount,
                 UserId = userId,
+                QuotePrice = quotePrice,
                 CreatedAt = time,
                 UpdatedAt = time
             });
@@ -578,6 +571,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Detail = "Evento compartido",
                 Amount = amount,
                 UserId = userId,
+                QuotePrice = quotePrice,
                 CreatedAt = time,
                 UpdatedAt = time
             });

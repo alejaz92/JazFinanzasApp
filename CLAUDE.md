@@ -62,6 +62,14 @@ ASP.NET Core Identity (`IdentityCore<User>` con `IdentityRole<int>`) + JWT Beare
 
 Política `FrontendPolicy` en `Program.cs` con origins explícitos (`http://localhost:4200` dev, `https://jazfinanzaswebapp.azurestaticapps.net` producción). Agregar cualquier dominio nuevo de frontend ahí.
 
+### QuotePrice: obligatorio en toda transacción
+
+**Ninguna `Transaction` se persiste con `QuotePrice` en null**, sin importar el `MovementType` (incluidas las `EX` de transferencia interna) ni si la creó el usuario o un proceso automático. Los reportes convierten a la moneda de referencia dividiendo por ese campo: un null hace que la fila se descarte en silencio en los resúmenes mensuales (`t.QuotePrice.Value` sobre NULL en SQL) o que se cuente como si el monto ya estuviera en dólares en el reporte de Viajes (que hace `?? 1`).
+
+Para resolverlo se usa `IQuotePriceResolver` (`Business/Services/QuotePriceResolver.cs`), inyectado en todo servicio que cree transacciones: USD devuelve 1, ARS usa la cotización `BLUE` de la fecha y el resto la `NA`. Cuando la fecha exacta no tiene cotización, `AssetQuoteRepository.GetQuotePrice` ya toma automáticamente la del día anterior más cercano — no hace falta manejar ese caso en el servicio.
+
+`TransactionService` mantiene su propio `ResolveQuotePriceAsync` porque además acepta una cotización explícita enviada por el usuario; cuando no viene, cae en el mismo criterio.
+
 ### Tests
 
 xUnit + Moq + FluentAssertions, en `JazFinanzasApp.Tests/Services/`. Cubren los servicios con lógica de negocio relevante (`AuthService`, `TransactionService`, `CardTransactionService`, `InvestmentTransactionService`, `ReportService`). Al agregar lógica de negocio no trivial a un servicio nuevo o existente, sumar su test correspondiente siguiendo el mismo patrón (mock de repositorios/`IUnitOfWork`, sin DB real).

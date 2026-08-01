@@ -73,6 +73,7 @@ builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
 builder.Services.AddScoped<ICardService, CardService>();
 builder.Services.AddScoped<IAssetSplitEventService, AssetSplitEventService>();
 builder.Services.AddScoped<IPersonService, PersonService>();
+builder.Services.AddScoped<IQuotePriceResolver, QuotePriceResolver>();
 builder.Services.AddScoped<ISharedExpenseService, SharedExpenseService>();
 builder.Services.AddScoped<ICardTransactionDiscountService, CardTransactionDiscountService>();
 builder.Services.AddScoped<ITripService, TripService>();

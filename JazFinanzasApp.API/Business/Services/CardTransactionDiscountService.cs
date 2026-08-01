@@ -14,6 +14,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly ITransactionRepository _transactionRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly IQuotePriceResolver _quotePriceResolver;
 
         public CardTransactionDiscountService(
             ICardTransactionDiscountRepository cardTransactionDiscountRepository,
@@ -21,7 +22,8 @@ namespace JazFinanzasApp.API.Business.Services
             IAccountRepository accountRepository,
             ITransactionClassRepository transactionClassRepository,
             ITransactionRepository transactionRepository,
-            IPortfolioRepository portfolioRepository)
+            IPortfolioRepository portfolioRepository,
+            IQuotePriceResolver quotePriceResolver)
         {
             _cardTransactionDiscountRepository = cardTransactionDiscountRepository;
             _cardTransactionRepository = cardTransactionRepository;
@@ -29,6 +31,7 @@ namespace JazFinanzasApp.API.Business.Services
             _transactionClassRepository = transactionClassRepository;
             _transactionRepository = transactionRepository;
             _portfolioRepository = portfolioRepository;
+            _quotePriceResolver = quotePriceResolver;
         }
 
         public async Task<CardTransactionDiscountDetailDTO> CreateAsync(int userId, CardTransactionDiscountAddDTO dto)
@@ -87,7 +90,8 @@ namespace JazFinanzasApp.API.Business.Services
                     TransactionClass = transactionClass,
                     Detail = $"Descuento - {cardTransaction.Detail}",
                     Amount = portion,
-                    UserId = userId
+                    UserId = userId,
+                    QuotePrice = await _quotePriceResolver.ResolveAsync(cardTransaction.AssetId, dto.Date)
                 });
 
                 await _cardTransactionDiscountRepository.AddInstallmentAsync(new CardTransactionDiscountInstallment

@@ -15,6 +15,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAccountRepository _accountRepository;
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly IQuotePriceResolver _quotePriceResolver;
 
         public SharedExpenseService(
             ISharedExpenseRepository sharedExpenseRepository,
@@ -23,7 +24,8 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionRepository cardTransactionRepository,
             IAccountRepository accountRepository,
             ITransactionClassRepository transactionClassRepository,
-            IPortfolioRepository portfolioRepository)
+            IPortfolioRepository portfolioRepository,
+            IQuotePriceResolver quotePriceResolver)
         {
             _sharedExpenseRepository = sharedExpenseRepository;
             _transactionRepository = transactionRepository;
@@ -32,6 +34,7 @@ namespace JazFinanzasApp.API.Business.Services
             _accountRepository = accountRepository;
             _transactionClassRepository = transactionClassRepository;
             _portfolioRepository = portfolioRepository;
+            _quotePriceResolver = quotePriceResolver;
         }
 
         public async Task<SharedExpenseDetailDTO> CreateAsync(int userId, SharedExpenseAddDTO dto)
@@ -216,7 +219,8 @@ namespace JazFinanzasApp.API.Business.Services
                 TransactionClass = transactionClass,
                 Detail = $"Reintegro - {cardTransaction.Detail}",
                 Amount = dto.Amount,
-                UserId = userId
+                UserId = userId,
+                QuotePrice = await _quotePriceResolver.ResolveAsync(cardTransaction.AssetId, dto.Date)
             });
 
             await _sharedExpenseRepository.AddReimbursementAsync(new SharedExpenseReimbursement

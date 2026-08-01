@@ -28,6 +28,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IUnitOfWork> _unitOfWorkMock;
         private readonly Mock<ISharedEventPaymentRepository> _sharedEventPaymentRepoMock;
         private readonly Mock<ITripRepository> _tripRepoMock;
+        private readonly Mock<IQuotePriceResolver> _quotePriceResolverMock;
         private readonly SharedEventService _sut;
 
         private const int UserId = 1;
@@ -51,6 +52,9 @@ namespace JazFinanzasApp.Tests.Services
             _unitOfWorkMock = new Mock<IUnitOfWork>();
             _sharedEventPaymentRepoMock = new Mock<ISharedEventPaymentRepository>();
             _tripRepoMock = new Mock<ITripRepository>();
+            _quotePriceResolverMock = new Mock<IQuotePriceResolver>();
+            _quotePriceResolverMock.Setup(r => r.ResolveAsync(It.IsAny<int>(), It.IsAny<DateTime>()))
+                .ReturnsAsync(1000m);
 
             _sut = new SharedEventService(
                 _sharedEventRepoMock.Object,
@@ -66,6 +70,7 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionServiceMock.Object,
                 _sharedExpenseRepoMock.Object,
                 _portfolioRepoMock.Object,
+                _quotePriceResolverMock.Object,
                 _unitOfWorkMock.Object,
                 _sharedEventPaymentRepoMock.Object,
                 _tripRepoMock.Object);
@@ -151,6 +156,10 @@ namespace JazFinanzasApp.Tests.Services
             capturedTransaction.Should().NotBeNull();
             capturedTransaction!.Amount.Should().Be(-30000m);
             capturedTransaction.MovementType.Should().Be("E");
+            // QuotePrice nunca puede quedar null: los reportes dividen por él para convertir a la
+            // moneda de referencia y una fila sin cotización se descarta o se cuenta como dólares.
+            capturedTransaction.QuotePrice.Should().Be(1000m);
+            _quotePriceResolverMock.Verify(r => r.ResolveAsync(1, new DateTime(2026, 5, 25)), Times.Once);
 
             capturedSharedExpense.Should().NotBeNull();
             capturedSharedExpense!.TransactionId.Should().Be(50);
