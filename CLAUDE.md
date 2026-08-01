@@ -76,10 +76,21 @@ El `Total` de `trips-general` y `trip-detail` suma dos cosas que no se pisan: **
 
 La exclusión de (2) vive en el **reporte**, no en el dato: `GetTripOwnExpenseTransactionsAsync` / `GetTripOwnExpenseCardTransactionsAsync` descartan lo que sea respaldo de un movimiento (`SharedEventMovements.TransactionId` / `.CardTransactionId`) o lo haya creado el motor de pagos (columnas `Created*TransactionId` de `SharedEventPaymentAllocations`). Las transacciones `(Evento: <nombre>) <descripción>` que genera saldar una deuda **siguen etiquetadas con `TripId`** a propósito — son movimientos reales de las cuentas y tienen sentido en la lista del viaje; que un etiquetado de más no rompa el total es justamente el punto.
 
-Dos convenciones de datos que el reporte no puede deducir solo:
+Dos convenciones de datos:
 
-- **Compras en cuotas: se etiqueta el padre o las cuotas, nunca los dos.** Si un Evento trackea las cuotas como movimientos separados, el `CardTransaction` padre no lleva `TripId`. La relación cuota→padre no es confiable en la base (casi ninguna `Transaction` tiene `CardTransactionId` cargado; las cuotas se reconocen por la convención del detalle `(Tarjeta | n/m)`), así que no hay query que lo detecte.
+- **Un gasto de tarjeta se etiqueta siempre en el `CardTransaction`, nunca en una cuota.** El gasto se computa por devengado desde el consumo, y `TransactionService.EditTransactionAsync` y `TripService` rechazan asociar un viaje a una cuota (por `CardTransactionId` o por el prefijo `"(Tarjeta | "` de `TripMovementRules`). Cuando el Evento trackea las cuotas por separado, el reporte descarta el consumo padre por su cuenta — ver abajo.
 - **La categoría es la real, no "Viajes".** El desglose de `trip-detail` agrupa por categoría: mandar todo a "Viajes" lo aplasta. "Viajes" queda para pasajes y alojamiento. Al crear movimientos de Evento hay que ponerles la categoría correcta desde el alta, porque `ApplyDebtAsync` la copia a las transacciones de liquidación que genera.
+
+### Tarjetas: el consumo y sus cuotas
+
+Un gasto de tarjeta vive en dos registros que **no dicen lo mismo**:
+
+- El **`CardTransaction`** es la compra: fecha y monto reales del gasto. Existe desde que se carga.
+- Las **`Transactions` de cuota** las crea `RegisterCardPaymentAsync` recién al pagar el resumen, fechadas en el mes del resumen (no el del gasto), en pesos aunque la compra sea en dólares, y ya netas de reintegros y descuentos.
+
+Por eso todo lo que quiera medir *cuánto costó algo* lee `CardTransactions`, y las cuotas son flujo de caja. `Transaction.CardTransactionId` ata una cuota con su compra; la convención del detalle `(Tarjeta | n/m) <detalle>` es solo un rótulo y **no sirve para deducir la relación** — el detalle se puede editar de los dos lados.
+
+Las filas que se agregan a mano al pagar (gastos que nunca se cargaron como consumo) llegan con `CardTransactionId == 0` y **crean su propio `CardTransaction`** de una cuota, devengado en el mes que se paga. Antes quedaban como cuotas huérfanas, imposibles de etiquetar a un viaje o de ver en las estadísticas de tarjeta.
 
 `NetBreakdown` sigue siendo solo la fuente (1) — los gastos propios no pertenecen a ningún evento — así que `Total` puede ser mayor que la suma de sus filas.
 

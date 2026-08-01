@@ -432,6 +432,102 @@ namespace JazFinanzasApp.Tests.Services
             cardExpensesTransaction.CardTransactionId.Should().BeNull();
         }
 
+        // ── Filas agregadas a mano al pagar (plan-viajes-historicos.md, Fase 6C) ──
+
+        private CardTransactionPaymentDTO MakeManualEntryPaymentDto(
+            DateTime? fecha = null, decimal installmentAmount = 5000m)
+        {
+            var dto = MakePaymentDto();
+            dto.CardTransactions.Add(new CardTransactionPaymentListDTO
+            {
+                CardTransactionId = 0,                 // así llega una fila agregada a mano
+                Date = fecha ?? new DateTime(2025, 12, 20),
+                CardId = 1,
+                TransactionClassId = 3,
+                Detail = "Swiss Medical",
+                AssetId = 1,
+                Installment = "1/1",
+                InstallmentNumber = 0,
+                InstallmentAmount = installmentAmount,
+                ValueInPesos = installmentAmount
+            });
+            return dto;
+        }
+
+        private (List<Transaction> transactions, List<CardTransaction> cardTransactions) CaptureOnPayment()
+        {
+            var transactions = new List<Transaction>();
+            var cardTransactions = new List<CardTransaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => transactions.Add(t)).Returns(Task.CompletedTask);
+            _cardTransactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<CardTransaction>()))
+                .Callback<CardTransaction>(c => cardTransactions.Add(c)).Returns(Task.CompletedTask);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(It.IsAny<int>())).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(It.IsAny<int>())).ReturnsAsync((SharedExpense?)null);
+            return (transactions, cardTransactions);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_ManualEntry_CreatesItsCardTransaction()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var (_, cardTransactions) = CaptureOnPayment();
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakeManualEntryPaymentDto());
+
+            var creado = cardTransactions.Should().ContainSingle().Subject;
+            creado.Detail.Should().Be("Swiss Medical");
+            creado.CardId.Should().Be(1);
+            creado.UserId.Should().Be(UserId);
+            creado.TransactionClassId.Should().Be(3);
+            creado.AssetId.Should().Be(1);
+            creado.TotalAmount.Should().Be(5000m);
+            creado.InstallmentAmount.Should().Be(5000m);
+            creado.Installments.Should().Be(1);
+            creado.Repeat.Should().Be("NO");
+            creado.Date.Should().Be(new DateTime(2025, 12, 20));
+            // se devenga en el mes que se está pagando, así que no reaparece el mes siguiente
+            creado.FirstInstallment.Should().Be(new DateTime(2026, 1, 1));
+            creado.LastInstallment.Should().Be(new DateTime(2026, 1, 1));
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_ManualEntry_LinksItsInstallmentTransactionToTheNewCardTransaction()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var (transactions, cardTransactions) = CaptureOnPayment();
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakeManualEntryPaymentDto());
+
+            var creado = cardTransactions.Single();
+            var cuota = transactions.Single(t => t.Detail!.Contains("Swiss Medical"));
+            // se vincula por navegación: el consumo todavía no tiene Id asignado
+            cuota.CardTransaction.Should().BeSameAs(creado);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_ManualEntryWithoutDate_UsesThePaymentMonth()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var (_, cardTransactions) = CaptureOnPayment();
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakeManualEntryPaymentDto(fecha: default(DateTime)));
+
+            cardTransactions.Single().Date.Should().Be(new DateTime(2026, 1, 1));
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_RegularRows_DoNotCreateAnyCardTransaction()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var (transactions, cardTransactions) = CaptureOnPayment();
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakePaymentDto());
+
+            cardTransactions.Should().BeEmpty();
+            transactions.Single(t => t.Detail!.Contains("Compra")).CardTransactionId.Should().Be(20);
+        }
+
         [Fact]
         public async Task RegisterCardPaymentAsync_WithPersonAndDiscountTogether_AppliesBothIndependently()
         {

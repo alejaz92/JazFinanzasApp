@@ -218,7 +218,22 @@ namespace JazFinanzasApp.API.Business.Services
                         ?? throw new BusinessRuleException("Error in Validation");
                     cardTransaction.TransactionClass = transactionClass.Description;
 
+                    // Las filas agregadas a mano en el formulario de pago llegan con Id 0: son gastos que
+                    // nunca se cargaron como consumo. Se les crea el CardTransaction para que el gasto exista
+                    // como tal y se pueda etiquetar a un viaje o ver en las estadísticas de tarjeta (D3bis:
+                    // el gasto de tarjeta se cuenta siempre desde el consumo). Antes solo quedaba la cuota,
+                    // huérfana y sin forma de rastrearla.
+                    CardTransaction? consumoCreado = null;
+                    if (cardTransaction.CardTransactionId == 0)
+                    {
+                        consumoCreado = BuildManualCardTransaction(dto, cardTransaction, userId, asset, transactionClass, card);
+                        await _cardTransactionRepository.AddAsyncTransaction(consumoCreado);
+                    }
+
                     var transaction = BuildCardPaymentTransaction(dto, cardTransaction, userId, peso, dolar, quotePrice, portfolio.Id);
+                    // Se vincula por la propiedad de navegación y no por el Id: el consumo todavía no se
+                    // persistió, y EF resuelve la FK al guardar toda la transacción de una.
+                    if (consumoCreado != null) transaction.CardTransaction = consumoCreado;
                     await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
                     await ApplyCardTransactionDiscountInstallmentAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
                     await _transactionRepository.AddAsyncTransaction(transaction);
@@ -417,6 +432,39 @@ namespace JazFinanzasApp.API.Business.Services
                 await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
                 await _transactionRepository.DeleteAsync(reimbursement.TransactionId);
             }
+        }
+
+        // Consumo que respalda una fila agregada a mano al pagar la tarjeta. Es de una sola cuota y se
+        // devenga en el mes que se está pagando, así que no vuelve a aparecer en la lista del mes siguiente.
+        private static CardTransaction BuildManualCardTransaction(
+            CardTransactionPaymentDTO paymentDTO,
+            CardTransactionPaymentListDTO cardTx,
+            int userId,
+            Asset asset,
+            TransactionClass transactionClass,
+            Card card)
+        {
+            var mes = new DateTime(paymentDTO.PaymentMonth.Year, paymentDTO.PaymentMonth.Month, 1);
+
+            return new CardTransaction
+            {
+                // El formulario inicializa la fecha vacía; si no la completaron, vale la del resumen.
+                Date = cardTx.Date == default ? mes : cardTx.Date,
+                Detail = cardTx.Detail,
+                CardId = paymentDTO.CardId,
+                Card = card,
+                TransactionClassId = cardTx.TransactionClassId,
+                TransactionClass = transactionClass,
+                AssetId = cardTx.AssetId,
+                Asset = asset,
+                TotalAmount = cardTx.InstallmentAmount,
+                Installments = 1,
+                FirstInstallment = mes,
+                LastInstallment = mes,
+                Repeat = "NO",
+                InstallmentAmount = cardTx.InstallmentAmount,
+                UserId = userId
+            };
         }
 
         private Transaction BuildCardPaymentTransaction(
