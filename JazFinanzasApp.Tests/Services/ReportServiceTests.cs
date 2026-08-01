@@ -472,6 +472,39 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task GetTripDetailStatsAsync_CardPurchaseTrackedByInstallments_IsNotCountedTwice()
+        {
+            SetupTripWithoutEvents();
+
+            // El evento trackea la compra cuota por cuota: el gasto ya está contado en la fuente (1).
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Vuelos",
+                Movements = new List<SharedEventMovement>
+                {
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate, TransactionId = 500,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 40m } } },
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate, TransactionId = 501,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 40m } } }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            // El consumo padre sigue etiquetado con TripId —así lo manda D3bis— pero el repositorio lo
+            // excluye de los gastos propios porque sus cuotas respaldan movimientos del evento.
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5)).ReturnsAsync(new List<CardTransaction>
+            {
+                new() { Id = 70, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 300m }
+            });
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(5)).ReturnsAsync(new List<CardTransaction>());
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(80m); // solo la parte propia de las dos cuotas, sin los 300 del consumo
+        }
+
+        [Fact]
         public async Task GetTripDetailStatsAsync_OwnExpenseWithoutQuotePrice_FallsBackToQuoteOfItsDate()
         {
             SetupTripWithoutEvents();

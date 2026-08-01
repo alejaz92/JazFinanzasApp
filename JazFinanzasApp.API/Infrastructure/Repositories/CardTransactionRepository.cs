@@ -151,11 +151,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        // Consumos de tarjeta propios de un viaje (docs/plans/activos/plan-viajes-historicos.md, D1/D2): los
-        // etiquetados con TripId que no son el respaldo de un movimiento de alguno de los Eventos vinculados.
-        // Del lado de tarjeta no hay nada más que excluir: el motor de pagos solo crea Transactions, nunca
-        // CardTransactions. Ojo con D3 — cuando un Evento trackea las cuotas de una compra como movimientos
-        // separados, el consumo padre no debe llevar TripId, porque no hay forma de deducir esa relación acá.
+        // Consumos de tarjeta propios de un viaje (docs/plans/activos/plan-viajes-historicos.md, D1/D2/D3bis):
+        // los etiquetados con TripId que no estén ya representados en el neto de los Eventos vinculados. Un
+        // consumo puede estarlo de dos formas, y hay que descartar las dos:
+        //
+        //   1. El consumo mismo respalda un movimiento del evento (SharedEventMovements.CardTransactionId).
+        //   2. El evento trackea las cuotas por separado, un movimiento por cuota, cada uno respaldado por la
+        //      Transaction de esa cuota. Ahí el gasto ya está contado cuota por cuota, así que sumar el
+        //      consumo padre lo duplicaría.
+        //
+        // El caso (2) es el que obliga a que la FK Transaction.CardTransactionId esté cargada: la convención
+        // del detalle "(Tarjeta | n/m)" no sirve para deducir la relación (el detalle se edita de los dos
+        // lados). Con la FK confiable, D3bis se sostiene sola: el consumo se etiqueta siempre, sin excepciones,
+        // y el reporte decide por su cuenta si sumarlo. Del lado de tarjeta no hay nada más que excluir: el
+        // motor de pagos solo crea Transactions, nunca CardTransactions.
         public async Task<IEnumerable<CardTransaction>> GetTripOwnExpenseCardTransactionsAsync(int tripId)
         {
             var eventIds = _context.SharedEvents.Where(e => e.TripId == tripId).Select(e => e.Id);
@@ -164,10 +173,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(m => eventIds.Contains(m.SharedEventId) && m.CardTransactionId != null)
                 .Select(m => m.CardTransactionId.Value);
 
+            var backingTransactionIds = _context.SharedEventMovements
+                .Where(m => eventIds.Contains(m.SharedEventId) && m.TransactionId != null)
+                .Select(m => m.TransactionId.Value);
+
+            var trackedByInstallmentIds = _context.Transactions
+                .Where(t => t.CardTransactionId != null && backingTransactionIds.Contains(t.Id))
+                .Select(t => t.CardTransactionId.Value);
+
             return await _context.CardTransactions
                 .Include(ct => ct.Asset)
                 .Include(ct => ct.TransactionClass)
-                .Where(ct => ct.TripId == tripId && !backingIds.Contains(ct.Id))
+                .Where(ct => ct.TripId == tripId
+                    && !backingIds.Contains(ct.Id)
+                    && !trackedByInstallmentIds.Contains(ct.Id))
                 .OrderBy(ct => ct.Date)
                 .ToListAsync();
         }
