@@ -1500,6 +1500,36 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        // Egresos propios de un viaje (docs/plans/activos/plan-viajes-historicos.md, D1/D2): lo etiquetado con
+        // TripId que NO está ya representado por el neto de los Eventos vinculados, ni como respaldo de un
+        // movimiento ni como transacción que creó el motor de pagos al saldar una deuda. Esas liquidaciones
+        // siguen etiquetadas a propósito (son movimientos reales de las cuentas y tienen sentido en la lista
+        // del viaje): la exclusión vive acá, en el reporte, para que un etiquetado de más no rompa el total.
+        public async Task<IEnumerable<Transaction>> GetTripOwnExpenseTransactionsAsync(int tripId)
+        {
+            var eventIds = _context.SharedEvents.Where(e => e.TripId == tripId).Select(e => e.Id);
+
+            var backingIds = _context.SharedEventMovements
+                .Where(m => eventIds.Contains(m.SharedEventId) && m.TransactionId != null)
+                .Select(m => m.TransactionId.Value);
+
+            var allocations = _context.SharedEventPaymentAllocations
+                .Where(a => eventIds.Contains(a.SharedEventPayment.SharedEventId));
+
+            var createdIds = allocations.Where(a => a.CreatedExpenseTransactionId != null).Select(a => a.CreatedExpenseTransactionId.Value)
+                .Concat(allocations.Where(a => a.CreatedIncomeTransactionId != null).Select(a => a.CreatedIncomeTransactionId.Value))
+                .Concat(allocations.Where(a => a.CreatedExchangeOutTransactionId != null).Select(a => a.CreatedExchangeOutTransactionId.Value))
+                .Concat(allocations.Where(a => a.CreatedExchangeInTransactionId != null).Select(a => a.CreatedExchangeInTransactionId.Value));
+
+            return await _context.Transactions
+                .Include(t => t.Asset)
+                .Include(t => t.TransactionClass)
+                .Where(t => t.TripId == tripId && t.MovementType == "E")
+                .Where(t => !backingIds.Contains(t.Id) && !createdIds.Contains(t.Id))
+                .OrderBy(t => t.Date)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
         {
             var endExclusive = endDate.Date.AddDays(1);

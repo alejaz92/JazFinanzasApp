@@ -25,6 +25,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId);
         Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months);
         Task<IEnumerable<Transaction>> GetTransactionsByTripIdAsync(int tripId);
+        Task<IEnumerable<Transaction>> GetTripOwnExpenseTransactionsAsync(int tripId);
         Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate);
         Task<IEnumerable<Transaction>> SearchTripAssociableTransactionsAsync(int userId, string? search);
         Task<IEnumerable<Transaction>> GetByCardTransactionIdAsync(int cardTransactionId);

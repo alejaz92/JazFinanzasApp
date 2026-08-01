@@ -151,6 +151,27 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        // Consumos de tarjeta propios de un viaje (docs/plans/activos/plan-viajes-historicos.md, D1/D2): los
+        // etiquetados con TripId que no son el respaldo de un movimiento de alguno de los Eventos vinculados.
+        // Del lado de tarjeta no hay nada más que excluir: el motor de pagos solo crea Transactions, nunca
+        // CardTransactions. Ojo con D3 — cuando un Evento trackea las cuotas de una compra como movimientos
+        // separados, el consumo padre no debe llevar TripId, porque no hay forma de deducir esa relación acá.
+        public async Task<IEnumerable<CardTransaction>> GetTripOwnExpenseCardTransactionsAsync(int tripId)
+        {
+            var eventIds = _context.SharedEvents.Where(e => e.TripId == tripId).Select(e => e.Id);
+
+            var backingIds = _context.SharedEventMovements
+                .Where(m => eventIds.Contains(m.SharedEventId) && m.CardTransactionId != null)
+                .Select(m => m.CardTransactionId.Value);
+
+            return await _context.CardTransactions
+                .Include(ct => ct.Asset)
+                .Include(ct => ct.TransactionClass)
+                .Where(ct => ct.TripId == tripId && !backingIds.Contains(ct.Id))
+                .OrderBy(ct => ct.Date)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<CardTransaction>> GetTripSuggestibleCardTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
         {
             var endExclusive = endDate.Date.AddDays(1);

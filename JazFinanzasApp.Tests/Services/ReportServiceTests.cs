@@ -35,6 +35,8 @@ namespace JazFinanzasApp.Tests.Services
             _tripRepoMock = new Mock<ITripRepository>();
             _sharedEventRepoMock = new Mock<ISharedEventRepository>();
             _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(It.IsAny<int>())).ReturnsAsync(new List<SharedEvent>());
+            _transactionRepoMock.Setup(r => r.GetTripOwnExpenseTransactionsAsync(It.IsAny<int>())).ReturnsAsync(new List<Transaction>());
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(It.IsAny<int>())).ReturnsAsync(new List<CardTransaction>());
 
             _sut = new ReportService(
                 _transactionRepoMock.Object,
@@ -322,6 +324,167 @@ namespace JazFinanzasApp.Tests.Services
             var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
 
             result.Total.Should().Be(20m);
+        }
+
+        // ── Gastos propios etiquetados con TripId (plan-viajes-historicos.md, D1/D2) ──
+
+        private static readonly Asset UsdAsset = new() { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+        private static readonly Asset ArsAsset = new() { Id = 3, Name = "Peso Argentino", Symbol = "ARS" };
+
+        private Trip SetupTripWithoutEvents(int tripId = 5)
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = tripId, Name = "Bariloche", Type = "DOMESTIC", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(tripId)).ReturnsAsync(trip);
+            _tripRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Trip> { trip });
+            return trip;
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_WithNoEventsButTaggedExpenses_SumsThem()
+        {
+            SetupTripWithoutEvents();
+
+            // Egreso en pesos: se guarda en negativo y con su propia cotización.
+            _transactionRepoMock.Setup(r => r.GetTripOwnExpenseTransactionsAsync(5)).ReturnsAsync(new List<Transaction>
+            {
+                new() { Id = 1, AssetId = 3, Asset = ArsAsset, Date = MovementDate, MovementType = "E", Amount = -140_000m, QuotePrice = 1000m,
+                    TransactionClass = new TransactionClass { Description = "Bares, salidas, juntadas" } }
+            });
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(5)).ReturnsAsync(new List<CardTransaction>
+            {
+                new() { Id = 1, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 25m,
+                    TransactionClass = new TransactionClass { Description = "Ocio" } }
+            });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(165m); // 140.000 ARS / 1000 + 25 USD
+            result.NetBreakdown.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task GetTripsGeneralStatsAsync_WithNoEventsButTaggedExpenses_TotalIsNotZero()
+        {
+            SetupTripWithoutEvents();
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(5)).ReturnsAsync(new List<CardTransaction>
+            {
+                new() { Id = 1, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 80m }
+            });
+
+            var result = (await _sut.GetTripsGeneralStatsAsync(UserId)).ToList();
+
+            result[0].TotalInReference.Should().Be(80m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_WithEventAndOwnExpenses_SumsBothSources()
+        {
+            SetupTripWithoutEvents();
+
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Bariloche 2026",
+                Movements = new List<SharedEventMovement>
+                {
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 100m }, new() { PersonId = 8, Amount = 200m } } }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(5)).ReturnsAsync(new List<CardTransaction>
+            {
+                new() { Id = 1, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 45m }
+            });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(145m); // 100 de parte propia del evento + 45 de gasto propio
+            // El neto por evento no incluye los gastos propios: no pertenecen a ningún evento.
+            result.NetBreakdown.Should().ContainSingle(b => b.EventId == 10 && b.Amount == 100m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_SettlementTransactionTaggedWithTrip_IsNotCountedTwice()
+        {
+            SetupTripWithoutEvents();
+
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Bariloche 2026",
+                Movements = new List<SharedEventMovement>
+                {
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 60m } } }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            // La liquidación "(Evento: ...)" queda etiquetada con TripId a propósito, así que aparece en la
+            // lista completa del viaje — pero el repositorio de gastos propios la excluye y el total no la suma.
+            var settlement = new Transaction { Id = 99, AssetId = 2, Asset = UsdAsset, Date = MovementDate, MovementType = "E", Amount = -60m, QuotePrice = 1m };
+            var ownExpense = new Transaction { Id = 100, AssetId = 2, Asset = UsdAsset, Date = MovementDate, MovementType = "E", Amount = -15m, QuotePrice = 1m };
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5)).ReturnsAsync(new List<Transaction> { settlement, ownExpense });
+            _transactionRepoMock.Setup(r => r.GetTripOwnExpenseTransactionsAsync(5)).ReturnsAsync(new List<Transaction> { ownExpense });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(75m); // 60 del evento + 15 del gasto propio, sin los 60 de la liquidación
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_BreakdownMixesEventNetAndOwnExpenses()
+        {
+            SetupTripWithoutEvents();
+
+            var ocio = new TransactionClass { Description = "Ocio" };
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Bariloche 2026",
+                Movements = new List<SharedEventMovement>
+                {
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate, TransactionClass = ocio,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 30m } } },
+                    new() { AssetId = 2, Asset = UsdAsset, Date = MovementDate, TransactionClass = new TransactionClass { Description = "Movilidad" },
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 10m } } }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            _cardTransactionRepoMock.Setup(r => r.GetTripOwnExpenseCardTransactionsAsync(5)).ReturnsAsync(new List<CardTransaction>
+            {
+                // Misma categoría que un movimiento del evento: tiene que caer en la misma fila del desglose.
+                new() { Id = 1, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 20m, TransactionClass = ocio },
+                // Sin categoría: cae en "Sin clase".
+                new() { Id = 2, AssetId = 2, Asset = UsdAsset, Date = MovementDate, TotalAmount = 5m }
+            });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(65m);
+            result.Breakdown.Should().HaveCount(3);
+            result.Breakdown.Should().ContainSingle(b => b.TransactionClass == "Ocio" && b.Amount == 50m);
+            result.Breakdown.Should().ContainSingle(b => b.TransactionClass == "Movilidad" && b.Amount == 10m);
+            result.Breakdown.Should().ContainSingle(b => b.TransactionClass == "Sin clase" && b.Amount == 5m);
+        }
+
+        [Fact]
+        public async Task GetTripDetailStatsAsync_OwnExpenseWithoutQuotePrice_FallsBackToQuoteOfItsDate()
+        {
+            SetupTripWithoutEvents();
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(3, MovementDate, "BLUE")).ReturnsAsync(1500m);
+
+            _transactionRepoMock.Setup(r => r.GetTripOwnExpenseTransactionsAsync(5)).ReturnsAsync(new List<Transaction>
+            {
+                new() { Id = 1, AssetId = 3, Asset = ArsAsset, Date = MovementDate, MovementType = "E", Amount = -30_000m, QuotePrice = null }
+            });
+
+            var result = await _sut.GetTripDetailStatsAsync(UserId, 5);
+
+            result.Total.Should().Be(20m); // 30.000 ARS / 1500
         }
     }
 }

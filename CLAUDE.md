@@ -70,6 +70,19 @@ Para resolverlo se usa `IQuotePriceResolver` (`Business/Services/QuotePriceResol
 
 `TransactionService` mantiene su propio `ResolveQuotePriceAsync` porque además acepta una cotización explícita enviada por el usuario; cuando no viene, cae en el mismo criterio.
 
+### Total de un Viaje: dos fuentes disjuntas
+
+El `Total` de `trips-general` y `trip-detail` suma dos cosas que no se pisan: **(1)** la parte propia de cada movimiento de los Eventos Compartidos vinculados al viaje (`Shares` con `PersonId == null`) y **(2)** los egresos etiquetados con `TripId` que no estén ya representados por (1). Sin (2), un viaje sin ningún Evento medía cero y los gastos enteramente propios se perdían.
+
+La exclusión de (2) vive en el **reporte**, no en el dato: `GetTripOwnExpenseTransactionsAsync` / `GetTripOwnExpenseCardTransactionsAsync` descartan lo que sea respaldo de un movimiento (`SharedEventMovements.TransactionId` / `.CardTransactionId`) o lo haya creado el motor de pagos (columnas `Created*TransactionId` de `SharedEventPaymentAllocations`). Las transacciones `(Evento: <nombre>) <descripción>` que genera saldar una deuda **siguen etiquetadas con `TripId`** a propósito — son movimientos reales de las cuentas y tienen sentido en la lista del viaje; que un etiquetado de más no rompa el total es justamente el punto.
+
+Dos convenciones de datos que el reporte no puede deducir solo:
+
+- **Compras en cuotas: se etiqueta el padre o las cuotas, nunca los dos.** Si un Evento trackea las cuotas como movimientos separados, el `CardTransaction` padre no lleva `TripId`. La relación cuota→padre no es confiable en la base (casi ninguna `Transaction` tiene `CardTransactionId` cargado; las cuotas se reconocen por la convención del detalle `(Tarjeta | n/m)`), así que no hay query que lo detecte.
+- **La categoría es la real, no "Viajes".** El desglose de `trip-detail` agrupa por categoría: mandar todo a "Viajes" lo aplasta. "Viajes" queda para pasajes y alojamiento. Al crear movimientos de Evento hay que ponerles la categoría correcta desde el alta, porque `ApplyDebtAsync` la copia a las transacciones de liquidación que genera.
+
+`NetBreakdown` sigue siendo solo la fuente (1) — los gastos propios no pertenecen a ningún evento — así que `Total` puede ser mayor que la suma de sus filas.
+
 ### Tests
 
 xUnit + Moq + FluentAssertions, en `JazFinanzasApp.Tests/Services/`. Cubren los servicios con lógica de negocio relevante (`AuthService`, `TransactionService`, `CardTransactionService`, `InvestmentTransactionService`, `ReportService`). Al agregar lógica de negocio no trivial a un servicio nuevo o existente, sumar su test correspondiente siguiendo el mismo patrón (mock de repositorios/`IUnitOfWork`, sin DB real).

@@ -364,11 +364,13 @@ namespace JazFinanzasApp.API.Business.Services
         }
 
         // Estadísticas básicas de Viajes (docs/plans/activos/plan-viajes.md, Fase 6; revisado en
-        // docs/plans/completados/backfill-bariloche-2026.md para pasar de bruto a neto). "Total" es el neto
-        // según Eventos Compartidos — lo que el usuario realmente consumió, sin importar quién pagó ni si ya
-        // se saldó la deuda — no lo que salió de sus cuentas/tarjetas. Un viaje sin ningún Evento vinculado
-        // da Total = 0 (no hay forma de derivar "lo que me costó" sin el reparto del evento). Conversión a la
-        // moneda de referencia principal reusando el mismo puente por USD que ya usan las stats de Carteras.
+        // docs/plans/completados/backfill-bariloche-2026.md para pasar de bruto a neto, y en
+        // docs/plans/activos/plan-viajes-historicos.md D1/D2 para sumarle los gastos propios). "Total" es lo
+        // que el viaje le costó al usuario, y sale de dos fuentes disjuntas: la parte propia de lo que se
+        // repartió en los Eventos vinculados (sin importar quién pagó ni si ya se saldó), más lo etiquetado
+        // con TripId que fue enteramente propio. Antes solo contaba la primera, así que un viaje sin ningún
+        // Evento daba 0 y los gastos que nunca se compartieron se perdían. Conversión a la moneda de
+        // referencia principal reusando el mismo puente por USD que ya usan las stats de Carteras.
         public async Task<IEnumerable<TripsGeneralStatsDTO>> GetTripsGeneralStatsAsync(int userId)
         {
             var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
@@ -378,6 +380,7 @@ namespace JazFinanzasApp.API.Business.Services
             foreach (var trip in trips)
             {
                 var nets = await GetTripMovementNetsAsync(trip.Id, mainReferenceAssetId);
+                var ownExpenses = await GetTripOwnExpensesAsync(trip.Id, mainReferenceAssetId);
                 result.Add(new TripsGeneralStatsDTO
                 {
                     TripId = trip.Id,
@@ -386,7 +389,7 @@ namespace JazFinanzasApp.API.Business.Services
                     StartDate = trip.StartDate,
                     EndDate = trip.EndDate,
                     Status = GetTripStatus(trip),
-                    TotalInReference = Math.Round(nets.Sum(n => n.ValueInReference), 2)
+                    TotalInReference = Math.Round(nets.Sum(n => n.ValueInReference) + ownExpenses.Sum(o => o.ValueInReference), 2)
                 });
             }
 
@@ -401,10 +404,15 @@ namespace JazFinanzasApp.API.Business.Services
 
             var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
             var nets = await GetTripMovementNetsAsync(tripId, mainReferenceAssetId);
+            var ownExpenses = await GetTripOwnExpensesAsync(tripId, mainReferenceAssetId);
 
-            var breakdown = nets
-                .GroupBy(n => n.TransactionClass ?? "Sin clase")
-                .Select(g => new TripClassBreakdownDTO { TransactionClass = g.Key, Amount = Math.Round(g.Sum(n => n.ValueInReference), 2) })
+            // El desglose por categoría mezcla las dos fuentes; el neto por evento, en cambio, es solo de la
+            // primera — los gastos propios no pertenecen a ningún evento, así que Total puede ser mayor que
+            // la suma de NetBreakdown (el frontend ya los muestra como dos tablas independientes).
+            var breakdown = nets.Select(n => new TripValue { TransactionClass = n.TransactionClass, ValueInReference = n.ValueInReference })
+                .Concat(ownExpenses)
+                .GroupBy(v => v.TransactionClass ?? "Sin clase")
+                .Select(g => new TripClassBreakdownDTO { TransactionClass = g.Key, Amount = Math.Round(g.Sum(v => v.ValueInReference), 2) })
                 .OrderByDescending(b => b.Amount)
                 .ToArray();
 
@@ -417,18 +425,22 @@ namespace JazFinanzasApp.API.Business.Services
             {
                 TripId = tripId,
                 Name = trip.Name,
-                Total = Math.Round(nets.Sum(n => n.ValueInReference), 2),
+                Total = Math.Round(nets.Sum(n => n.ValueInReference) + ownExpenses.Sum(o => o.ValueInReference), 2),
                 Breakdown = breakdown,
                 NetBreakdown = eventBreakdown
             };
         }
 
-        private class TripMovementNet
+        private class TripValue
         {
             public string? TransactionClass { get; set; }
+            public decimal ValueInReference { get; set; }
+        }
+
+        private class TripMovementNet : TripValue
+        {
             public int EventId { get; set; }
             public string EventName { get; set; } = string.Empty;
-            public decimal ValueInReference { get; set; }
         }
 
         // Neto de Eventos Compartidos vinculados a un viaje (docs/plans/activos/plan-viajes-eventos.md, D1/D2),
@@ -449,9 +461,7 @@ namespace JazFinanzasApp.API.Business.Services
                     var userAmount = m.Shares?.Where(s => s.PersonId == null).Sum(s => s.Amount) ?? 0;
                     if (userAmount == 0) continue;
 
-                    var valueInUsd = m.Asset?.Name == "Dolar Estadounidense"
-                        ? userAmount
-                        : userAmount / await _assetQuoteRepository.GetQuotePrice(m.AssetId, m.Date, "BLUE");
+                    var valueInUsd = await ToUsdAsync(m.AssetId, m.Asset, userAmount, m.Date);
                     var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, m.Date);
 
                     result.Add(new TripMovementNet
@@ -465,6 +475,57 @@ namespace JazFinanzasApp.API.Business.Services
             }
 
             return result;
+        }
+
+        // Fuente (2) del total de un viaje (plan-viajes-historicos.md, D1/D2): los egresos etiquetados con
+        // TripId que no están ya representados por el neto de los Eventos. Los repositorios se encargan de
+        // la exclusión; acá solo queda convertir. Se toman en magnitud positiva porque los egresos se guardan
+        // con Amount negativo, mientras que el neto de un evento ya viene positivo.
+        private async Task<List<TripValue>> GetTripOwnExpensesAsync(int tripId, int referenceAssetId)
+        {
+            var result = new List<TripValue>();
+
+            foreach (var t in await _transactionRepository.GetTripOwnExpenseTransactionsAsync(tripId))
+            {
+                var amount = Math.Abs(t.Amount);
+                if (amount == 0) continue;
+
+                // La transacción ya registró su propia cotización al crearse (garantizada no nula desde la
+                // Fase 1 del plan, y backfilleada en la Fase 2); solo se recalcula si falta.
+                var valueInUsd = t.QuotePrice is > 0
+                    ? amount / t.QuotePrice.Value
+                    : await ToUsdAsync(t.AssetId, t.Asset, amount, t.Date);
+
+                result.Add(new TripValue
+                {
+                    TransactionClass = t.TransactionClass?.Description,
+                    ValueInReference = valueInUsd * await GetReferenceQuoteAsync(referenceAssetId, t.Date)
+                });
+            }
+
+            // Los consumos de tarjeta no guardan cotización, así que se resuelve por la fecha del consumo.
+            foreach (var ct in await _cardTransactionRepository.GetTripOwnExpenseCardTransactionsAsync(tripId))
+            {
+                var amount = Math.Abs(ct.TotalAmount);
+                if (amount == 0) continue;
+
+                var valueInUsd = await ToUsdAsync(ct.AssetId, ct.Asset, amount, ct.Date);
+
+                result.Add(new TripValue
+                {
+                    TransactionClass = ct.TransactionClass?.Description,
+                    ValueInReference = valueInUsd * await GetReferenceQuoteAsync(referenceAssetId, ct.Date)
+                });
+            }
+
+            return result;
+        }
+
+        // USD no cotiza contra sí mismo; el resto se lleva a dólares con la cotización de la fecha.
+        private async Task<decimal> ToUsdAsync(int assetId, Asset? asset, decimal amount, DateTime date)
+        {
+            if (asset?.Name == "Dolar Estadounidense") return amount;
+            return amount / await _assetQuoteRepository.GetQuotePrice(assetId, date, "BLUE");
         }
 
         // USD es la moneda puente: no tiene cotización contra sí misma, se resuelve como identidad.
