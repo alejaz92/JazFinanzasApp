@@ -1530,6 +1530,24 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        // Libera la FK para que el reintegro se pueda consolidar dentro de la cuota que lo absorbe, dejando
+        // marcado que ese placeholder ya no existe: el pago del evento pasa a requerir un ajuste para revertirse.
+        public async Task DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(int transactionId)
+        {
+            var allocations = await _context.SharedEventPaymentAllocations
+                .Where(a => a.CreatedIncomeTransactionId == transactionId)
+                .ToListAsync();
+
+            foreach (var allocation in allocations)
+            {
+                allocation.CreatedIncomeTransactionId = null;
+                allocation.IncomeTransactionConsumed = true;
+                allocation.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
         {
             var endExclusive = endDate.Date.AddDays(1);

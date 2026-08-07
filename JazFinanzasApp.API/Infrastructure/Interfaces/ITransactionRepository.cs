@@ -29,5 +29,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate);
         Task<IEnumerable<Transaction>> SearchTripAssociableTransactionsAsync(int userId, string? search);
         Task<IEnumerable<Transaction>> GetByCardTransactionIdAsync(int cardTransactionId);
+        Task DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(int transactionId);
     }
 }

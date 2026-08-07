@@ -458,6 +458,30 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task DeletePaymentAsync_WhenIncomeWasConsumedByACardStatement_ThrowsBusinessRuleException()
+        {
+            // El pago de tarjeta consolidó el reintegro dentro de la cuota y borró el placeholder: no queda
+            // qué revertir automáticamente, hay que registrar un ajuste.
+            var sharedEvent = BuildEvent(Juan);
+            _sharedEventRepoMock.Setup(r => r.GetWithParticipantsAsync(EventId)).ReturnsAsync(sharedEvent);
+
+            var allocation = new SharedEventPaymentAllocation
+            {
+                Id = 1, SharedExpenseSplitId = 10, Amount = 10000m,
+                CreatedIncomeTransactionId = null, IncomeTransactionConsumed = true
+            };
+            var payment = new SharedEventPayment { Id = 5, SharedEventId = EventId, Allocations = new List<SharedEventPaymentAllocation> { allocation } };
+
+            _sharedEventPaymentRepoMock.Setup(r => r.GetDetailByIdAsync(5)).ReturnsAsync(payment);
+            _sharedEventPaymentRepoMock.Setup(r => r.GetLastPaymentAsync(EventId)).ReturnsAsync(payment);
+
+            await FluentActions.Invoking(() => _sut.DeletePaymentAsync(UserId, EventId, 5))
+                .Should().ThrowAsync<BusinessRuleException>();
+
+            _sharedEventPaymentRepoMock.Verify(r => r.DeletePaymentWithAllocationsAsync(It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
         public async Task DeletePaymentAsync_ReversesAccountCreditAllocation()
         {
             var sharedEvent = BuildEvent(Juan);

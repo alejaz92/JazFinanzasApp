@@ -430,6 +430,12 @@ namespace JazFinanzasApp.API.Business.Services
                     break;
 
                 await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
+
+                // Si la devolución se saldó a través de un Evento Compartido, su Transaction es el placeholder
+                // que creó el motor de pagos y sigue referenciada desde SharedEventPaymentAllocations (FK real).
+                // El reintegro se consolida igual dentro de la cuota — se suelta la FK y se deja marcado que el
+                // placeholder ya no existe, así el pago del evento pide un ajuste en vez de revertirse solo.
+                await _transactionRepository.DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(reimbursement.TransactionId);
                 await _transactionRepository.DeleteAsync(reimbursement.TransactionId);
             }
         }

@@ -94,6 +94,12 @@ Las filas que se agregan a mano al pagar (gastos que nunca se cargaron como cons
 
 `NetBreakdown` sigue siendo solo la fuente (1) — los gastos propios no pertenecen a ningún evento — así que `Total` puede ser mayor que la suma de sus filas.
 
+### Reintegros de tarjeta: la consolidación siempre gana
+
+Al pagar una cuota, `RegisterCardPaymentAsync` consolida el reintegro ya cobrado (descuento bancario o pool de gastos compartidos) dentro del gasto: suma el reintegro al monto de la cuota y borra la `Transaction` de ingreso que lo representaba (`ApplyCardTransactionDiscountInstallmentAsync` / `RemoveConsumedReimbursementsAsync`). **La cuota siempre queda reducida y el ingreso separado siempre desaparece** — nunca se deja la `Transaction` viva "por las dudas", porque eso contaría la misma plata dos veces en el saldo.
+
+Cuando el reintegro lo generó un pago de Evento Compartido, esa `Transaction` es el placeholder que crea `ApplyCreditAsync` y está referenciada desde `SharedEventPaymentAllocations.CreatedIncomeTransactionId` (FK real, `NO_ACTION`). Antes de borrarla se llama a `DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync`, que pone esa FK en null y marca `IncomeTransactionConsumed = true`. Esa marca es la que usa `DeletePaymentAsync` para bloquear la reversa del pago del evento (no se puede deshacer solo — hay que registrar un ajuste), porque `CreatedIncomeTransactionId` además de puntero funciona como discriminador de cómo revertir: anularlo sin la marca haría que `ReverseAllocationAsync` tomara la rama equivocada.
+
 ### Tests
 
 xUnit + Moq + FluentAssertions, en `JazFinanzasApp.Tests/Services/`. Cubren los servicios con lógica de negocio relevante (`AuthService`, `TransactionService`, `CardTransactionService`, `InvestmentTransactionService`, `ReportService`). Al agregar lógica de negocio no trivial a un servicio nuevo o existente, sumar su test correspondiente siguiendo el mismo patrón (mock de repositorios/`IUnitOfWork`, sin DB real).

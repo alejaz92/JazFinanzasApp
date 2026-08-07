@@ -203,6 +203,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (lastPayment == null || lastPayment.Id != paymentId)
                 throw new BusinessRuleException("Solo se puede eliminar el último pago registrado del evento; para pagos anteriores, registrar un ajuste");
 
+            if (payment.Allocations.Any(a => a.IncomeTransactionConsumed))
+                throw new BusinessRuleException("Este pago ya no se puede revertir: el reintegro fue consumido por un resumen de tarjeta posterior. Registrar un ajuste en su lugar.");
+
             foreach (var allocation in payment.Allocations.Where(a => a.CreatedIncomeTransactionId != null))
             {
                 var stillExists = await _transactionRepository.GetByIdAsync(allocation.CreatedIncomeTransactionId!.Value);

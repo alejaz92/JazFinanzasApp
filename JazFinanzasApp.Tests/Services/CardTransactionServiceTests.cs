@@ -409,6 +409,70 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionDiscountRepoMock.Verify(r => r.UpdateAsync(It.IsAny<CardTransactionDiscount>()), Times.Never);
         }
 
+        private (SharedExpense sharedExpense, SharedExpenseSplit split, SharedExpenseReimbursement reimbursement) MakeFullyConsumedReimbursementSetup()
+        {
+            var sharedExpense = new SharedExpense { Id = 1, CardTransactionId = 20, UserId = UserId };
+            var split = new SharedExpenseSplit
+            {
+                Id = 5,
+                SharedExpenseId = 1,
+                SharedExpense = sharedExpense,
+                PersonId = 8,
+                Amount = 50m,
+                AmountReimbursed = 50m,
+                AmountApplied = 0,
+                InstallmentSplitAmount = 50m
+            };
+            sharedExpense.Splits = new List<SharedExpenseSplit> { split };
+            var reimbursement = new SharedExpenseReimbursement { Id = 100, SharedExpenseSplitId = 5, TransactionId = 900, Amount = 50m, Date = new DateTime(2026, 1, 1) };
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(sharedExpense);
+            _sharedExpenseRepoMock.Setup(r => r.GetReimbursementsBySplitIdAsync(5)).ReturnsAsync(new List<SharedExpenseReimbursement> { reimbursement });
+
+            return (sharedExpense, split, reimbursement);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithFullyConsumedReimbursement_ConsolidatesItIntoTheInstallment()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+            var (_, _, reimbursement) = MakeFullyConsumedReimbursementSetup();
+
+            Transaction? capturedExpenseTransaction = null;
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(t => { if (t.Detail!.Contains("Compra")) capturedExpenseTransaction = t; })
+                .Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            capturedExpenseTransaction!.Amount.Should().Be(-150m); // -200 (cuota) + 50 (reintegro consolidado)
+            _sharedExpenseRepoMock.Verify(r => r.DeleteReimbursementAsync(reimbursement.Id), Times.Once);
+            _transactionRepoMock.Verify(r => r.DeleteAsync(reimbursement.TransactionId), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithFullyConsumedReimbursement_DetachesItFromSharedEventPaymentAllocationsBeforeDeleting()
+        {
+            // El placeholder que crea el motor de pagos de Eventos Compartidos sigue referenciado desde
+            // SharedEventPaymentAllocations (FK real). Hay que soltar esa FK antes de borrarlo, o el DELETE
+            // tira DbUpdateException y hace fallar todo el pago de tarjeta.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 200m);
+            var (_, _, reimbursement) = MakeFullyConsumedReimbursementSetup();
+
+            var callOrder = new List<string>();
+            _transactionRepoMock.Setup(r => r.DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(reimbursement.TransactionId))
+                .Callback(() => callOrder.Add("detach")).Returns(Task.CompletedTask);
+            _transactionRepoMock.Setup(r => r.DeleteAsync(reimbursement.TransactionId))
+                .Callback(() => callOrder.Add("delete")).Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            callOrder.Should().Equal("detach", "delete");
+        }
+
         [Fact]
         public async Task RegisterCardPaymentAsync_LinksInstallmentTransactionToCardTransaction()
         {

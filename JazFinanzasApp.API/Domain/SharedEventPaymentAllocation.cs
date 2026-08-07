@@ -40,6 +40,11 @@ namespace JazFinanzasApp.API.Domain
         public int? CreatedIncomeTransactionId { get; set; }
         public Transaction? CreatedIncomeTransaction { get; set; }
 
+        // El placeholder de arriba se consolidó dentro de una cuota al pagar el resumen: la Transaction se borró
+        // y CreatedIncomeTransactionId quedó en null (la FK no admite apuntar a una fila inexistente). El pago del
+        // evento ya no se puede revertir automáticamente — hay que registrar un ajuste.
+        public bool IncomeTransactionConsumed { get; set; }
+
         // par EX si hubo cruce de cuentas
         [ForeignKey("CreatedExchangeOutTransactionId")]
         public int? CreatedExchangeOutTransactionId { get; set; }
