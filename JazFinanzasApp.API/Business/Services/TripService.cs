@@ -18,6 +18,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly ITripSuggestionDismissalRepository _dismissalRepository;
         private readonly ISharedEventRepository _sharedEventRepository;
+        private readonly ISharedEventPaymentRepository _sharedEventPaymentRepository;
         private readonly IReportService _reportService;
 
         public TripService(
@@ -26,6 +27,7 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionRepository cardTransactionRepository,
             ITripSuggestionDismissalRepository dismissalRepository,
             ISharedEventRepository sharedEventRepository,
+            ISharedEventPaymentRepository sharedEventPaymentRepository,
             IReportService reportService)
         {
             _tripRepository = tripRepository;
@@ -33,6 +35,7 @@ namespace JazFinanzasApp.API.Business.Services
             _cardTransactionRepository = cardTransactionRepository;
             _dismissalRepository = dismissalRepository;
             _sharedEventRepository = sharedEventRepository;
+            _sharedEventPaymentRepository = sharedEventPaymentRepository;
             _reportService = reportService;
         }
 
@@ -50,7 +53,7 @@ namespace JazFinanzasApp.API.Business.Services
             var cardTransactions = await _cardTransactionRepository.GetCardTransactionsByTripIdAsync(id);
 
             var events = await _sharedEventRepository.GetDetailByTripIdAsync(id);
-            var movementIndex = await BuildEventMovementIndexAsync(events);
+            var movementIndex = await BuildEventMovementIndexAsync(events, transactions.Select(t => t.Id));
 
             // D4: mismo cálculo que el reporte, extraído a un método compartido en vez de reimplementado acá.
             var totals = await _reportService.GetTripOwnAndGrossTotalsAsync(userId, id);
@@ -82,7 +85,7 @@ namespace JazFinanzasApp.API.Business.Services
         // donde "Vuelos Bariloche" son 6 movimientos de Evento, uno por cuota, todos con CardTransactionId null.
         // Por eso una cuota "suelta" se resuelve consultando su propio Transaction.CardTransactionId.
         private async Task<Dictionary<(string Origin, int Id), List<SharedEventMovement>>> BuildEventMovementIndexAsync(
-            IEnumerable<SharedEvent> events)
+            IEnumerable<SharedEvent> events, IEnumerable<int> accountTransactionIds)
         {
             var index = new Dictionary<(string, int), List<SharedEventMovement>>();
             var looseTransactionIds = new HashSet<int>();
@@ -99,22 +102,52 @@ namespace JazFinanzasApp.API.Business.Services
                 }
             }
 
-            if (looseTransactionIds.Count == 0) return index;
-
-            var looseTransactions = (await _transactionRepository.FindAsync(t => looseTransactionIds.Contains(t.Id)))
-                .ToDictionary(t => t.Id);
-
-            foreach (var e in eventsList)
+            if (looseTransactionIds.Count > 0)
             {
-                foreach (var m in e.Movements ?? new List<SharedEventMovement>())
-                {
-                    if (m.CardTransactionId != null || m.TransactionId == null) continue;
-                    if (!looseTransactions.TryGetValue(m.TransactionId.Value, out var transaction)) continue;
+                var looseTransactions = (await _transactionRepository.FindAsync(t => looseTransactionIds.Contains(t.Id)))
+                    .ToDictionary(t => t.Id);
 
-                    if (transaction.CardTransactionId != null)
-                        AddToIndex(index, MovementTypeCard, transaction.CardTransactionId.Value, m);
-                    else
-                        AddToIndex(index, MovementTypeAccount, transaction.Id, m);
+                foreach (var e in eventsList)
+                {
+                    foreach (var m in e.Movements ?? new List<SharedEventMovement>())
+                    {
+                        if (m.CardTransactionId != null || m.TransactionId == null) continue;
+                        if (!looseTransactions.TryGetValue(m.TransactionId.Value, out var transaction)) continue;
+
+                        if (transaction.CardTransactionId != null)
+                            AddToIndex(index, MovementTypeCard, transaction.CardTransactionId.Value, m);
+                        else
+                            AddToIndex(index, MovementTypeAccount, transaction.Id, m);
+                    }
+                }
+            }
+
+            // Tercer camino, sin FK en el movimiento en absoluto: un gasto que pagó otra persona y el usuario
+            // saldó después. El movimiento nunca tuvo TransactionId/CardTransactionId propio (nadie de acá lo
+            // pagó); el único rastro es la transacción de saldo, creada o tocada al liquidar la deuda —
+            // verificado contra Buenos Aires 2024 en producción ("Big Pons", pagado por Renzo): el movimiento
+            // tiene ambas FK en null, y la transacción "(Evento: Buenos Aires 2024) Big Pons" tageada con el
+            // viaje se ata solo vía SharedEventPaymentAllocations.SharedEventMovementShareId.
+            var unresolvedAccountIds = accountTransactionIds
+                .Where(tid => !index.ContainsKey((MovementTypeAccount, tid)))
+                .ToList();
+            if (unresolvedAccountIds.Count > 0)
+            {
+                var allocations = await _sharedEventPaymentRepository.GetSettlementAllocationsByTransactionIdsAsync(unresolvedAccountIds);
+                var movementsById = eventsList
+                    .SelectMany(e => e.Movements ?? new List<SharedEventMovement>())
+                    .GroupBy(m => m.Id)
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                foreach (var allocation in allocations)
+                {
+                    var movementId = allocation.SharedEventMovementShare?.SharedEventMovementId;
+                    if (movementId == null || !movementsById.TryGetValue(movementId.Value, out var movement)) continue;
+
+                    var settledTransactionId = allocation.CreatedExpenseTransactionId ?? allocation.TouchedTransactionId;
+                    if (settledTransactionId == null) continue;
+
+                    AddToIndex(index, MovementTypeAccount, settledTransactionId.Value, movement);
                 }
             }
 
@@ -458,6 +491,10 @@ namespace JazFinanzasApp.API.Business.Services
             dto.IsShared = true;
             dto.SharedEventId = eventMovements[0].SharedEventId;
             dto.OwnAmount = eventMovements.Sum(m => m.Shares?.Where(s => s.PersonId == null).Sum(s => s.Amount) ?? 0);
+            // Lo que gastó el grupo, no el bruto de la fila: para el tercer camino de BuildEventMovementIndexAsync
+            // (deuda saldada) la transacción real es la del saldo, que ya es la parte propia — no el total.
+            dto.GrossAmount = eventMovements.Sum(m => m.TotalAmount);
+            dto.PaidByName = eventMovements.Select(m => m.PayerPerson?.Name).FirstOrDefault(n => n != null);
             dto.SharedWith = eventMovements
                 .SelectMany(m => m.Shares?.Where(s => s.PersonId != null).Select(s => s.Person!.Name) ?? Enumerable.Empty<string>())
                 .Distinct()

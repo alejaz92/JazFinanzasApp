@@ -13,5 +13,10 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<SharedEventPayment?> GetDetailByIdAsync(int id);
         Task<SharedEventPayment?> GetLastPaymentAsync(int sharedEventId);
         Task DeletePaymentWithAllocationsAsync(int paymentId);
+
+        // Asignaciones de pago que saldaron la parte propia de un movimiento de Evento (SharedEventMovementShareId
+        // != null) tocando o creando una de las transacciones dadas — el único rastro cuando el movimiento nunca
+        // tuvo TransactionId/CardTransactionId propio (lo pagó otra persona y el usuario saldó después).
+        Task<List<SharedEventPaymentAllocation>> GetSettlementAllocationsByTransactionIdsAsync(IEnumerable<int> transactionIds);
     }
 }

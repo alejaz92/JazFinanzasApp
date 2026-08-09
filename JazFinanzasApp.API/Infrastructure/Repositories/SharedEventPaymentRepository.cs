@@ -54,6 +54,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
+        public async Task<List<SharedEventPaymentAllocation>> GetSettlementAllocationsByTransactionIdsAsync(IEnumerable<int> transactionIds)
+        {
+            var ids = transactionIds.ToList();
+            if (ids.Count == 0) return new List<SharedEventPaymentAllocation>();
+
+            return await _context.SharedEventPaymentAllocations
+                .Where(a => a.SharedEventMovementShareId != null &&
+                    ((a.CreatedExpenseTransactionId != null && ids.Contains(a.CreatedExpenseTransactionId.Value)) ||
+                     (a.TouchedTransactionId != null && ids.Contains(a.TouchedTransactionId.Value))))
+                .Include(a => a.SharedEventMovementShare)
+                .ToListAsync();
+        }
+
         public async Task DeletePaymentWithAllocationsAsync(int paymentId)
         {
             var allocations = await _context.SharedEventPaymentAllocations

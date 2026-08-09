@@ -18,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardTransactionRepository> _cardTransactionRepoMock;
         private readonly Mock<ITripSuggestionDismissalRepository> _dismissalRepoMock;
         private readonly Mock<ISharedEventRepository> _sharedEventRepoMock;
+        private readonly Mock<ISharedEventPaymentRepository> _sharedEventPaymentRepoMock;
         private readonly Mock<IReportService> _reportServiceMock;
         private readonly TripService _sut;
 
@@ -51,6 +52,10 @@ namespace JazFinanzasApp.Tests.Services
             _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(It.IsAny<int>()))
                 .ReturnsAsync(new List<SharedEvent>());
 
+            _sharedEventPaymentRepoMock = new Mock<ISharedEventPaymentRepository>();
+            _sharedEventPaymentRepoMock.Setup(r => r.GetSettlementAllocationsByTransactionIdsAsync(It.IsAny<IEnumerable<int>>()))
+                .ReturnsAsync(new List<SharedEventPaymentAllocation>());
+
             _reportServiceMock = new Mock<IReportService>();
             _reportServiceMock.Setup(r => r.GetTripOwnAndGrossTotalsAsync(It.IsAny<int>(), It.IsAny<int>()))
                 .ReturnsAsync(new TripTotalsDTO());
@@ -61,6 +66,7 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionRepoMock.Object,
                 _dismissalRepoMock.Object,
                 _sharedEventRepoMock.Object,
+                _sharedEventPaymentRepoMock.Object,
                 _reportServiceMock.Object);
         }
 
@@ -272,6 +278,7 @@ namespace JazFinanzasApp.Tests.Services
             {
                 SharedEventId = 15,
                 CardTransactionId = 20,
+                TotalAmount = 80000m,
                 Shares = new List<SharedEventMovementShare>
                 {
                     new() { PersonId = null, Amount = 40000m },
@@ -287,6 +294,8 @@ namespace JazFinanzasApp.Tests.Services
             movement.IsShared.Should().BeTrue();
             movement.SharedEventId.Should().Be(15);
             movement.OwnAmount.Should().Be(40000m);
+            movement.GrossAmount.Should().Be(80000m);
+            movement.PaidByName.Should().BeNull(); // pagó el usuario (PayerPersonId null)
             movement.SharedWith.Should().BeEquivalentTo(new[] { "Redo" });
         }
 
@@ -365,6 +374,59 @@ namespace JazFinanzasApp.Tests.Services
             movement.SharedEventId.Should().Be(15);
             movement.OwnAmount.Should().Be(25000m);
             movement.SharedWith.Should().BeEquivalentTo(new[] { "Viole" });
+        }
+
+        [Fact]
+        public async Task GetByIdAsync_MovementPaidByOtherAndSettledLater_ResolvesViaPaymentAllocation()
+        {
+            // Caso real de Buenos Aires 2024: "Big Pons" lo pagó Renzo, así que el movimiento de Evento nunca
+            // tuvo TransactionId/CardTransactionId propio. El único rastro en la cuenta del usuario es la
+            // transacción de saldo de deuda ("(Evento: Buenos Aires 2024) Big Pons", ya neta de su parte), que
+            // se ata al movimiento solo vía SharedEventPaymentAllocations.SharedEventMovementShareId.
+            SetupOwnedTrip(BuildTrip());
+            var settlementTransaction = BuildExpenseTransaction(id: 5886);
+            settlementTransaction.Amount = -19483.33m;
+            settlementTransaction.Detail = "(Evento: Buenos Aires 2024) Big Pons";
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5))
+                .ReturnsAsync(new List<Transaction> { settlementTransaction });
+
+            var renzo = new Person { Id = 3, Name = "Renzo" };
+            var ownShare = new SharedEventMovementShare { Id = 1168, SharedEventMovementId = 341, PersonId = null, Amount = 19483.33m };
+            var eventMovement = new SharedEventMovement
+            {
+                Id = 341,
+                SharedEventId = 22,
+                PayerPersonId = 3,
+                PayerPerson = renzo,
+                TotalAmount = 116900m,
+                Shares = new List<SharedEventMovementShare>
+                {
+                    ownShare,
+                    new() { PersonId = 3, Person = renzo, Amount = 19483.33m }
+                }
+            };
+            var sharedEvent = new SharedEvent { Id = 22, Movements = new List<SharedEventMovement> { eventMovement } };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var allocation = new SharedEventPaymentAllocation
+            {
+                SharedEventMovementShareId = 1168,
+                SharedEventMovementShare = ownShare,
+                CreatedExpenseTransactionId = 5886
+            };
+            _sharedEventPaymentRepoMock.Setup(r => r.GetSettlementAllocationsByTransactionIdsAsync(
+                    It.Is<IEnumerable<int>>(ids => ids.Contains(5886))))
+                .ReturnsAsync(new List<SharedEventPaymentAllocation> { allocation });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            var movement = result.Movements.Single();
+            movement.IsShared.Should().BeTrue();
+            movement.SharedEventId.Should().Be(22);
+            movement.OwnAmount.Should().Be(19483.33m);
+            movement.GrossAmount.Should().Be(116900m);
+            movement.PaidByName.Should().Be("Renzo");
+            movement.SharedWith.Should().Contain("Renzo");
         }
 
         // ── GetByIdAsync (eventos vinculados) ──────────────────────────────────

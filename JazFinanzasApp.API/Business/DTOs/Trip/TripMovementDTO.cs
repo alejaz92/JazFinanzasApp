@@ -18,5 +18,14 @@ namespace JazFinanzasApp.API.Business.DTO.Trip
         public bool IsShared { get; set; }
         public int? SharedEventId { get; set; }
         public List<string>? SharedWith { get; set; }
+
+        // Lo que gastó el grupo en el movimiento de Evento (SharedEventMovement.TotalAmount), no necesariamente
+        // igual a Amount: cuando el gasto lo pagó otra persona y el usuario saldó su parte después, Amount es el
+        // monto de la transacción de saldo (ya es la parte propia), no el total del grupo — GrossAmount sí lo es.
+        public decimal? GrossAmount { get; set; }
+
+        // Nombre de quien pagó, si no fue el usuario (SharedEventMovement.PayerPersonId). Null si pagó el
+        // usuario o si el movimiento no está compartido.
+        public string? PaidByName { get; set; }
     }
 }
