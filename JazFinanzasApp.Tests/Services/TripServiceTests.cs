@@ -216,6 +216,133 @@ namespace JazFinanzasApp.Tests.Services
             result.Movements[1].Amount.Should().Be(5000m); // egreso en positivo
         }
 
+        // ── GetByIdAsync (parte propia del Evento Compartido) ──────────────────
+        // docs/plans/activos/plan-detalle-viaje-montos-propios.md, Fase 1
+
+        [Fact]
+        public async Task GetByIdAsync_MovementWithoutLinkedEvent_OwnAmountFieldsAreNull()
+        {
+            SetupOwnedTrip(BuildTrip());
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5))
+                .ReturnsAsync(new List<Transaction> { BuildExpenseTransaction() });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            var movement = result.Movements.Single();
+            movement.IsShared.Should().BeFalse();
+            movement.OwnAmount.Should().BeNull();
+            movement.SharedEventId.Should().BeNull();
+            movement.SharedWith.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task GetByIdAsync_CardMovementDirectlyLinkedToEvent_ReturnsOwnAmountAndSharedWith()
+        {
+            SetupOwnedTrip(BuildTrip());
+            var cardTransaction = BuildCardTransaction(id: 20);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5))
+                .ReturnsAsync(new List<CardTransaction> { cardTransaction });
+
+            var redo = new Person { Id = 7, Name = "Redo" };
+            var eventMovement = new SharedEventMovement
+            {
+                SharedEventId = 15,
+                CardTransactionId = 20,
+                Shares = new List<SharedEventMovementShare>
+                {
+                    new() { PersonId = null, Amount = 40000m },
+                    new() { PersonId = 7, Person = redo, Amount = 40000m }
+                }
+            };
+            var sharedEvent = new SharedEvent { Id = 15, Movements = new List<SharedEventMovement> { eventMovement } };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            var movement = result.Movements.Single();
+            movement.IsShared.Should().BeTrue();
+            movement.SharedEventId.Should().Be(15);
+            movement.OwnAmount.Should().Be(40000m);
+            movement.SharedWith.Should().BeEquivalentTo(new[] { "Redo" });
+        }
+
+        [Fact]
+        public async Task GetByIdAsync_AccountMovementDirectlyLinkedToEvent_ReturnsOwnAmount()
+        {
+            SetupOwnedTrip(BuildTrip());
+            var transaction = BuildExpenseTransaction(id: 10);
+            _transactionRepoMock.Setup(r => r.GetTransactionsByTripIdAsync(5))
+                .ReturnsAsync(new List<Transaction> { transaction });
+
+            var eventMovement = new SharedEventMovement
+            {
+                SharedEventId = 15,
+                TransactionId = 10,
+                Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 5000m } }
+            };
+            var sharedEvent = new SharedEvent { Id = 15, Movements = new List<SharedEventMovement> { eventMovement } };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            // La transacción del propio movimiento (sin CardTransactionId): resuelve el vínculo directo.
+            _transactionRepoMock.Setup(r => r.FindAsync(It.IsAny<Expression<Func<Transaction, bool>>>()))
+                .ReturnsAsync(new List<Transaction> { transaction });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            var movement = result.Movements.Single();
+            movement.IsShared.Should().BeTrue();
+            movement.OwnAmount.Should().Be(5000m);
+        }
+
+        [Fact]
+        public async Task GetByIdAsync_CardMovementSplitAcrossInstallmentTransactions_AggregatesOwnAmount()
+        {
+            // Caso real de Bariloche 2026: el consumo de tarjeta se repartió en un SharedEventMovement por
+            // cuota, cada uno con TransactionId apuntando al pago de esa cuota (CardTransactionId null en el
+            // movimiento), y la cuota a su vez apunta al CardTransaction real vía Transaction.CardTransactionId.
+            SetupOwnedTrip(BuildTrip());
+            var cardTransaction = BuildCardTransaction(id: 20);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsByTripIdAsync(5))
+                .ReturnsAsync(new List<CardTransaction> { cardTransaction });
+
+            var viole = new Person { Id = 8, Name = "Viole" };
+            var installment1 = new SharedEventMovement
+            {
+                SharedEventId = 15,
+                TransactionId = 101,
+                Shares = new List<SharedEventMovementShare>
+                {
+                    new() { PersonId = null, Amount = 10000m },
+                    new() { PersonId = 8, Person = viole, Amount = 10000m }
+                }
+            };
+            var installment2 = new SharedEventMovement
+            {
+                SharedEventId = 15,
+                TransactionId = 102,
+                Shares = new List<SharedEventMovementShare>
+                {
+                    new() { PersonId = null, Amount = 15000m },
+                    new() { PersonId = 8, Person = viole, Amount = 15000m }
+                }
+            };
+            var sharedEvent = new SharedEvent { Id = 15, Movements = new List<SharedEventMovement> { installment1, installment2 } };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var cuota1 = new Transaction { Id = 101, CardTransactionId = 20 };
+            var cuota2 = new Transaction { Id = 102, CardTransactionId = 20 };
+            _transactionRepoMock.Setup(r => r.FindAsync(It.IsAny<Expression<Func<Transaction, bool>>>()))
+                .ReturnsAsync(new List<Transaction> { cuota1, cuota2 });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            var movement = result.Movements.Single();
+            movement.IsShared.Should().BeTrue();
+            movement.SharedEventId.Should().Be(15);
+            movement.OwnAmount.Should().Be(25000m);
+            movement.SharedWith.Should().BeEquivalentTo(new[] { "Viole" });
+        }
+
         // ── GetByIdAsync (eventos vinculados) ──────────────────────────────────
 
         [Fact]

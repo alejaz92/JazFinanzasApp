@@ -46,7 +46,8 @@ namespace JazFinanzasApp.API.Business.Services
             var transactions = await _transactionRepository.GetTransactionsByTripIdAsync(id);
             var cardTransactions = await _cardTransactionRepository.GetCardTransactionsByTripIdAsync(id);
 
-            var linkedEvents = await GetLinkedEventsAsync(id);
+            var events = await _sharedEventRepository.GetDetailByTripIdAsync(id);
+            var movementIndex = await BuildEventMovementIndexAsync(events);
 
             var detail = new TripDetailDTO
             {
@@ -56,19 +57,76 @@ namespace JazFinanzasApp.API.Business.Services
                 StartDate = trip.StartDate,
                 EndDate = trip.EndDate,
                 Status = GetStatus(trip),
-                Movements = transactions.Select(MapAccountMovement)
-                    .Concat(cardTransactions.Select(MapCardMovement))
+                Movements = transactions.Select(t => MapAccountMovement(t, movementIndex))
+                    .Concat(cardTransactions.Select(ct => MapCardMovement(ct, movementIndex)))
                     .OrderBy(m => m.Date)
                     .ToList(),
-                LinkedEvents = linkedEvents
+                LinkedEvents = MapLinkedEvents(events)
             };
             return detail;
         }
 
-        private async Task<List<TripLinkedEventDTO>> GetLinkedEventsAsync(int tripId)
+        // Índice (origen, id del movimiento real) → movimientos del Evento, para resolver la parte propia sin
+        // recorrer los eventos por cada fila (D1 de docs/plans/activos/plan-detalle-viaje-montos-propios.md).
+        // Puede haber más de un movimiento de Evento por fila: un gasto de tarjeta cargado históricamente puede
+        // estar repartido en un SharedEventMovement por cuota, cada uno con TransactionId apuntando al pago de
+        // esa cuota (no a la CardTransactionId del consumo) — verificado contra Bariloche 2026 en producción,
+        // donde "Vuelos Bariloche" son 6 movimientos de Evento, uno por cuota, todos con CardTransactionId null.
+        // Por eso una cuota "suelta" se resuelve consultando su propio Transaction.CardTransactionId.
+        private async Task<Dictionary<(string Origin, int Id), List<SharedEventMovement>>> BuildEventMovementIndexAsync(
+            IEnumerable<SharedEvent> events)
         {
-            var events = await _sharedEventRepository.GetDetailByTripIdAsync(tripId);
+            var index = new Dictionary<(string, int), List<SharedEventMovement>>();
+            var looseTransactionIds = new HashSet<int>();
+            var eventsList = events as ICollection<SharedEvent> ?? events.ToList();
 
+            foreach (var e in eventsList)
+            {
+                foreach (var m in e.Movements ?? new List<SharedEventMovement>())
+                {
+                    if (m.CardTransactionId != null)
+                        AddToIndex(index, MovementTypeCard, m.CardTransactionId.Value, m);
+                    else if (m.TransactionId != null)
+                        looseTransactionIds.Add(m.TransactionId.Value);
+                }
+            }
+
+            if (looseTransactionIds.Count == 0) return index;
+
+            var looseTransactions = (await _transactionRepository.FindAsync(t => looseTransactionIds.Contains(t.Id)))
+                .ToDictionary(t => t.Id);
+
+            foreach (var e in eventsList)
+            {
+                foreach (var m in e.Movements ?? new List<SharedEventMovement>())
+                {
+                    if (m.CardTransactionId != null || m.TransactionId == null) continue;
+                    if (!looseTransactions.TryGetValue(m.TransactionId.Value, out var transaction)) continue;
+
+                    if (transaction.CardTransactionId != null)
+                        AddToIndex(index, MovementTypeCard, transaction.CardTransactionId.Value, m);
+                    else
+                        AddToIndex(index, MovementTypeAccount, transaction.Id, m);
+                }
+            }
+
+            return index;
+        }
+
+        private static void AddToIndex(
+            Dictionary<(string Origin, int Id), List<SharedEventMovement>> index,
+            string origin, int id, SharedEventMovement movement)
+        {
+            if (!index.TryGetValue((origin, id), out var list))
+            {
+                list = new List<SharedEventMovement>();
+                index[(origin, id)] = list;
+            }
+            list.Add(movement);
+        }
+
+        private static List<TripLinkedEventDTO> MapLinkedEvents(IEnumerable<SharedEvent> events)
+        {
             return events.Select(e => new TripLinkedEventDTO
             {
                 Id = e.Id,
@@ -227,10 +285,10 @@ namespace JazFinanzasApp.API.Business.Services
 
             return transactions
                 .Where(t => !dismissedTransactionIds.Contains(t.Id))
-                .Select(MapAccountMovement)
+                .Select(t => MapAccountMovement(t))
                 .Concat(cardTransactions
                     .Where(ct => !dismissedCardTransactionIds.Contains(ct.Id))
-                    .Select(MapCardMovement))
+                    .Select(ct => MapCardMovement(ct)))
                 .OrderBy(m => m.Date)
                 .ToList();
         }
@@ -242,8 +300,8 @@ namespace JazFinanzasApp.API.Business.Services
             var transactions = await _transactionRepository.SearchTripAssociableTransactionsAsync(userId, search);
             var cardTransactions = await _cardTransactionRepository.SearchTripAssociableCardTransactionsAsync(userId, search);
 
-            return transactions.Select(MapAccountMovement)
-                .Concat(cardTransactions.Select(MapCardMovement))
+            return transactions.Select(t => MapAccountMovement(t))
+                .Concat(cardTransactions.Select(ct => MapCardMovement(ct)))
                 .OrderByDescending(m => m.Date)
                 .ToList();
         }
@@ -339,9 +397,11 @@ namespace JazFinanzasApp.API.Business.Services
                 throw new BusinessRuleException("La clase del movimiento no es asociable a un viaje");
         }
 
-        private static TripMovementDTO MapAccountMovement(Transaction transaction)
+        private static TripMovementDTO MapAccountMovement(
+            Transaction transaction,
+            IReadOnlyDictionary<(string Origin, int Id), List<SharedEventMovement>>? eventMovementIndex = null)
         {
-            return new TripMovementDTO
+            var dto = new TripMovementDTO
             {
                 Id = transaction.Id,
                 Origin = MovementTypeAccount,
@@ -352,11 +412,15 @@ namespace JazFinanzasApp.API.Business.Services
                 Asset = transaction.Asset.Name,
                 AssetSymbol = transaction.Asset.Symbol
             };
+            ApplyEventInfo(dto, eventMovementIndex, MovementTypeAccount, transaction.Id);
+            return dto;
         }
 
-        private static TripMovementDTO MapCardMovement(CardTransaction cardTransaction)
+        private static TripMovementDTO MapCardMovement(
+            CardTransaction cardTransaction,
+            IReadOnlyDictionary<(string Origin, int Id), List<SharedEventMovement>>? eventMovementIndex = null)
         {
-            return new TripMovementDTO
+            var dto = new TripMovementDTO
             {
                 Id = cardTransaction.Id,
                 Origin = MovementTypeCard,
@@ -367,6 +431,29 @@ namespace JazFinanzasApp.API.Business.Services
                 Asset = cardTransaction.Asset.Name,
                 AssetSymbol = cardTransaction.Asset.Symbol
             };
+            ApplyEventInfo(dto, eventMovementIndex, MovementTypeCard, cardTransaction.Id);
+            return dto;
+        }
+
+        // D1: misma fórmula que SharedEventService.ComputeBalances y ReportService.GetTripMovementNetsAsync,
+        // reusada acá en vez de reinventada. Puede haber más de un movimiento de Evento por fila (ver
+        // BuildEventMovementIndexAsync), así que se suman las partes propias de todos.
+        private static void ApplyEventInfo(
+            TripMovementDTO dto,
+            IReadOnlyDictionary<(string Origin, int Id), List<SharedEventMovement>>? eventMovementIndex,
+            string origin,
+            int id)
+        {
+            if (eventMovementIndex == null || !eventMovementIndex.TryGetValue((origin, id), out var eventMovements) || eventMovements.Count == 0)
+                return;
+
+            dto.IsShared = true;
+            dto.SharedEventId = eventMovements[0].SharedEventId;
+            dto.OwnAmount = eventMovements.Sum(m => m.Shares?.Where(s => s.PersonId == null).Sum(s => s.Amount) ?? 0);
+            dto.SharedWith = eventMovements
+                .SelectMany(m => m.Shares?.Where(s => s.PersonId != null).Select(s => s.Person!.Name) ?? Enumerable.Empty<string>())
+                .Distinct()
+                .ToList();
         }
 
         private static void ValidateFields(string type, DateTime startDate, DateTime endDate)
