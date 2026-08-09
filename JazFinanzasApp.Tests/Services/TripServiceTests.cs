@@ -1,6 +1,8 @@
 using FluentAssertions;
+using JazFinanzasApp.API.Business.DTO.Report;
 using JazFinanzasApp.API.Business.DTO.Trip;
 using JazFinanzasApp.API.Business.Exceptions;
+using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
@@ -16,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardTransactionRepository> _cardTransactionRepoMock;
         private readonly Mock<ITripSuggestionDismissalRepository> _dismissalRepoMock;
         private readonly Mock<ISharedEventRepository> _sharedEventRepoMock;
+        private readonly Mock<IReportService> _reportServiceMock;
         private readonly TripService _sut;
 
         private const int UserId = 1;
@@ -48,12 +51,17 @@ namespace JazFinanzasApp.Tests.Services
             _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(It.IsAny<int>()))
                 .ReturnsAsync(new List<SharedEvent>());
 
+            _reportServiceMock = new Mock<IReportService>();
+            _reportServiceMock.Setup(r => r.GetTripOwnAndGrossTotalsAsync(It.IsAny<int>(), It.IsAny<int>()))
+                .ReturnsAsync(new TripTotalsDTO());
+
             _sut = new TripService(
                 _tripRepoMock.Object,
                 _transactionRepoMock.Object,
                 _cardTransactionRepoMock.Object,
                 _dismissalRepoMock.Object,
-                _sharedEventRepoMock.Object);
+                _sharedEventRepoMock.Object,
+                _reportServiceMock.Object);
         }
 
         private static Trip BuildTrip(int id = 5, int userId = UserId) => new()
@@ -214,6 +222,22 @@ namespace JazFinanzasApp.Tests.Services
             result.Movements[0].Amount.Should().Be(120000m); // TotalAmount devengado
             result.Movements[1].Origin.Should().Be("ACCOUNT");
             result.Movements[1].Amount.Should().Be(5000m); // egreso en positivo
+        }
+
+        // ── GetByIdAsync (los dos totales) ──────────────────────────────────────
+        // docs/plans/activos/plan-detalle-viaje-montos-propios.md, Fase 2
+
+        [Fact]
+        public async Task GetByIdAsync_ReturnsOwnAndGrossTotalsFromReportService()
+        {
+            SetupOwnedTrip(BuildTrip());
+            _reportServiceMock.Setup(r => r.GetTripOwnAndGrossTotalsAsync(UserId, 5))
+                .ReturnsAsync(new TripTotalsDTO { OwnTotal = 1507.18m, GrossTotal = 4639.74m });
+
+            var result = await _sut.GetByIdAsync(UserId, 5);
+
+            result.OwnTotal.Should().Be(1507.18m);
+            result.GrossTotal.Should().Be(4639.74m);
         }
 
         // ── GetByIdAsync (parte propia del Evento Compartido) ──────────────────

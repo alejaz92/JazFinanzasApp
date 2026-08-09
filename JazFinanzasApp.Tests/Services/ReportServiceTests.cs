@@ -326,6 +326,95 @@ namespace JazFinanzasApp.Tests.Services
             result.Total.Should().Be(20m);
         }
 
+        // ── GetTripOwnAndGrossTotalsAsync (plan-detalle-viaje-montos-propios.md, Fase 2) ──
+
+        [Fact]
+        public async Task GetTripOwnAndGrossTotalsAsync_OwnTotal_MatchesReportsTotal_ForSameTrip()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Bariloche", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+
+            var usdAsset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Vuelos",
+                Movements = new List<SharedEventMovement>
+                {
+                    new()
+                    {
+                        AssetId = 2, Asset = usdAsset, Date = MovementDate, TotalAmount = 300m,
+                        Shares = new List<SharedEventMovementShare>
+                        {
+                            new() { PersonId = null, Amount = 100m },
+                            new() { PersonId = 8, Amount = 200m }
+                        }
+                    }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5))
+                .ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var reportTotal = await _sut.GetTripDetailStatsAsync(UserId, 5);
+            var totals = await _sut.GetTripOwnAndGrossTotalsAsync(UserId, 5);
+
+            totals.OwnTotal.Should().Be(reportTotal.Total);
+            totals.OwnTotal.Should().Be(100m);
+        }
+
+        [Fact]
+        public async Task GetTripOwnAndGrossTotalsAsync_GrossTotal_UsesFullMovementAmount_EvenWhenNotOwnShare()
+        {
+            // Un gasto pagado enteramente por otra persona (parte propia 0) no pesa en OwnTotal pero sí en
+            // GrossTotal — es "lo que se gastó en total" sin importar quién pagó.
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Buenos Aires", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+
+            var usdAsset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var sharedEvent = new SharedEvent
+            {
+                Id = 10,
+                Name = "Big Pons",
+                Movements = new List<SharedEventMovement>
+                {
+                    new()
+                    {
+                        AssetId = 2, Asset = usdAsset, Date = MovementDate, TotalAmount = 500m,
+                        Shares = new List<SharedEventMovementShare> { new() { PersonId = 8, Amount = 500m } }
+                    }
+                }
+            };
+            _sharedEventRepoMock.Setup(r => r.GetDetailByTripIdAsync(5))
+                .ReturnsAsync(new List<SharedEvent> { sharedEvent });
+
+            var totals = await _sut.GetTripOwnAndGrossTotalsAsync(UserId, 5);
+
+            totals.OwnTotal.Should().Be(0m);
+            totals.GrossTotal.Should().Be(500m);
+        }
+
+        [Fact]
+        public async Task GetTripOwnAndGrossTotalsAsync_AddsOwnExpenses_ToBothTotals()
+        {
+            SetupUsdAsMainReference();
+            var trip = new Trip { Id = 5, Name = "Mar Chiquita", UserId = UserId, StartDate = MovementDate, EndDate = MovementDate };
+            _tripRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(trip);
+
+            var usdAsset = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };
+            var ownExpense = new Transaction
+            {
+                Id = 1, AssetId = 2, Asset = usdAsset, Date = MovementDate, Amount = -40m, QuotePrice = 1m
+            };
+            _transactionRepoMock.Setup(r => r.GetTripOwnExpenseTransactionsAsync(5)).ReturnsAsync(new List<Transaction> { ownExpense });
+
+            var totals = await _sut.GetTripOwnAndGrossTotalsAsync(UserId, 5);
+
+            totals.OwnTotal.Should().Be(40m);
+            totals.GrossTotal.Should().Be(40m);
+        }
+
         // ── Gastos propios etiquetados con TripId (plan-viajes-historicos.md, D1/D2) ──
 
         private static readonly Asset UsdAsset = new() { Id = 2, Name = "Dolar Estadounidense", Symbol = "USD" };

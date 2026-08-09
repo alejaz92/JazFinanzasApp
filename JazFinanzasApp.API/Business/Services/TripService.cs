@@ -18,19 +18,22 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardTransactionRepository _cardTransactionRepository;
         private readonly ITripSuggestionDismissalRepository _dismissalRepository;
         private readonly ISharedEventRepository _sharedEventRepository;
+        private readonly IReportService _reportService;
 
         public TripService(
             ITripRepository tripRepository,
             ITransactionRepository transactionRepository,
             ICardTransactionRepository cardTransactionRepository,
             ITripSuggestionDismissalRepository dismissalRepository,
-            ISharedEventRepository sharedEventRepository)
+            ISharedEventRepository sharedEventRepository,
+            IReportService reportService)
         {
             _tripRepository = tripRepository;
             _transactionRepository = transactionRepository;
             _cardTransactionRepository = cardTransactionRepository;
             _dismissalRepository = dismissalRepository;
             _sharedEventRepository = sharedEventRepository;
+            _reportService = reportService;
         }
 
         public async Task<IEnumerable<TripDTO>> GetAllForUserAsync(int userId)
@@ -49,6 +52,9 @@ namespace JazFinanzasApp.API.Business.Services
             var events = await _sharedEventRepository.GetDetailByTripIdAsync(id);
             var movementIndex = await BuildEventMovementIndexAsync(events);
 
+            // D4: mismo cálculo que el reporte, extraído a un método compartido en vez de reimplementado acá.
+            var totals = await _reportService.GetTripOwnAndGrossTotalsAsync(userId, id);
+
             var detail = new TripDetailDTO
             {
                 Id = trip.Id,
@@ -61,7 +67,9 @@ namespace JazFinanzasApp.API.Business.Services
                     .Concat(cardTransactions.Select(ct => MapCardMovement(ct, movementIndex)))
                     .OrderBy(m => m.Date)
                     .ToList(),
-                LinkedEvents = MapLinkedEvents(events)
+                LinkedEvents = MapLinkedEvents(events),
+                OwnTotal = totals.OwnTotal,
+                GrossTotal = totals.GrossTotal
             };
             return detail;
         }

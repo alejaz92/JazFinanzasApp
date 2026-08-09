@@ -389,7 +389,7 @@ namespace JazFinanzasApp.API.Business.Services
                     StartDate = trip.StartDate,
                     EndDate = trip.EndDate,
                     Status = GetTripStatus(trip),
-                    TotalInReference = Math.Round(nets.Sum(n => n.ValueInReference) + ownExpenses.Sum(o => o.ValueInReference), 2)
+                    TotalInReference = SumOwnTotal(nets, ownExpenses)
                 });
             }
 
@@ -425,11 +425,34 @@ namespace JazFinanzasApp.API.Business.Services
             {
                 TripId = tripId,
                 Name = trip.Name,
-                Total = Math.Round(nets.Sum(n => n.ValueInReference) + ownExpenses.Sum(o => o.ValueInReference), 2),
+                Total = SumOwnTotal(nets, ownExpenses),
                 Breakdown = breakdown,
                 NetBreakdown = eventBreakdown
             };
         }
+
+        // Los dos totales de trip-detail (Gestión, docs/plans/activos/plan-detalle-viaje-montos-propios.md
+        // Fase 2). OwnTotal reusa la misma fórmula que Total acá arriba (SumOwnTotal sobre los mismos
+        // GetTripMovementNetsAsync/GetTripOwnExpensesAsync) para que nunca puedan divergir. GrossTotal es
+        // análogo pero con el monto íntegro de cada movimiento de Evento (TotalAmount, sin filtrar por parte
+        // propia) en vez de la parte propia — "lo que se gastó en total", sin importar quién pagó.
+        public async Task<TripTotalsDTO> GetTripOwnAndGrossTotalsAsync(int userId, int tripId)
+        {
+            var mainReferenceAssetId = await GetMainReferenceAssetIdAsync(userId);
+
+            var nets = await GetTripMovementNetsAsync(tripId, mainReferenceAssetId);
+            var grossNets = await GetTripMovementGrossAsync(tripId, mainReferenceAssetId);
+            var ownExpenses = await GetTripOwnExpensesAsync(tripId, mainReferenceAssetId);
+
+            return new TripTotalsDTO
+            {
+                OwnTotal = SumOwnTotal(nets, ownExpenses),
+                GrossTotal = Math.Round(grossNets.Sum(g => g.ValueInReference) + ownExpenses.Sum(o => o.ValueInReference), 2)
+            };
+        }
+
+        private static decimal SumOwnTotal(IEnumerable<TripValue> nets, IEnumerable<TripValue> ownExpenses)
+            => Math.Round(nets.Sum(v => v.ValueInReference) + ownExpenses.Sum(v => v.ValueInReference), 2);
 
         private class TripValue
         {
@@ -469,6 +492,36 @@ namespace JazFinanzasApp.API.Business.Services
                         TransactionClass = m.TransactionClass?.Description,
                         EventId = e.Id,
                         EventName = e.Name,
+                        ValueInReference = valueInUsd * referenceQuote
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        // Análogo a GetTripMovementNetsAsync pero con el monto íntegro del movimiento de Evento (TotalAmount)
+        // en vez de la parte propia — "lo que se gastó en total" para GrossTotal (Fase 2 de
+        // plan-detalle-viaje-montos-propios.md). Deliberadamente no comparte el loop con GetTripMovementNetsAsync:
+        // esa función filtra los movimientos con parte propia 0 (no deben pesar en Breakdown/NetBreakdown del
+        // reporte), pero un movimiento pagado enteramente por otros sí tiene que contar acá.
+        private async Task<List<TripValue>> GetTripMovementGrossAsync(int tripId, int referenceAssetId)
+        {
+            var events = await _sharedEventRepository.GetDetailByTripIdAsync(tripId);
+
+            var result = new List<TripValue>();
+            foreach (var e in events)
+            {
+                foreach (var m in e.Movements ?? new List<SharedEventMovement>())
+                {
+                    if (m.TotalAmount == 0) continue;
+
+                    var valueInUsd = await ToUsdAsync(m.AssetId, m.Asset, m.TotalAmount, m.Date);
+                    var referenceQuote = await GetReferenceQuoteAsync(referenceAssetId, m.Date);
+
+                    result.Add(new TripValue
+                    {
+                        TransactionClass = m.TransactionClass?.Description,
                         ValueInReference = valueInUsd * referenceQuote
                     });
                 }

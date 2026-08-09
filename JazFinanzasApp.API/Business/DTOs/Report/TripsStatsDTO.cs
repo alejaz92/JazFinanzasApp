@@ -32,4 +32,12 @@ namespace JazFinanzasApp.API.Business.DTO.Report
         public string EventName { get; set; }
         public decimal Amount { get; set; }
     }
+
+    // Los dos totales de trip-detail (docs/plans/activos/plan-detalle-viaje-montos-propios.md, Fase 2), en la
+    // moneda de referencia principal del usuario.
+    public class TripTotalsDTO
+    {
+        public decimal OwnTotal { get; set; }
+        public decimal GrossTotal { get; set; }
+    }
 }
