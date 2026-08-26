@@ -1,6 +1,7 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.Exceptions;
+using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
@@ -27,6 +28,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ITripRepository> _tripRepoMock;
         private readonly Mock<ITripSuggestionDismissalRepository> _tripSuggestionDismissalRepoMock;
         private readonly Mock<ISharedEventMovementRepository> _sharedEventMovementRepoMock;
+        private readonly Mock<IQuotePriceResolver> _quotePriceResolverMock;
         private readonly CardTransactionService _sut;
 
         private const int UserId = 1;
@@ -50,6 +52,20 @@ namespace JazFinanzasApp.Tests.Services
             _tripRepoMock = new Mock<ITripRepository>();
             _tripSuggestionDismissalRepoMock = new Mock<ITripSuggestionDismissalRepository>();
             _sharedEventMovementRepoMock = new Mock<ISharedEventMovementRepository>();
+            _quotePriceResolverMock = new Mock<IQuotePriceResolver>();
+            _quotePriceResolverMock.Setup(r => r.ResolveAsync(It.IsAny<int>(), It.IsAny<DateTime>())).ReturnsAsync(1m);
+
+            // Real, no mockeado: el valor de estos tests es ver el circuito completo -- materializar
+            // el saldo a favor y despues consumirlo dentro de la cuota -- cerrando en los montos.
+            var discountService = new CardTransactionDiscountService(
+                _cardTransactionDiscountRepoMock.Object,
+                _cardTransactionRepoMock.Object,
+                _accountRepoMock.Object,
+                _transactionClassRepoMock.Object,
+                _transactionRepoMock.Object,
+                _portfolioRepoMock.Object,
+                _cardPaymentRepoMock.Object,
+                _quotePriceResolverMock.Object);
 
             _sut = new CardTransactionService(
                 _cardTransactionRepoMock.Object,
@@ -68,7 +84,8 @@ namespace JazFinanzasApp.Tests.Services
                 _cardTransactionDiscountRepoMock.Object,
                 _tripRepoMock.Object,
                 _tripSuggestionDismissalRepoMock.Object,
-                _sharedEventMovementRepoMock.Object);
+                _sharedEventMovementRepoMock.Object,
+                discountService);
         }
 
         // ── AddCardTransactionAsync ───────────────────────────────────────────
@@ -715,5 +732,213 @@ namespace JazFinanzasApp.Tests.Services
             await act.Should().ThrowAsync<BusinessRuleException>();
             _cardPaymentRepoMock.Verify(r => r.AddAsync(It.IsAny<CardPayment>()), Times.Never);
         }
-    }
+    
+        // -- Saldo a favor de la tarjeta absorbido por el resumen (Fase 4) --
+
+        // Fake chico del almacenamiento de cuotas del descuento: hace falta que lo que MaterializeAsync
+        // escribe lo lea despues el consumo, dentro de la misma llamada a RegisterCardPaymentAsync.
+        private (List<Transaction> Creados, List<int> Borrados) WireDiscountStorage(CardTransactionDiscount discount)
+        {
+            var creados = new List<Transaction>();
+            var borrados = new List<int>();
+            var cuotas = new List<CardTransactionDiscountInstallment>();
+            var siguienteId = 1000;
+
+            _transactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<Transaction>()))
+                .ReturnsAsync((Transaction t) => { t.Id = ++siguienteId; creados.Add(t); return t; });
+            _transactionRepoMock.Setup(r => r.DeleteAsync(It.IsAny<int>()))
+                .Callback<int>(borrados.Add).Returns(Task.CompletedTask);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.AddInstallmentAsync(It.IsAny<CardTransactionDiscountInstallment>()))
+                .Callback<CardTransactionDiscountInstallment>(i => { i.Id = cuotas.Count + 1; cuotas.Add(i); })
+                .Returns(Task.CompletedTask);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(discount.Id))
+                .ReturnsAsync(() => cuotas.ToList());
+            _cardTransactionDiscountRepoMock.Setup(r => r.DeleteInstallmentAsync(It.IsAny<int>()))
+                .Callback<int>(id => cuotas.RemoveAll(c => c.Id == id)).Returns(Task.CompletedTask);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetPendingOnCardAsync(1, UserId))
+                .ReturnsAsync(() => discount.AmountMaterialized < discount.Amount
+                    ? new[] { discount } : Array.Empty<CardTransactionDiscount>());
+
+            return (creados, borrados);
+        }
+
+        private CardTransaction MakePromotedPurchase() => new()
+        {
+            Id = 20,
+            UserId = UserId,
+            CardId = 1,
+            AssetId = 1,
+            Detail = "Compra promocionada",
+            TotalAmount = 100000m,
+            Installments = 5,
+            InstallmentAmount = 20000m,
+            FirstInstallment = new DateTime(2026, 1, 1)
+        };
+
+        private TransactionClass MakeReintegroClass() =>
+            new() { Id = 5, UserId = UserId, Description = "Reintegro", IncExp = "I" };
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WhenStatementAbsorbsCardCredit_LeavesTheAccountMatchingWhatTheBankDebited()
+        {
+            // Ejemplo maestro del plan, mes 1: compra de 100.000 en 5 cuotas de 20.000 con 35.000 de
+            // reintegro sobre la tarjeta, mas otra compra sin promocion de 50.000. El banco aplica los
+            // 35.000 contra el total y debita 35.000.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var otraCompra = new CardTransaction
+            {
+                Id = 21,
+                UserId = UserId,
+                CardId = 1,
+                AssetId = 1,
+                Detail = "Otra compra",
+                TotalAmount = 50000m,
+                Installments = 1,
+                InstallmentAmount = 50000m,
+                FirstInstallment = new DateTime(2026, 1, 1)
+            };
+            _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(MakePromotedPurchase());
+            _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(21)).ReturnsAsync(otraCompra);
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Reintegro", UserId))
+                .ReturnsAsync(MakeReintegroClass());
+
+            var discount = new CardTransactionDiscount
+            {
+                Id = 1,
+                CardTransactionId = 20,
+                UserId = UserId,
+                Amount = 35000m,
+                AmountApplied = 0m,
+                AmountMaterialized = 0m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Card,
+                CreditDate = new DateTime(2026, 1, 5)
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(21)).ReturnsAsync((CardTransactionDiscount?)null);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(It.IsAny<int>())).ReturnsAsync((SharedExpense?)null);
+
+            var almacen = WireDiscountStorage(discount);
+            var ingresosCreados = almacen.Creados;
+            var transaccionesBorradas = almacen.Borrados;
+
+            var egresos = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(egresos.Add).Returns(Task.CompletedTask);
+
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 20000m);
+            dto.CardCreditApplied = 35000m;
+            dto.PesosAmount = 35000m;
+            dto.CardTransactions[0].Installment = "1/5";
+            dto.CardTransactions[0].Detail = "Compra promocionada";
+            dto.CardTransactions.Add(new CardTransactionPaymentListDTO
+            {
+                CardTransactionId = 21,
+                Date = new DateTime(2026, 1, 1),
+                CardId = 1,
+                TransactionClassId = 3,
+                Detail = "Otra compra",
+                AssetId = 1,
+                Installment = "1/1",
+                InstallmentNumber = 1,
+                InstallmentAmount = 50000m,
+                ValueInPesos = 50000m
+            });
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            // La cuota de la compra promocionada queda tapada; la otra compra se paga entera.
+            egresos.Single(t => t.Detail.Contains("Compra promocionada")).Amount.Should().Be(0m);
+            egresos.Single(t => t.Detail.Contains("Otra compra")).Amount.Should().Be(-50000m);
+
+            // Se materializo todo el credito, repartido en cuota 1 (20.000) y cuota 2 (15.000).
+            ingresosCreados.Select(t => t.Amount).Should().BeEquivalentTo(new[] { 20000m, 15000m });
+            discount.AmountMaterialized.Should().Be(35000m);
+
+            // El tramo de la cuota 1 se consumio y su ingreso desaparecio; el de la cuota 2 sigue vivo.
+            discount.AmountApplied.Should().Be(20000m);
+            var ingresoConsumido = ingresosCreados.Single(t => t.Amount == 20000m);
+            transaccionesBorradas.Should().ContainSingle().Which.Should().Be(ingresoConsumido.Id);
+
+            // Lo que importa de verdad: lo que sale de la cuenta coincide con lo que debito el banco.
+            var ingresosVivos = ingresosCreados.Where(t => !transaccionesBorradas.Contains(t.Id)).Sum(t => t.Amount);
+            (egresos.Sum(t => t.Amount) + ingresosVivos).Should().Be(-35000m);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WhenCreditExceedsTheStatement_LeavesTheRestPendingOnTheCard()
+        {
+            // Variante del plan: el resumen es solo la cuota 1 (20.000), asi que el banco aplica 20.000
+            // y quedan 15.000 de saldo a favor en la tarjeta para el mes siguiente.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(MakePromotedPurchase());
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Reintegro", UserId))
+                .ReturnsAsync(MakeReintegroClass());
+
+            var discount = new CardTransactionDiscount
+            {
+                Id = 1,
+                CardTransactionId = 20,
+                UserId = UserId,
+                Amount = 35000m,
+                AmountApplied = 0m,
+                AmountMaterialized = 0m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Card,
+                CreditDate = new DateTime(2026, 1, 5)
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(It.IsAny<int>())).ReturnsAsync((SharedExpense?)null);
+
+            var almacen = WireDiscountStorage(discount);
+            var ingresosCreados = almacen.Creados;
+            var transaccionesBorradas = almacen.Borrados;
+
+            var egresos = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(egresos.Add).Returns(Task.CompletedTask);
+
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 20000m);
+            dto.CardCreditApplied = 20000m;
+            dto.PesosAmount = 0m;
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            egresos.Single(t => t.Detail.Contains("Compra")).Amount.Should().Be(0m);
+            discount.AmountMaterialized.Should().Be(20000m);
+            (discount.Amount - discount.AmountMaterialized).Should().Be(15000m);
+
+            var ingresosVivos = ingresosCreados.Where(t => !transaccionesBorradas.Contains(t.Id)).Sum(t => t.Amount);
+            (egresos.Sum(t => t.Amount) + ingresosVivos).Should().Be(0m);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WithCardCreditAboveWhatIsPending_ThrowsAndRollsBack()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+            _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(MakePromotedPurchase());
+
+            var discount = new CardTransactionDiscount
+            {
+                Id = 1,
+                CardTransactionId = 20,
+                UserId = UserId,
+                Amount = 35000m,
+                AmountApplied = 0m,
+                AmountMaterialized = 30000m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Card,
+                CreditDate = new DateTime(2026, 1, 5)
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetPendingOnCardAsync(1, UserId)).ReturnsAsync(new[] { discount });
+
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 20000m);
+            dto.CardCreditApplied = 10000m;
+
+            await FluentActions.Invoking(() => _sut.RegisterCardPaymentAsync(UserId, dto))
+                .Should().ThrowAsync<BusinessRuleException>();
+
+            _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(), Times.Once);
+            discount.AmountMaterialized.Should().Be(30000m);
+        }
+}
 }

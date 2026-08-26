@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Business.DTO.CardTransaction;
+﻿using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
@@ -25,6 +25,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITripRepository _tripRepository;
         private readonly ITripSuggestionDismissalRepository _tripSuggestionDismissalRepository;
         private readonly ISharedEventMovementRepository _sharedEventMovementRepository;
+        private readonly ICardTransactionDiscountService _cardTransactionDiscountService;
 
         public CardTransactionService(
             ICardTransactionRepository cardTransactionRepository,
@@ -43,7 +44,8 @@ namespace JazFinanzasApp.API.Business.Services
             ICardTransactionDiscountRepository cardTransactionDiscountRepository,
             ITripRepository tripRepository,
             ITripSuggestionDismissalRepository tripSuggestionDismissalRepository,
-            ISharedEventMovementRepository sharedEventMovementRepository)
+            ISharedEventMovementRepository sharedEventMovementRepository,
+            ICardTransactionDiscountService cardTransactionDiscountService)
         {
             _cardTransactionRepository = cardTransactionRepository;
             _cardRepository = cardRepository;
@@ -62,6 +64,7 @@ namespace JazFinanzasApp.API.Business.Services
             _tripRepository = tripRepository;
             _tripSuggestionDismissalRepository = tripSuggestionDismissalRepository;
             _sharedEventMovementRepository = sharedEventMovementRepository;
+            _cardTransactionDiscountService = cardTransactionDiscountService;
         }
 
         public async Task<int> AddCardTransactionAsync(int userId, CardTransactionAddDTO dto)
@@ -204,6 +207,11 @@ namespace JazFinanzasApp.API.Business.Services
             await _unitOfWork.BeginTransactionAsync();
             try
             {
+                // Primero se materializa el saldo a favor que el banco aplicó en este resumen, y recién
+                // después corre el loop de cuotas. Al revés, el crédito de este mes no llegaría a tiempo
+                // para la cuota de este mes (D7).
+                await ApplyCardCreditAsync(dto, userId);
+
                 foreach (var cardTransaction in dto.CardTransactions)
                 {
                     var asset = await _assetRepository.GetByIdAsync(cardTransaction.AssetId);
@@ -389,6 +397,37 @@ namespace JazFinanzasApp.API.Business.Services
 
             await RemoveConsumedReimbursementsAsync(split);
             await _sharedExpenseRepository.UpdateSplitAsync(split);
+        }
+
+        // El banco aplica el saldo a favor de la tarjeta contra el total del resumen. Acá se reparte
+        // ese monto entre los descuentos que todavía tienen crédito pendiente, del más viejo al más
+        // nuevo, y cada tramo se materializa como ingreso en la cuenta con la que se está pagando.
+        // A partir de ahí el consumo contra las cuotas es el de siempre.
+        private async Task ApplyCardCreditAsync(CardTransactionPaymentDTO dto, int userId)
+        {
+            if (dto.CardCreditApplied <= 0)
+                return;
+
+            var pendientes = (await _cardTransactionDiscountRepository.GetPendingOnCardAsync(dto.CardId, userId)).ToList();
+            var totalPendiente = pendientes.Sum(d => d.Amount - d.AmountMaterialized);
+
+            if (dto.CardCreditApplied > totalPendiente)
+                throw new BusinessRuleException("El saldo a favor aplicado supera el pendiente en la tarjeta");
+
+            decimal restante = dto.CardCreditApplied;
+            foreach (var discount in pendientes)
+            {
+                if (restante <= 0)
+                    break;
+
+                var disponible = discount.Amount - discount.AmountMaterialized;
+                var tramo = Math.Min(restante, disponible);
+                if (tramo <= 0)
+                    continue;
+
+                await _cardTransactionDiscountService.MaterializeAsync(discount, tramo, dto.accountId, dto.PaymentDate, userId);
+                restante -= tramo;
+            }
         }
 
         // El descuento queda pre-particionado por cuota exacta al crearse (FIFO); solo se aplica
