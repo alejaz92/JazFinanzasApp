@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Domain;
+﻿using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +24,19 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             return await _context.CardTransactionDiscounts
                 .Where(d => d.UserId == userId && d.AmountApplied < d.Amount)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<CardTransactionDiscount>> GetPendingOnCardAsync(int cardId, int userId)
+        {
+            return await _context.CardTransactionDiscounts
+                .Include(d => d.CardTransaction)
+                .Where(d => d.UserId == userId
+                    && d.CreditTarget == CardTransactionDiscountCreditTarget.Card
+                    && d.AmountMaterialized < d.Amount
+                    && d.CardTransaction.CardId == cardId)
+                .OrderBy(d => d.CreditDate)
+                .ThenBy(d => d.Id)
                 .ToListAsync();
         }
 

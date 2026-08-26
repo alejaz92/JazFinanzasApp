@@ -12,6 +12,8 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task MaterializeAsync(CardTransactionDiscount discount, decimal amount, int accountId, DateTime date, int userId);
         Task<CardTransactionDiscountDetailDTO> GetByCardTransactionIdAsync(int userId, int cardTransactionId);
         Task<IEnumerable<CardTransactionDiscountDetailDTO>> GetActiveByUserIdAsync(int userId);
+        Task<CardTransactionDiscountDetailDTO> RescueAsync(int userId, int id, CardTransactionDiscountRescueDTO dto);
+        Task<CardPendingCreditDTO> GetPendingOnCardAsync(int userId, int cardId);
         Task DeleteAsync(int userId, int id);
     }
 }

@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Business.DTO.CardTransactionDiscount;
+﻿using JazFinanzasApp.API.Business.DTO.CardTransactionDiscount;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Domain;
@@ -51,10 +51,27 @@ namespace JazFinanzasApp.API.Business.Services
             if (dto.Amount > cardTransaction.TotalAmount)
                 throw new BusinessRuleException("El monto del descuento no puede superar el monto del gasto de tarjeta");
 
-            var account = await _accountRepository.GetByIdAsync(dto.AccountId)
-                ?? throw new NotFoundException("Cuenta no encontrada");
-            if (account.UserId != userId)
-                throw new UnauthorizedDomainException();
+            // Sin modalidad explícita se asume la de siempre, así un cliente que todavía no manda
+            // el campo (el frontend hasta la Fase 6) sigue funcionando sin cambios.
+            var creditTarget = string.IsNullOrWhiteSpace(dto.CreditTarget)
+                ? CardTransactionDiscountCreditTarget.Account
+                : dto.CreditTarget;
+
+            if (!CardTransactionDiscountCreditTarget.IsValid(creditTarget))
+                throw new BusinessRuleException("Modalidad de acreditación inválida");
+
+            var acreditaEnCuenta = creditTarget == CardTransactionDiscountCreditTarget.Account;
+
+            if (acreditaEnCuenta)
+            {
+                if (dto.AccountId is null)
+                    throw new BusinessRuleException("Falta la cuenta donde el banco acreditó el reintegro");
+
+                var account = await _accountRepository.GetByIdAsync(dto.AccountId.Value)
+                    ?? throw new NotFoundException("Cuenta no encontrada");
+                if (account.UserId != userId)
+                    throw new UnauthorizedDomainException();
+            }
 
             var discount = await _cardTransactionDiscountRepository.AddAsyncReturnObject(new CardTransactionDiscount
             {
@@ -62,7 +79,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Amount = dto.Amount,
                 AmountApplied = 0,
                 AmountMaterialized = 0,
-                CreditTarget = CardTransactionDiscountCreditTarget.Account,
+                CreditTarget = creditTarget,
                 CreditDate = dto.Date,
                 Notes = dto.Notes,
                 UserId = userId
@@ -70,7 +87,10 @@ namespace JazFinanzasApp.API.Business.Services
 
             // El reintegro acreditado en cuenta es una materialización del 100% en el momento del alta:
             // la plata ya está en la cuenta, así que se reparte entera entre las cuotas desde el vamos.
-            await MaterializeAsync(discount, dto.Amount, dto.AccountId, dto.Date, userId);
+            // El acreditado sobre la tarjeta no genera ningún movimiento todavía: la plata está en la
+            // tarjeta, no en una cuenta, y se materializa cuando el resumen la absorbe o cuando se rescata.
+            if (acreditaEnCuenta)
+                await MaterializeAsync(discount, dto.Amount, dto.AccountId!.Value, dto.Date, userId);
 
             return await MapToDetailDTOAsync(discount);
         }
@@ -229,6 +249,45 @@ namespace JazFinanzasApp.API.Business.Services
             await _cardTransactionDiscountRepository.DeleteAsync(id);
         }
 
+        // Rescate: el banco pasa el saldo a favor de la tarjeta a una cuenta, total o parcialmente.
+        // A partir de acá ese tramo se comporta igual que un reintegro acreditado en cuenta.
+        public async Task<CardTransactionDiscountDetailDTO> RescueAsync(int userId, int id, CardTransactionDiscountRescueDTO dto)
+        {
+            var discount = await _cardTransactionDiscountRepository.GetByIdAsync(id)
+                ?? throw new NotFoundException("Descuento no encontrado");
+            if (discount.UserId != userId)
+                throw new UnauthorizedDomainException();
+
+            if (discount.CreditTarget != CardTransactionDiscountCreditTarget.Card)
+                throw new BusinessRuleException("Este descuento no tiene saldo a favor en la tarjeta");
+
+            await MaterializeAsync(discount, dto.Amount, dto.AccountId, dto.Date, userId);
+
+            return await MapToDetailDTOAsync(discount);
+        }
+
+        // Saldo a favor todavía pendiente en una tarjeta (D9): no se guarda, se calcula.
+        public async Task<CardPendingCreditDTO> GetPendingOnCardAsync(int userId, int cardId)
+        {
+            var discounts = await _cardTransactionDiscountRepository.GetPendingOnCardAsync(cardId, userId);
+
+            var items = discounts.Select(d => new CardPendingCreditItemDTO
+            {
+                DiscountId = d.Id,
+                CardTransactionId = d.CardTransactionId,
+                Detail = d.CardTransaction?.Detail,
+                CreditDate = d.CreditDate,
+                Pending = d.Amount - d.AmountMaterialized
+            }).ToList();
+
+            return new CardPendingCreditDTO
+            {
+                CardId = cardId,
+                TotalPending = items.Sum(i => i.Pending),
+                Items = items
+            };
+        }
+
         private async Task<CardTransactionDiscountDetailDTO> MapToDetailDTOAsync(CardTransactionDiscount discount)
         {
             var installments = await _cardTransactionDiscountRepository.GetInstallmentsByDiscountIdAsync(discount.Id);
@@ -239,6 +298,10 @@ namespace JazFinanzasApp.API.Business.Services
                 CardTransactionId = discount.CardTransactionId,
                 Amount = discount.Amount,
                 AmountApplied = discount.AmountApplied,
+                AmountMaterialized = discount.AmountMaterialized,
+                PendingOnCard = discount.Amount - discount.AmountMaterialized,
+                CreditTarget = discount.CreditTarget,
+                CreditDate = discount.CreditDate,
                 Notes = discount.Notes,
                 Installments = installments
                     .Select(i => new CardTransactionDiscountInstallmentDTO { InstallmentNumber = i.InstallmentNumber, Amount = i.Amount })

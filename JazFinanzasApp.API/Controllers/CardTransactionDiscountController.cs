@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Business.DTO.CardTransactionDiscount;
+﻿using JazFinanzasApp.API.Business.DTO.CardTransactionDiscount;
 using JazFinanzasApp.API.Business.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -38,6 +38,20 @@ namespace JazFinanzasApp.API.Controllers
         public async Task<IActionResult> GetActive()
         {
             var result = await _cardTransactionDiscountService.GetActiveByUserIdAsync(GetUserId());
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/rescue")]
+        public async Task<IActionResult> Rescue(int id, CardTransactionDiscountRescueDTO dto)
+        {
+            var result = await _cardTransactionDiscountService.RescueAsync(GetUserId(), id, dto);
+            return Ok(result);
+        }
+
+        [HttpGet("card/{cardId}/pending-credit")]
+        public async Task<IActionResult> GetPendingCredit(int cardId)
+        {
+            var result = await _cardTransactionDiscountService.GetPendingOnCardAsync(GetUserId(), cardId);
             return Ok(result);
         }
 

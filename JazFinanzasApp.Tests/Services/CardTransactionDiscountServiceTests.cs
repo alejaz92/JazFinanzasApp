@@ -92,6 +92,7 @@ namespace JazFinanzasApp.Tests.Services
             {
                 CardTransactionId = 20,
                 Amount = 360m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Account,
                 AccountId = 2,
                 Date = new DateTime(2026, 1, 1)
             };
@@ -121,7 +122,7 @@ namespace JazFinanzasApp.Tests.Services
             _discountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20))
                 .ReturnsAsync(new CardTransactionDiscount { Id = 5, CardTransactionId = 20 });
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, CreditTarget = CardTransactionDiscountCreditTarget.Account, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<BusinessRuleException>();
@@ -134,7 +135,7 @@ namespace JazFinanzasApp.Tests.Services
             cardTransaction.UserId = 999;
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(cardTransaction);
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, AccountId = 2, Date = DateTime.Today };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 100m, CreditTarget = CardTransactionDiscountCreditTarget.Account, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<UnauthorizedDomainException>();
@@ -147,7 +148,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionRepoMock.Setup(r => r.GetByIdAsync(20)).ReturnsAsync(cardTransaction);
             _discountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((CardTransactionDiscount?)null);
 
-            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 200m, AccountId = 2, Date = DateTime.Today };
+            var dto = new CardTransactionDiscountAddDTO { CardTransactionId = 20, Amount = 200m, CreditTarget = CardTransactionDiscountCreditTarget.Account, AccountId = 2, Date = DateTime.Today };
 
             await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
                 .Should().ThrowAsync<BusinessRuleException>();
@@ -325,6 +326,169 @@ namespace JazFinanzasApp.Tests.Services
                 .Should().ThrowAsync<BusinessRuleException>();
 
             discount.AmountMaterialized.Should().Be(300m);
+        }
+
+        // -- Modalidad tarjeta y rescate (Fase 3) ---------------------------
+
+        [Fact]
+        public async Task CreateAsync_WithCreditOnCard_CreatesNoTransactionsAndLeavesItAllPendingOnTheCard()
+        {
+            // La plata esta en la tarjeta, no en una cuenta: no hay ningun movimiento que registrar todavia.
+            var cardTransaction = MakeCardTransaction(installments: 5, totalAmount: 100000m);
+            SetupHappyPathDependencies(cardTransaction);
+
+            var dto = new CardTransactionDiscountAddDTO
+            {
+                CardTransactionId = 20,
+                Amount = 35000m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Card,
+                AccountId = null,
+                Date = new DateTime(2026, 1, 5)
+            };
+
+            var result = await _sut.CreateAsync(UserId, dto);
+
+            result.CreditTarget.Should().Be(CardTransactionDiscountCreditTarget.Card);
+            result.AmountMaterialized.Should().Be(0m);
+            result.PendingOnCard.Should().Be(35000m);
+            result.Installments.Should().BeEmpty();
+            _transactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.IsAny<Transaction>()), Times.Never);
+            _discountRepoMock.Verify(r => r.AddInstallmentAsync(It.IsAny<CardTransactionDiscountInstallment>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task CreateAsync_WithCreditOnAccountButNoAccount_ThrowsBusinessRuleException()
+        {
+            var cardTransaction = MakeCardTransaction();
+            SetupHappyPathDependencies(cardTransaction);
+
+            var dto = new CardTransactionDiscountAddDTO
+            {
+                CardTransactionId = 20,
+                Amount = 100m,
+                CreditTarget = CardTransactionDiscountCreditTarget.Account,
+                AccountId = null,
+                Date = DateTime.Today
+            };
+
+            await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
+                .Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        [Fact]
+        public async Task CreateAsync_WithoutCreditTarget_FallsBackToAccountMode()
+        {
+            // Retrocompatibilidad: el frontend no manda el campo hasta la Fase 6, y hasta entonces
+            // tiene que seguir cargando promociones como siempre.
+            var cardTransaction = MakeCardTransaction(installments: 6, totalAmount: 1200m);
+            SetupHappyPathDependencies(cardTransaction);
+            var creadas = TrackInstallments();
+
+            var dto = new CardTransactionDiscountAddDTO
+            {
+                CardTransactionId = 20,
+                Amount = 200m,
+                CreditTarget = null,
+                AccountId = 2,
+                Date = new DateTime(2026, 1, 1)
+            };
+
+            var result = await _sut.CreateAsync(UserId, dto);
+
+            result.CreditTarget.Should().Be(CardTransactionDiscountCreditTarget.Account);
+            result.AmountMaterialized.Should().Be(200m);
+            creadas.Should().HaveCount(1);
+        }
+
+        [Fact]
+        public async Task CreateAsync_WithUnknownCreditTarget_ThrowsBusinessRuleException()
+        {
+            var cardTransaction = MakeCardTransaction();
+            SetupHappyPathDependencies(cardTransaction);
+
+            var dto = new CardTransactionDiscountAddDTO
+            {
+                CardTransactionId = 20,
+                Amount = 100m,
+                CreditTarget = "OTRA_COSA",
+                AccountId = 2,
+                Date = DateTime.Today
+            };
+
+            await FluentActions.Invoking(() => _sut.CreateAsync(UserId, dto))
+                .Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        [Fact]
+        public async Task RescueAsync_WithPartialAmount_MaterializesOnlyThatAndLeavesTheRestOnTheCard()
+        {
+            // Compra $100.000 en 5 cuotas de $20.000, reintegro de $35.000 sobre la tarjeta.
+            // Se rescatan $20.000: entran enteros en la cuota 1 y quedan $15.000 en la tarjeta.
+            var cardTransaction = MakeCardTransaction(installments: 5, totalAmount: 100000m);
+            SetupHappyPathDependencies(cardTransaction);
+            var creadas = TrackInstallments();
+            var discount = MakeDiscount(amount: 35000m);
+            _discountRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(discount);
+
+            var dto = new CardTransactionDiscountRescueDTO { Amount = 20000m, AccountId = 2, Date = new DateTime(2026, 2, 10) };
+            var result = await _sut.RescueAsync(UserId, 1, dto);
+
+            creadas.Should().HaveCount(1);
+            creadas[0].InstallmentNumber.Should().Be(1);
+            creadas[0].Amount.Should().Be(20000m);
+            result.AmountMaterialized.Should().Be(20000m);
+            result.PendingOnCard.Should().Be(15000m);
+        }
+
+        [Fact]
+        public async Task RescueAsync_ForMoreThanWhatIsPendingOnTheCard_ThrowsBusinessRuleException()
+        {
+            var cardTransaction = MakeCardTransaction(installments: 5, totalAmount: 100000m);
+            SetupHappyPathDependencies(cardTransaction);
+            var discount = MakeDiscount(amount: 35000m, materialized: 30000m);
+            _discountRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(discount);
+
+            var dto = new CardTransactionDiscountRescueDTO { Amount = 10000m, AccountId = 2, Date = new DateTime(2026, 2, 10) };
+
+            await FluentActions.Invoking(() => _sut.RescueAsync(UserId, 1, dto))
+                .Should().ThrowAsync<BusinessRuleException>();
+            discount.AmountMaterialized.Should().Be(30000m);
+        }
+
+        [Fact]
+        public async Task RescueAsync_OnAnAccountModeDiscount_ThrowsBusinessRuleException()
+        {
+            // No hay nada que rescatar: esa plata nunca estuvo en la tarjeta.
+            var discount = MakeDiscount(amount: 1000m);
+            discount.CreditTarget = CardTransactionDiscountCreditTarget.Account;
+            _discountRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(discount);
+
+            var dto = new CardTransactionDiscountRescueDTO { Amount = 100m, AccountId = 2, Date = DateTime.Today };
+
+            await FluentActions.Invoking(() => _sut.RescueAsync(UserId, 1, dto))
+                .Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        [Fact]
+        public async Task GetPendingOnCardAsync_SumsWhatIsLeftOnEachDiscountOfTheCard()
+        {
+            var d1 = MakeDiscount(amount: 35000m, materialized: 20000m);
+            d1.CardTransaction = new CardTransaction { Id = 20, Detail = "Compra grande" };
+            var d2 = MakeDiscount(amount: 5000m);
+            d2.Id = 2;
+            d2.CardTransactionId = 21;
+            d2.CardTransaction = new CardTransaction { Id = 21, Detail = "Otra compra" };
+
+            _discountRepoMock.Setup(r => r.GetPendingOnCardAsync(CardId, UserId))
+                .ReturnsAsync(new[] { d1, d2 });
+
+            var result = await _sut.GetPendingOnCardAsync(UserId, CardId);
+
+            result.TotalPending.Should().Be(20000m);
+            result.Items.Should().HaveCount(2);
+            result.Items[0].Pending.Should().Be(15000m);
+            result.Items[0].Detail.Should().Be("Compra grande");
+            result.Items[1].Pending.Should().Be(5000m);
         }
 }
 }
