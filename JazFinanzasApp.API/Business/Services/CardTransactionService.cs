@@ -243,7 +243,7 @@ namespace JazFinanzasApp.API.Business.Services
                     // persistió, y EF resuelve la FK al guardar toda la transacción de una.
                     if (consumoCreado != null) transaction.CardTransaction = consumoCreado;
                     await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
-                    await ApplyCardTransactionDiscountInstallmentAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
+                    await ApplyCardTransactionDiscountInstallmentAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction, dto.accountId, dto.PaymentDate, userId);
                     await _transactionRepository.AddAsyncTransaction(transaction);
                 }
 
@@ -432,7 +432,7 @@ namespace JazFinanzasApp.API.Business.Services
 
         // El descuento queda pre-particionado por cuota exacta al crearse (FIFO); solo se aplica
         // lo que haya quedado etiquetado exactamente para la cuota que se está pagando ahora.
-        private async Task ApplyCardTransactionDiscountInstallmentAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction)
+        private async Task ApplyCardTransactionDiscountInstallmentAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction, int payingAccountId, DateTime paymentDate, int userId)
         {
             var discount = await _cardTransactionDiscountRepository.GetByCardTransactionIdAsync(cardTransactionId);
             if (discount == null)
@@ -450,11 +450,65 @@ namespace JazFinanzasApp.API.Business.Services
 
             foreach (var installment in matching)
             {
+                // Si el ingreso del reintegro vive en otra cuenta (porque se rescató ahí), el canje
+                // descuadraría las dos: la que paga quedaría inflada y la del reintegro corta.
+                var income = await _transactionRepository.GetByIdAsync(installment.TransactionId);
+                if (income != null && income.AccountId != payingAccountId)
+                    await EmitCrossAccountTransferAsync(income, payingAccountId, installment.Amount, paymentDate, userId);
+
                 await _cardTransactionDiscountRepository.DeleteInstallmentAsync(installment.Id);
                 await _transactionRepository.DeleteAsync(installment.TransactionId);
             }
 
             await _cardTransactionDiscountRepository.UpdateAsync(discount);
+        }
+
+        // Abaratar una cuota es un canje: desaparece el ingreso del reintegro y, por ese mismo importe,
+        // se achica el egreso de la cuota. Para que el saldo no se mueva, las dos puntas tienen que
+        // estar en la misma cuenta. Cuando el reintegro se rescató a otra, se agrega un pase entre
+        // cuentas propias que cierra el círculo: la que paga entrega el importe y la del reintegro lo
+        // recibe. No cuenta como gasto ni como ingreso (MovementType EX, sin clase), así que no
+        // ensucia ninguna categoría. Mismo patrón que TransactionService.RefundTransactionAsync.
+        private async Task EmitCrossAccountTransferAsync(Transaction income, int payingAccountId, decimal amount, DateTime date, int userId)
+        {
+            var time = DateTime.UtcNow;
+            const string prefijo = "Descuento - ";
+            var compra = income.Detail != null && income.Detail.StartsWith(prefijo)
+                ? income.Detail.Substring(prefijo.Length)
+                : income.Detail;
+            var detalle = "Pase por descuento - " + compra;
+
+            await _transactionRepository.AddAsyncTransaction(new Transaction
+            {
+                AccountId = payingAccountId,
+                PortfolioId = income.PortfolioId,
+                AssetId = income.AssetId,
+                Date = date,
+                MovementType = "EX",
+                TransactionClassId = null,
+                Detail = detalle,
+                Amount = -amount,
+                UserId = userId,
+                QuotePrice = income.QuotePrice,
+                CreatedAt = time,
+                UpdatedAt = time
+            });
+
+            await _transactionRepository.AddAsyncTransaction(new Transaction
+            {
+                AccountId = income.AccountId,
+                PortfolioId = income.PortfolioId,
+                AssetId = income.AssetId,
+                Date = date,
+                MovementType = "EX",
+                TransactionClassId = null,
+                Detail = detalle,
+                Amount = amount,
+                UserId = userId,
+                QuotePrice = income.QuotePrice,
+                CreatedAt = time,
+                UpdatedAt = time
+            });
         }
 
         private async Task RemoveConsumedReimbursementsAsync(SharedExpenseSplit split)

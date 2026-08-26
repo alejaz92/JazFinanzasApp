@@ -940,5 +940,118 @@ namespace JazFinanzasApp.Tests.Services
             _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(), Times.Once);
             discount.AmountMaterialized.Should().Be(30000m);
         }
+
+        // -- Pase entre cuentas al consumir el descuento (Fase 5) -----------
+
+        // Deja un descuento con una cuota etiquetada para la cuota 1, cuyo ingreso vive en la cuenta
+        // indicada. Devuelve la lista donde se van juntando todas las Transaction que se crean.
+        private List<Transaction> SetupDiscountWithIncomeInAccount(int incomeAccountId)
+        {
+            var discount = new CardTransactionDiscount { Id = 1, CardTransactionId = 20, UserId = UserId, Amount = 200m, AmountApplied = 0m, AmountMaterialized = 200m };
+            var cuotas = new List<CardTransactionDiscountInstallment>
+            {
+                new() { Id = 10, CardTransactionDiscountId = 1, TransactionId = 500, Amount = 200m, InstallmentNumber = 1 }
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(1)).ReturnsAsync(cuotas);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(500)).ReturnsAsync(new Transaction
+            {
+                Id = 500,
+                AccountId = incomeAccountId,
+                PortfolioId = 1,
+                AssetId = 1,
+                MovementType = "I",
+                Detail = "Descuento - Compra",
+                Amount = 200m,
+                UserId = UserId,
+                QuotePrice = 1m
+            });
+
+            var creadas = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(creadas.Add).Returns(Task.CompletedTask);
+            return creadas;
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WhenDiscountIncomeIsInThePayingAccount_EmitsNoTransfer()
+        {
+            // Las dos puntas del canje estan en la misma cuenta: se compensan solas.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var creadas = SetupDiscountWithIncomeInAccount(incomeAccountId: 2);
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakePaymentDto(installmentNumber: 1, installmentAmount: 200m));
+
+            creadas.Should().NotContain(t => t.MovementType == "EX");
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WhenDiscountIncomeIsInAnotherAccount_EmitsTransferAndBothAccountsStaySquare()
+        {
+            // El reintegro se habia rescatado a la cuenta 3 y la tarjeta se paga desde la 2. Sin el pase,
+            // la 2 quedaria inflada en $200 y la 3 corta en $200.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var creadas = SetupDiscountWithIncomeInAccount(incomeAccountId: 3);
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakePaymentDto(installmentNumber: 1, installmentAmount: 200m));
+
+            var pases = creadas.Where(t => t.MovementType == "EX").ToList();
+            pases.Should().HaveCount(2);
+            pases.Single(t => t.AccountId == 2).Amount.Should().Be(-200m);
+            pases.Single(t => t.AccountId == 3).Amount.Should().Be(200m);
+
+            // Un pase entre cuentas propias no es gasto ni ingreso: sin clase, para no ensuciar categorias.
+            pases.Should().OnlyContain(t => t.TransactionClassId == null);
+
+            // La cuenta que paga: cuota en $0 mas el pase de -$200 = los $200 que debito el banco.
+            var enCuentaQuePaga = creadas.Where(t => t.AccountId == 2).Sum(t => t.Amount);
+            enCuentaQuePaga.Should().Be(-200m);
+
+            // La cuenta del reintegro: entra el pase de +$200 y se borra el ingreso de $200. Queda igual.
+            var enCuentaDelReintegro = creadas.Where(t => t.AccountId == 3).Sum(t => t.Amount);
+            (enCuentaDelReintegro - 200m).Should().Be(0m);
+            _transactionRepoMock.Verify(r => r.DeleteAsync(500), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegisterCardPaymentAsync_WhenOnlyPartOfTheDiscountIsInAnotherAccount_TransfersOnlyThatPart()
+        {
+            // La cuota 1 quedo cubierta por dos tramos: uno acreditado en la cuenta que paga y otro
+            // rescatado a otra. Solo el segundo necesita pase.
+            SetupRegisterCardPaymentHappyPathDependencies();
+            var discount = new CardTransactionDiscount { Id = 1, CardTransactionId = 20, UserId = UserId, Amount = 200m, AmountApplied = 0m, AmountMaterialized = 200m };
+            var cuotas = new List<CardTransactionDiscountInstallment>
+            {
+                new() { Id = 10, CardTransactionDiscountId = 1, TransactionId = 500, Amount = 120m, InstallmentNumber = 1 },
+                new() { Id = 11, CardTransactionDiscountId = 1, TransactionId = 501, Amount = 80m, InstallmentNumber = 1 }
+            };
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync(discount);
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(1)).ReturnsAsync(cuotas);
+            _sharedExpenseRepoMock.Setup(r => r.GetByCardTransactionIdAsync(20)).ReturnsAsync((SharedExpense?)null);
+
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(500)).ReturnsAsync(new Transaction
+            {
+                Id = 500, AccountId = 2, PortfolioId = 1, AssetId = 1, MovementType = "I",
+                Detail = "Descuento - Compra", Amount = 120m, UserId = UserId, QuotePrice = 1m
+            });
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(501)).ReturnsAsync(new Transaction
+            {
+                Id = 501, AccountId = 3, PortfolioId = 1, AssetId = 1, MovementType = "I",
+                Detail = "Descuento - Compra", Amount = 80m, UserId = UserId, QuotePrice = 1m
+            });
+
+            var creadas = new List<Transaction>();
+            _transactionRepoMock.Setup(r => r.AddAsyncTransaction(It.IsAny<Transaction>()))
+                .Callback<Transaction>(creadas.Add).Returns(Task.CompletedTask);
+
+            await _sut.RegisterCardPaymentAsync(UserId, MakePaymentDto(installmentNumber: 1, installmentAmount: 200m));
+
+            var pases = creadas.Where(t => t.MovementType == "EX").ToList();
+            pases.Should().HaveCount(2);
+            pases.Single(t => t.AccountId == 3).Amount.Should().Be(80m);
+            pases.Single(t => t.AccountId == 2).Amount.Should().Be(-80m);
+        }
 }
 }
