@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Business.Interfaces;
+﻿using JazFinanzasApp.API.Business.Interfaces;
 using FluentAssertions;
 using JazFinanzasApp.API.Business.DTO.CardTransactionDiscount;
 using JazFinanzasApp.API.Business.Exceptions;
@@ -17,10 +17,12 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ITransactionClassRepository> _transactionClassRepoMock;
         private readonly Mock<ITransactionRepository> _transactionRepoMock;
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock;
+        private readonly Mock<ICardPaymentRepository> _cardPaymentRepoMock;
         private readonly Mock<IQuotePriceResolver> _quotePriceResolverMock;
         private readonly CardTransactionDiscountService _sut;
 
         private const int UserId = 1;
+        private const int CardId = 7;
 
         public CardTransactionDiscountServiceTests()
         {
@@ -30,6 +32,7 @@ namespace JazFinanzasApp.Tests.Services
             _transactionClassRepoMock = new Mock<ITransactionClassRepository>();
             _transactionRepoMock = new Mock<ITransactionRepository>();
             _portfolioRepoMock = new Mock<IPortfolioRepository>();
+            _cardPaymentRepoMock = new Mock<ICardPaymentRepository>();
             _quotePriceResolverMock = new Mock<IQuotePriceResolver>();
             _quotePriceResolverMock.Setup(r => r.ResolveAsync(It.IsAny<int>(), It.IsAny<DateTime>()))
                 .ReturnsAsync(1000m);
@@ -41,6 +44,7 @@ namespace JazFinanzasApp.Tests.Services
                 _transactionClassRepoMock.Object,
                 _transactionRepoMock.Object,
                 _portfolioRepoMock.Object,
+                _cardPaymentRepoMock.Object,
                 _quotePriceResolverMock.Object);
         }
 
@@ -49,9 +53,11 @@ namespace JazFinanzasApp.Tests.Services
             Id = 20,
             UserId = UserId,
             AssetId = 1,
+            CardId = CardId,
             Detail = "Compra",
             TotalAmount = totalAmount,
             Installments = installments,
+            FirstInstallment = new DateTime(2026, 1, 1),
             InstallmentAmount = totalAmount / installments
         };
 
@@ -216,5 +222,109 @@ namespace JazFinanzasApp.Tests.Services
 
             _discountRepoMock.Verify(r => r.DeleteAsync(It.IsAny<int>()), Times.Never);
         }
-    }
+    
+        // -- MaterializeAsync (Fase 2) --------------------------------------
+
+        private CardTransactionDiscount MakeDiscount(decimal amount, decimal materialized = 0m) => new()
+        {
+            Id = 1,
+            CardTransactionId = 20,
+            UserId = UserId,
+            Amount = amount,
+            AmountApplied = 0m,
+            AmountMaterialized = materialized,
+            CreditTarget = CardTransactionDiscountCreditTarget.Card,
+            CreditDate = new DateTime(2026, 1, 5)
+        };
+
+        private List<CardTransactionDiscountInstallment> TrackInstallments()
+        {
+            var creadas = new List<CardTransactionDiscountInstallment>();
+            _discountRepoMock.Setup(r => r.AddInstallmentAsync(It.IsAny<CardTransactionDiscountInstallment>()))
+                .Callback<CardTransactionDiscountInstallment>(i => creadas.Add(i))
+                .Returns(Task.CompletedTask);
+            // Lo ya etiquetado se relee en cada materializacion para calcular el tope de cada cuota.
+            _discountRepoMock.Setup(r => r.GetInstallmentsByDiscountIdAsync(1))
+                .ReturnsAsync(() => creadas.ToList());
+            return creadas;
+        }
+
+        [Fact]
+        public async Task MaterializeAsync_CalledTwice_AccumulatesOnSameInstallmentWithoutExceedingItsCap()
+        {
+            // Tarjeta $1200 en 6 cuotas ($200/cuota). Se acredita en dos tandas: $100 y despues $260.
+            // La cuota 1 ya tenia $100, asi que solo puede absorber $100 mas; el resto cae en la cuota 2.
+            var cardTransaction = MakeCardTransaction(installments: 6, totalAmount: 1200m);
+            SetupHappyPathDependencies(cardTransaction);
+            var creadas = TrackInstallments();
+            var discount = MakeDiscount(amount: 360m);
+
+            await _sut.MaterializeAsync(discount, 100m, accountId: 2, new DateTime(2026, 1, 5), UserId);
+            await _sut.MaterializeAsync(discount, 260m, accountId: 2, new DateTime(2026, 2, 5), UserId);
+
+            creadas.Should().HaveCount(3);
+            creadas[0].InstallmentNumber.Should().Be(1);
+            creadas[0].Amount.Should().Be(100m);
+            creadas[1].InstallmentNumber.Should().Be(1);
+            creadas[1].Amount.Should().Be(100m);
+            creadas[2].InstallmentNumber.Should().Be(2);
+            creadas[2].Amount.Should().Be(160m);
+            creadas.Where(i => i.InstallmentNumber == 1).Sum(i => i.Amount).Should().Be(200m);
+            discount.AmountMaterialized.Should().Be(360m);
+        }
+
+        [Fact]
+        public async Task MaterializeAsync_WhenFirstInstallmentAlreadyPaid_StartsAtTheNextUnpaidOne()
+        {
+            // El banco acredito tarde: la cuota 1 ya se pago a precio pleno, asi que el descuento
+            // no tiene que intentar meterse ahi.
+            var cardTransaction = MakeCardTransaction(installments: 6, totalAmount: 1200m);
+            SetupHappyPathDependencies(cardTransaction);
+            _cardPaymentRepoMock.Setup(r => r.GetPaidMonthsAsync(CardId))
+                .ReturnsAsync(new[] { new DateTime(2026, 1, 1) });
+            var creadas = TrackInstallments();
+            var discount = MakeDiscount(amount: 360m);
+
+            await _sut.MaterializeAsync(discount, 360m, accountId: 2, new DateTime(2026, 2, 5), UserId);
+
+            creadas.Should().HaveCount(2);
+            creadas[0].InstallmentNumber.Should().Be(2);
+            creadas[0].Amount.Should().Be(200m);
+            creadas[1].InstallmentNumber.Should().Be(3);
+            creadas[1].Amount.Should().Be(160m);
+        }
+
+        [Fact]
+        public async Task MaterializeAsync_WhenNoUnpaidInstallmentsLeft_ThrowsAndCreatesNothing()
+        {
+            // Un solo pago, ya hecho: no queda donde aplicar el descuento. Preserva el invariante de
+            // que ningun reintegro queda vivo para siempre -- mejor rechazar que crear un ingreso huerfano.
+            var cardTransaction = MakeCardTransaction(installments: 1, totalAmount: 200m);
+            SetupHappyPathDependencies(cardTransaction);
+            _cardPaymentRepoMock.Setup(r => r.GetPaidMonthsAsync(CardId))
+                .ReturnsAsync(new[] { new DateTime(2026, 1, 1) });
+            var creadas = TrackInstallments();
+            var discount = MakeDiscount(amount: 100m);
+
+            await FluentActions.Invoking(() => _sut.MaterializeAsync(discount, 100m, 2, new DateTime(2026, 2, 5), UserId))
+                .Should().ThrowAsync<BusinessRuleException>();
+
+            creadas.Should().BeEmpty();
+            _transactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.IsAny<Transaction>()), Times.Never);
+            discount.AmountMaterialized.Should().Be(0m);
+        }
+
+        [Fact]
+        public async Task MaterializeAsync_WithAmountAboveWhatIsPending_ThrowsBusinessRuleException()
+        {
+            var cardTransaction = MakeCardTransaction(installments: 6, totalAmount: 1200m);
+            SetupHappyPathDependencies(cardTransaction);
+            var discount = MakeDiscount(amount: 360m, materialized: 300m);
+
+            await FluentActions.Invoking(() => _sut.MaterializeAsync(discount, 100m, 2, new DateTime(2026, 2, 5), UserId))
+                .Should().ThrowAsync<BusinessRuleException>();
+
+            discount.AmountMaterialized.Should().Be(300m);
+        }
+}
 }

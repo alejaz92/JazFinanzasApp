@@ -14,6 +14,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITransactionClassRepository _transactionClassRepository;
         private readonly ITransactionRepository _transactionRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly ICardPaymentRepository _cardPaymentRepository;
         private readonly IQuotePriceResolver _quotePriceResolver;
 
         public CardTransactionDiscountService(
@@ -23,6 +24,7 @@ namespace JazFinanzasApp.API.Business.Services
             ITransactionClassRepository transactionClassRepository,
             ITransactionRepository transactionRepository,
             IPortfolioRepository portfolioRepository,
+            ICardPaymentRepository cardPaymentRepository,
             IQuotePriceResolver quotePriceResolver)
         {
             _cardTransactionDiscountRepository = cardTransactionDiscountRepository;
@@ -31,6 +33,7 @@ namespace JazFinanzasApp.API.Business.Services
             _transactionClassRepository = transactionClassRepository;
             _transactionRepository = transactionRepository;
             _portfolioRepository = portfolioRepository;
+            _cardPaymentRepository = cardPaymentRepository;
             _quotePriceResolver = quotePriceResolver;
         }
 
@@ -53,30 +56,59 @@ namespace JazFinanzasApp.API.Business.Services
             if (account.UserId != userId)
                 throw new UnauthorizedDomainException();
 
+            var discount = await _cardTransactionDiscountRepository.AddAsyncReturnObject(new CardTransactionDiscount
+            {
+                CardTransactionId = dto.CardTransactionId,
+                Amount = dto.Amount,
+                AmountApplied = 0,
+                AmountMaterialized = 0,
+                CreditTarget = CardTransactionDiscountCreditTarget.Account,
+                CreditDate = dto.Date,
+                Notes = dto.Notes,
+                UserId = userId
+            });
+
+            // El reintegro acreditado en cuenta es una materialización del 100% en el momento del alta:
+            // la plata ya está en la cuenta, así que se reparte entera entre las cuotas desde el vamos.
+            await MaterializeAsync(discount, dto.Amount, dto.AccountId, dto.Date, userId);
+
+            return await MapToDetailDTOAsync(discount);
+        }
+
+        // Materializar = convertir parte de un descuento en plata dentro de una cuenta, repartiéndola
+        // entre las cuotas que todavía no se pagaron. Es la única puerta por la que un descuento genera
+        // Transactions, y la usan los tres caminos: alta en modalidad cuenta, resumen que absorbe el
+        // saldo a favor de la tarjeta, y rescate a una cuenta.
+        public async Task MaterializeAsync(CardTransactionDiscount discount, decimal amount, int accountId, DateTime date, int userId)
+        {
+            if (amount <= 0)
+                throw new BusinessRuleException("El monto a acreditar debe ser mayor a cero");
+
+            var pending = discount.Amount - discount.AmountMaterialized;
+            if (amount > pending)
+                throw new BusinessRuleException("El monto supera lo que resta acreditar del descuento");
+
+            var cardTransaction = await _cardTransactionRepository.GetByIdAsync(discount.CardTransactionId)
+                ?? throw new NotFoundException("Gasto de tarjeta no encontrado");
+
+            var account = await _accountRepository.GetByIdAsync(accountId)
+                ?? throw new NotFoundException("Cuenta no encontrada");
+            if (account.UserId != userId)
+                throw new UnauthorizedDomainException();
+
             var transactionClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync("Reintegro", userId)
                 ?? throw new NotFoundException("Clase de transacción 'Reintegro' no encontrada");
 
             var defaultPortfolio = await _portfolioRepository.GetDefaultPortfolio(userId)
                 ?? throw new NotFoundException("Portfolio por defecto no encontrado");
 
-            var discount = await _cardTransactionDiscountRepository.AddAsyncReturnObject(new CardTransactionDiscount
+            var plan = await BuildDistributionPlanAsync(discount, cardTransaction, amount);
+
+            var quotePrice = await _quotePriceResolver.ResolveAsync(cardTransaction.AssetId, date);
+            var detail = "Descuento - " + cardTransaction.Detail;
+
+            foreach (var step in plan)
             {
-                CardTransactionId = dto.CardTransactionId,
-                Amount = dto.Amount,
-                AmountApplied = 0,
-                Notes = dto.Notes,
-                UserId = userId
-            });
-
-            // FIFO: el descuento se pre-particiona por cuota exacta al crearse, topando cada cuota
-            // a lo que realmente cuesta esa cuota de la tarjeta (no a Amount/Installments del propio descuento).
-            decimal remaining = dto.Amount;
-            int installmentNumber = 1;
-
-            while (remaining > 0 && installmentNumber <= cardTransaction.Installments)
-            {
-                var portion = Math.Min(remaining, cardTransaction.InstallmentAmount);
-
                 var incomeTransaction = await _transactionRepository.AddAsyncReturnObject(new Transaction
                 {
                     AccountId = account.Id,
@@ -84,31 +116,75 @@ namespace JazFinanzasApp.API.Business.Services
                     PortfolioId = defaultPortfolio.Id,
                     Portfolio = defaultPortfolio,
                     AssetId = cardTransaction.AssetId,
-                    Date = dto.Date,
+                    Date = date,
                     MovementType = "I",
                     TransactionClassId = transactionClass.Id,
                     TransactionClass = transactionClass,
-                    Detail = $"Descuento - {cardTransaction.Detail}",
-                    Amount = portion,
+                    Detail = detail,
+                    Amount = step.Portion,
                     UserId = userId,
-                    QuotePrice = await _quotePriceResolver.ResolveAsync(cardTransaction.AssetId, dto.Date)
+                    QuotePrice = quotePrice
                 });
 
                 await _cardTransactionDiscountRepository.AddInstallmentAsync(new CardTransactionDiscountInstallment
                 {
                     CardTransactionDiscountId = discount.Id,
                     TransactionId = incomeTransaction.Id,
-                    Amount = portion,
-                    InstallmentNumber = installmentNumber,
-                    Date = dto.Date
+                    Amount = step.Portion,
+                    InstallmentNumber = step.InstallmentNumber,
+                    Date = date
                 });
-
-                remaining -= portion;
-                installmentNumber++;
             }
 
-            return await MapToDetailDTOAsync(discount);
+            discount.AmountMaterialized += amount;
+            discount.UpdatedAt = DateTime.UtcNow;
+            await _cardTransactionDiscountRepository.UpdateAsync(discount);
         }
+
+        // FIFO sobre las cuotas todavía no pagadas: cada una absorbe todo lo que puede, topada a lo que
+        // cuesta esa cuota menos lo que ya se le etiquetó en materializaciones anteriores. El plan se
+        // arma entero y se valida antes de escribir nada: si el monto no entra en ninguna cuota, no
+        // queremos haber dejado la mitad de las Transactions creadas.
+        private async Task<List<DistributionStep>> BuildDistributionPlanAsync(
+            CardTransactionDiscount discount, CardTransaction cardTransaction, decimal amount)
+        {
+            var existing = await _cardTransactionDiscountRepository.GetInstallmentsByDiscountIdAsync(discount.Id);
+            var assignedByInstallment = existing
+                .GroupBy(i => i.InstallmentNumber)
+                .ToDictionary(g => g.Key, g => g.Sum(i => i.Amount));
+
+            var paidMonths = (await _cardPaymentRepository.GetPaidMonthsAsync(cardTransaction.CardId))
+                .Select(d => (d.Year, d.Month))
+                .ToHashSet();
+
+            var firstInstallmentMonth = new DateTime(cardTransaction.FirstInstallment.Year, cardTransaction.FirstInstallment.Month, 1);
+
+            var plan = new List<DistributionStep>();
+            decimal remaining = amount;
+
+            for (int n = 1; n <= cardTransaction.Installments && remaining > 0; n++)
+            {
+                var month = firstInstallmentMonth.AddMonths(n - 1);
+                if (paidMonths.Contains((month.Year, month.Month)))
+                    continue;
+
+                assignedByInstallment.TryGetValue(n, out var alreadyAssigned);
+                var capacity = cardTransaction.InstallmentAmount - alreadyAssigned;
+                if (capacity <= 0)
+                    continue;
+
+                var portion = Math.Min(remaining, capacity);
+                plan.Add(new DistributionStep(n, portion));
+                remaining -= portion;
+            }
+
+            if (remaining > 0)
+                throw new BusinessRuleException("No quedan cuotas sin pagar donde aplicar el descuento");
+
+            return plan;
+        }
+
+        private record DistributionStep(int InstallmentNumber, decimal Portion);
 
         public async Task<CardTransactionDiscountDetailDTO> GetByCardTransactionIdAsync(int userId, int cardTransactionId)
         {
