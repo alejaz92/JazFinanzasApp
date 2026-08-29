@@ -62,7 +62,9 @@ namespace JazFinanzasApp.Tests.Services
             _resolverMock.Setup(r => r.ResolveAsync(UserId, "")).ReturnsAsync((int?)null); // detalle vacío
             _resolverMock.Setup(r => r.ResolveAsync(UserId, "Farmacia del Sol")).ReturnsAsync(200);
 
-            var result = await _sut.ResolveAllAsync(UserId);
+            // minOccurrences: 1 — este test verifica la escritura del MerchantId, no el umbral
+            // (que tiene sus propios tests más abajo).
+            var result = await _sut.ResolveAllAsync(UserId, minOccurrences: 1);
 
             result.TransactionsResolved.Should().Be(2);
             result.CardTransactionsResolved.Should().Be(1);
@@ -86,6 +88,79 @@ namespace JazFinanzasApp.Tests.Services
             result.TransactionsResolved.Should().Be(0);
             result.CardTransactionsResolved.Should().Be(0);
             result.MerchantsCreated.Should().Be(0);
+        }
+
+        // ── Umbral de repeticiones (Fase 10) ──────────────────────────────────
+
+        // Arma N movimientos con el mismo detalle, más uno suelto que nunca llega al umbral.
+        private void SetupPendingWithRepeatedDetail(string detail, int times)
+        {
+            var transactions = Enumerable.Range(1, times)
+                .Select(i => new Transaction { Id = i, UserId = UserId, Detail = detail })
+                .ToList();
+            transactions.Add(new Transaction { Id = 999, UserId = UserId, Detail = "Compra unica irrepetible" });
+
+            _merchantRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Merchant>());
+            _merchantRepoMock.Setup(r => r.GetUnresolvedTransactionsAsync(UserId)).ReturnsAsync(transactions);
+            _merchantRepoMock.Setup(r => r.GetUnresolvedCardTransactionsAsync(UserId)).ReturnsAsync(new List<CardTransaction>());
+            _resolverMock.Setup(r => r.ResolveAsync(UserId, It.IsAny<string>())).ReturnsAsync(100);
+        }
+
+        [Fact]
+        public async Task ResolveAllAsync_DetailBelowThreshold_DoesNotCreateMerchant()
+        {
+            SetupPendingWithRepeatedDetail("Verduleria", times: 4);
+
+            var result = await _sut.ResolveAllAsync(UserId, minOccurrences: 5);
+
+            result.TransactionsResolved.Should().Be(0);
+            _merchantRepoMock.Verify(r => r.SetTransactionMerchantAsync(It.IsAny<int>(), It.IsAny<int?>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ResolveAllAsync_DetailAtThreshold_ResolvesOnlyThatDetail()
+        {
+            SetupPendingWithRepeatedDetail("Verduleria", times: 5);
+
+            var result = await _sut.ResolveAllAsync(UserId, minOccurrences: 5);
+
+            // Las 5 repeticiones sí; la compra única (Id 999) no.
+            result.TransactionsResolved.Should().Be(5);
+            _merchantRepoMock.Verify(r => r.SetTransactionMerchantAsync(999, It.IsAny<int?>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task ResolveAllAsync_CountsTransactionsAndCardTransactionsTogether()
+        {
+            // 3 movimientos + 2 consumos del mismo comercio = 5. Ninguno de los dos lados llega
+            // solo al umbral, pero juntos sí: es el mismo comercio.
+            var transactions = Enumerable.Range(1, 3)
+                .Select(i => new Transaction { Id = i, UserId = UserId, Detail = "Coto" }).ToList();
+            var cardTransactions = Enumerable.Range(10, 2)
+                .Select(i => new CardTransaction { Id = i, UserId = UserId, Detail = "COTO 3456" }).ToList();
+
+            _merchantRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<Merchant>());
+            _merchantRepoMock.Setup(r => r.GetUnresolvedTransactionsAsync(UserId)).ReturnsAsync(transactions);
+            _merchantRepoMock.Setup(r => r.GetUnresolvedCardTransactionsAsync(UserId)).ReturnsAsync(cardTransactions);
+            _resolverMock.Setup(r => r.ResolveAsync(UserId, It.IsAny<string>())).ReturnsAsync(100);
+
+            var result = await _sut.ResolveAllAsync(UserId, minOccurrences: 5);
+
+            result.TransactionsResolved.Should().Be(3);
+            result.CardTransactionsResolved.Should().Be(2);
+        }
+
+        [Fact]
+        public async Task ResolveAllAsync_SystemDetail_NeverResolvesEvenAboveThreshold()
+        {
+            // "Intercambio" son transferencias entre cuentas propias: aunque se repita cientos de
+            // veces, nunca es un comercio.
+            SetupPendingWithRepeatedDetail("Intercambio", times: 50);
+
+            var result = await _sut.ResolveAllAsync(UserId, minOccurrences: 5);
+
+            result.TransactionsResolved.Should().Be(0);
+            _merchantRepoMock.Verify(r => r.SetTransactionMerchantAsync(It.IsAny<int>(), It.IsAny<int?>()), Times.Never);
         }
 
         // ── Fusionar ──────────────────────────────────────────────────────────

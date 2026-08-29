@@ -100,24 +100,53 @@ namespace JazFinanzasApp.API.Business.Services
         // pide un conjunto chico de prueba). Sobre el volumen real de años de movimientos, la
         // Fase 10 corre esto como backfill — ahí es donde vale la pena revisar performance
         // (batching de SaveChanges) si hiciera falta, no acá.
-        public async Task<MerchantResolveBulkResultDTO> ResolveAllAsync(int userId)
+        // Un detalle tiene que repetirse al menos esta cantidad de veces para merecer un comercio
+        // propio. Sin umbral, el historial real crea cientos de "comercios" de una sola compra
+        // ("aspiradora", "traje", "cargador iphone"), que son la descripción de lo que se compró y
+        // no dónde se compró — ensucian la pantalla de gestión sin aportar a ningún reporte. El
+        // proceso es re-ejecutable, así que un detalle que hoy no llega al mínimo consigue su
+        // comercio más adelante, cuando se repita lo suficiente.
+        public const int DefaultMinOccurrences = 5;
+
+        public async Task<MerchantResolveBulkResultDTO> ResolveAllAsync(int userId, int minOccurrences = DefaultMinOccurrences)
         {
             var merchantsBefore = (await _merchantRepository.GetByUserIdAsync(userId)).Select(m => m.Id).ToHashSet();
 
-            var unresolvedTransactions = await _merchantRepository.GetUnresolvedTransactionsAsync(userId);
+            var unresolvedTransactions = (await _merchantRepository.GetUnresolvedTransactionsAsync(userId)).ToList();
+            var unresolvedCardTransactions = (await _merchantRepository.GetUnresolvedCardTransactionsAsync(userId)).ToList();
+
+            // El umbral se mide sobre el conjunto entero, sin separar movimientos de consumos: un
+            // comercio que aparece 3 veces en efectivo y 2 con tarjeta es el mismo comercio.
+            var candidateDetails = unresolvedTransactions.Select(t => t.Detail)
+                .Concat(unresolvedCardTransactions.Select(ct => ct.Detail));
+
+            var frequentKeys = candidateDetails
+                .Where(d => !MerchantEligibility.IsSystemDetail(d))
+                .Select(MerchantTextNormalizer.Normalize)
+                .Where(k => k.Length > 0)
+                .GroupBy(k => k)
+                .Where(g => g.Count() >= minOccurrences)
+                .Select(g => g.Key)
+                .ToHashSet();
+
+            bool IsResolvable(string? detail)
+                => !MerchantEligibility.IsSystemDetail(detail)
+                   && frequentKeys.Contains(MerchantTextNormalizer.Normalize(detail));
+
             var transactionsResolved = 0;
             foreach (var transaction in unresolvedTransactions)
             {
+                if (!IsResolvable(transaction.Detail)) continue;
                 var merchantId = await _merchantResolver.ResolveAsync(userId, transaction.Detail);
                 if (merchantId == null) continue;
                 await _merchantRepository.SetTransactionMerchantAsync(transaction.Id, merchantId);
                 transactionsResolved++;
             }
 
-            var unresolvedCardTransactions = await _merchantRepository.GetUnresolvedCardTransactionsAsync(userId);
             var cardTransactionsResolved = 0;
             foreach (var cardTransaction in unresolvedCardTransactions)
             {
+                if (!IsResolvable(cardTransaction.Detail)) continue;
                 var merchantId = await _merchantResolver.ResolveAsync(userId, cardTransaction.Detail);
                 if (merchantId == null) continue;
                 await _merchantRepository.SetCardTransactionMerchantAsync(cardTransaction.Id, merchantId);

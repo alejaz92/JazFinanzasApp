@@ -66,10 +66,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result;
         }
 
+        // Solo egresos que no sean cuota de tarjeta: un comercio es la contraparte de un gasto, y
+        // el gasto de tarjeta vive en el CardTransaction, no en sus cuotas (ver MerchantEligibility).
         public async Task<IEnumerable<Transaction>> GetUnresolvedTransactionsAsync(int userId)
         {
             return await _context.Transactions
-                .Where(t => t.UserId == userId && t.MerchantId == null)
+                .Where(t => t.UserId == userId
+                            && t.MerchantId == null
+                            && t.MovementType == "E"
+                            && t.CardTransactionId == null)
                 .ToListAsync();
         }
 
