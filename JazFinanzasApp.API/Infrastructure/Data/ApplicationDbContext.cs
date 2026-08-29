@@ -46,6 +46,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<SharedEventMovementShare> SharedEventMovementShares { get; set; }
         public DbSet<SharedEventPayment> SharedEventPayments { get; set; }
         public DbSet<SharedEventPaymentAllocation> SharedEventPaymentAllocations { get; set; }
+        public DbSet<Tag> Tags { get; set; }
+        public DbSet<TransactionTag> TransactionTags { get; set; }
+        public DbSet<CardTransactionTag> CardTransactionTags { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -506,6 +509,40 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .HasOne(a => a.CreatedExchangeInTransaction)
                 .WithMany()
                 .HasForeignKey(a => a.CreatedExchangeInTransactionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Etiquetas (Fase 7, plan-rediseno-reportes.md). El join muere con el movimiento
+            // (Cascade); con el tag se limpia desde el service al borrarlo (NoAction) — SQL
+            // Server no permite Cascade en las dos FK de una misma tabla dependiente, mismo
+            // criterio ya usado arriba con TripSuggestionDismissal/Trip vs. /Transaction.
+            modelBuilder.Entity<Tag>()
+                .HasOne(t => t.User)
+                .WithMany()
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<TransactionTag>()
+                .HasOne(tt => tt.Transaction)
+                .WithMany()
+                .HasForeignKey(tt => tt.TransactionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<TransactionTag>()
+                .HasOne(tt => tt.Tag)
+                .WithMany()
+                .HasForeignKey(tt => tt.TagId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<CardTransactionTag>()
+                .HasOne(ctt => ctt.CardTransaction)
+                .WithMany()
+                .HasForeignKey(ctt => ctt.CardTransactionId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<CardTransactionTag>()
+                .HasOne(ctt => ctt.Tag)
+                .WithMany()
+                .HasForeignKey(ctt => ctt.TagId)
                 .OnDelete(DeleteBehavior.NoAction);
         }
     }
