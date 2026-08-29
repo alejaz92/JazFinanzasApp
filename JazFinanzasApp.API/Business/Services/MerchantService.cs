@@ -135,6 +135,21 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
+        public async Task<IEnumerable<MerchantMovementDTO>> GetMovementsAsync(int userId, int merchantId)
+        {
+            var merchant = await _merchantRepository.GetByIdAsync(merchantId) ?? throw new NotFoundException("Merchant not found");
+            if (merchant.UserId != userId) throw new UnauthorizedDomainException();
+
+            var transactions = await _merchantRepository.GetTransactionsByMerchantAsync(merchantId);
+            var cardTransactions = await _merchantRepository.GetCardTransactionsByMerchantAsync(merchantId);
+
+            var movements = transactions
+                .Select(t => new MerchantMovementDTO { Id = t.Id, Source = "Transaction", Date = t.Date, Detail = t.Detail, Amount = t.Amount })
+                .Concat(cardTransactions.Select(ct => new MerchantMovementDTO { Id = ct.Id, Source = "CardTransaction", Date = ct.Date, Detail = ct.Detail, Amount = ct.TotalAmount }));
+
+            return movements.OrderByDescending(m => m.Date).ToList();
+        }
+
         // T7: la corrección se propaga al texto normalizado (alias manual), no solo al movimiento
         // puntual que se está reasignando — así el resolver acierta solo la próxima vez.
         private async Task PropagateManualCorrectionAsync(int merchantId, string? detail)

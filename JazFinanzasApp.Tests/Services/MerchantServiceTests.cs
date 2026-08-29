@@ -148,6 +148,38 @@ namespace JazFinanzasApp.Tests.Services
             await act.Should().ThrowAsync<UnauthorizedDomainException>();
         }
 
+        // ── Ver movimientos (Fase 9: endpoint que ningún fase anterior cubrió) ─
+
+        [Fact]
+        public async Task GetMovementsAsync_MergesTransactionsAndCardTransactionsOrderedByDateDescending()
+        {
+            _merchantRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Merchant { Id = 1, UserId = UserId, Name = "Coto" });
+            _merchantRepoMock.Setup(r => r.GetTransactionsByMerchantAsync(1)).ReturnsAsync(new List<Transaction>
+            {
+                new Transaction { Id = 5, Date = new DateTime(2026, 1, 10), Detail = "Compra Coto", Amount = -100 }
+            });
+            _merchantRepoMock.Setup(r => r.GetCardTransactionsByMerchantAsync(1)).ReturnsAsync(new List<CardTransaction>
+            {
+                new CardTransaction { Id = 9, Date = new DateTime(2026, 2, 1), Detail = "Coto 3456", TotalAmount = 200 }
+            });
+
+            var result = (await _sut.GetMovementsAsync(UserId, 1)).ToList();
+
+            result.Should().HaveCount(2);
+            result[0].Source.Should().Be("CardTransaction"); // más reciente primero
+            result[1].Source.Should().Be("Transaction");
+        }
+
+        [Fact]
+        public async Task GetMovementsAsync_OfAnotherUsersMerchant_ThrowsUnauthorizedDomainException()
+        {
+            _merchantRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Merchant { Id = 1, UserId = 999, Name = "Coto" });
+
+            var act = () => _sut.GetMovementsAsync(UserId, 1);
+
+            await act.Should().ThrowAsync<UnauthorizedDomainException>();
+        }
+
         // ── Renombrar ─────────────────────────────────────────────────────────
 
         [Fact]

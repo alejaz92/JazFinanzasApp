@@ -61,5 +61,12 @@ namespace JazFinanzasApp.API.Controllers
             var result = await _merchantService.ResolveAllAsync(GetUserId());
             return Ok(result);
         }
+
+        [HttpGet("{id}/movements")]
+        public async Task<IActionResult> GetMovements(int id)
+        {
+            var result = await _merchantService.GetMovementsAsync(GetUserId(), id);
+            return Ok(result);
+        }
     }
 }

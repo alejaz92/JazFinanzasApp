@@ -25,5 +25,10 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Un alias del origen cuyo texto ya existe en el destino se descarta (no se duplica) en
         // vez de reasignarse — el destino ya cubre ese texto.
         Task MergeAsync(int sourceMerchantId, int targetMerchantId);
+
+        // Lo que necesita la pantalla "ver movimientos" de la Fase 9 (frontend) — ningún endpoint
+        // anterior devolvía los movimientos de un comercio puntual.
+        Task<IEnumerable<Transaction>> GetTransactionsByMerchantAsync(int merchantId);
+        Task<IEnumerable<CardTransaction>> GetCardTransactionsByMerchantAsync(int merchantId);
     }
 }

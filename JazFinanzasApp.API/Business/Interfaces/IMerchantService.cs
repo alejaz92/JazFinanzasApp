@@ -10,5 +10,6 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task ReassignTransactionAsync(int userId, int transactionId, int merchantId);
         Task ReassignCardTransactionAsync(int userId, int cardTransactionId, int merchantId);
         Task<MerchantResolveBulkResultDTO> ResolveAllAsync(int userId);
+        Task<IEnumerable<MerchantMovementDTO>> GetMovementsAsync(int userId, int merchantId);
     }
 }
