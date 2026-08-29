@@ -49,6 +49,8 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<Tag> Tags { get; set; }
         public DbSet<TransactionTag> TransactionTags { get; set; }
         public DbSet<CardTransactionTag> CardTransactionTags { get; set; }
+        public DbSet<Merchant> Merchants { get; set; }
+        public DbSet<MerchantAlias> MerchantAliases { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -544,6 +546,34 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(ctt => ctt.TagId)
                 .OnDelete(DeleteBehavior.NoAction);
+
+            // Comercios (Fase 8a, plan-rediseno-reportes.md). El alias muere con su comercio
+            // (Cascade, sin conflicto: es la única FK de MerchantAlias). Borrar un comercio deja
+            // los movimientos intactos con el campo simplemente vacío (SetNull) — nunca bloquea
+            // ni arrastra el borrado de una transacción real.
+            modelBuilder.Entity<Merchant>()
+                .HasOne(m => m.User)
+                .WithMany()
+                .HasForeignKey(m => m.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<MerchantAlias>()
+                .HasOne(a => a.Merchant)
+                .WithMany()
+                .HasForeignKey(a => a.MerchantId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.Merchant)
+                .WithMany()
+                .HasForeignKey(t => t.MerchantId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            modelBuilder.Entity<CardTransaction>()
+                .HasOne(ct => ct.Merchant)
+                .WithMany()
+                .HasForeignKey(ct => ct.MerchantId)
+                .OnDelete(DeleteBehavior.SetNull);
         }
     }
 }
