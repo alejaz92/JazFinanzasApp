@@ -56,7 +56,6 @@ builder.Services.AddScoped<ITripSuggestionDismissalRepository, TripSuggestionDis
 builder.Services.AddScoped<ISharedEventRepository, SharedEventRepository>();
 builder.Services.AddScoped<ISharedEventMovementRepository, SharedEventMovementRepository>();
 builder.Services.AddScoped<ISharedEventPaymentRepository, SharedEventPaymentRepository>();
-builder.Services.AddScoped<ITagRepository, TagRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios
@@ -81,7 +80,6 @@ builder.Services.AddScoped<ITripService, TripService>();
 builder.Services.AddScoped<ISharedEventService, SharedEventService>();
 builder.Services.AddScoped<ISharedEventPaymentService, SharedEventPaymentService>();
 builder.Services.AddScoped<ISharedEventImportService, SharedEventImportService>();
-builder.Services.AddScoped<ITagService, TagService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

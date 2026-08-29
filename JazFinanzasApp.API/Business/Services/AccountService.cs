@@ -27,7 +27,7 @@ namespace JazFinanzasApp.API.Business.Services
         public async Task<IEnumerable<AccountDTO>> GetAllForUserAsync(int userId)
         {
             var accounts = await _accountRepository.GetByUserIdAsync(userId);
-            return accounts.Select(ToDTO);
+            return accounts.Select(a => new AccountDTO { Id = a.Id, Name = a.Name });
         }
 
         public async Task<AccountDTO> GetByIdAsync(int userId, int id)
@@ -35,14 +35,14 @@ namespace JazFinanzasApp.API.Business.Services
             var account = await _accountRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Account not found");
             if (account.UserId != userId) throw new UnauthorizedDomainException();
-            return ToDTO(account);
+            return new AccountDTO { Id = account.Id, Name = account.Name };
         }
 
         public async Task<IEnumerable<AccountDTO>> GetByAssetTypeAsync(int userId, int assetTypeId)
         {
             var accounts = await _accountRepository.GetByAssetType(assetTypeId, userId);
             if (accounts == null) throw new NotFoundException("No accounts found");
-            return accounts.Select(ToDTO);
+            return accounts.Select(a => new AccountDTO { Id = a.Id, Name = a.Name });
         }
 
         public async Task<IEnumerable<AccountDTO>> GetByAssetTypeNameAsync(int userId, string assetTypeName)
@@ -56,14 +56,7 @@ namespace JazFinanzasApp.API.Business.Services
         {
             var checkExists = await _accountRepository.FindAsync(a => a.Name == dto.Name && a.UserId == userId);
             if (checkExists.Any()) throw new BusinessRuleException("Account already exists");
-            ValidateType(dto.Type);
-            await _accountRepository.AddAsync(new Account
-            {
-                Name = dto.Name, UserId = userId, Type = dto.Type,
-                // dto.CountsAsLiquid es nullable a propósito: sin especificar, una cuenta nueva
-                // arranca líquida (mismo default que la entidad/columna).
-                CountsAsLiquid = dto.CountsAsLiquid ?? true
-            });
+            await _accountRepository.AddAsync(new Account { Name = dto.Name, UserId = userId });
         }
 
         public async Task UpdateAccountAsync(int userId, int id, AccountDTO dto)
@@ -71,26 +64,10 @@ namespace JazFinanzasApp.API.Business.Services
             var account = await _accountRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Account not found");
             if (account.UserId != userId) throw new UnauthorizedDomainException();
-            ValidateType(dto.Type);
             account.UpdatedAt = DateTime.UtcNow;
             account.Name = dto.Name;
-            account.Type = dto.Type;
-            // No especificar CountsAsLiquid deja el valor existente sin tocar — así un cliente
-            // que todavía no conoce el campo (ej. el frontend antes de la Fase 6) no lo resetea.
-            if (dto.CountsAsLiquid != null) account.CountsAsLiquid = dto.CountsAsLiquid.Value;
             await _accountRepository.UpdateAsync(account);
         }
-
-        private static void ValidateType(string? type)
-        {
-            if (type != null && !AccountType.IsValid(type))
-                throw new BusinessRuleException("Invalid account type");
-        }
-
-        private static AccountDTO ToDTO(Account a) => new AccountDTO
-        {
-            Id = a.Id, Name = a.Name, Type = a.Type, CountsAsLiquid = a.CountsAsLiquid
-        };
 
         public async Task DeleteAccountAsync(int userId, int id)
         {
