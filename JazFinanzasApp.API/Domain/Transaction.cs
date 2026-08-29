@@ -43,12 +43,6 @@ namespace JazFinanzasApp.API.Domain
         public int? TripId { get; set; }
         public Trip? Trip { get; set; }
 
-        // Resultado persistido del resolver de comercios (T7, plan-rediseno-reportes.md) — se
-        // resuelve una sola vez al cargar/reprocesar, los reportes leen esto y nunca recalculan.
-        [ForeignKey("MerchantId")]
-        public int? MerchantId { get; set; }
-        public Merchant? Merchant { get; set; }
-
         public string? Detail {  get; set; }
 
         [Required]
