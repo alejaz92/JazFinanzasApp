@@ -102,6 +102,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany() // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
+            modelBuilder.Entity<Account>()
+                .Property(a => a.CountsAsLiquid)
+                .HasDefaultValue(true);
             modelBuilder.Entity<Asset>()
                 .HasOne(cm => cm.AssetType)
                 .WithMany(at => at.Assets) // Si no hay colecci�n en User
@@ -165,6 +168,13 @@ namespace JazFinanzasApp.API.Infrastructure.Data
             modelBuilder.Entity<TransactionClass>()
                 .Property(tc => tc.IsSystem)
                 .HasDefaultValue(false);
+            // Jerarquía de un solo nivel (T13) — NoAction para no multiplicar cascade paths en
+            // SQL Server; la validación de "un padre no puede tener padre" vive en el service.
+            modelBuilder.Entity<TransactionClass>()
+                .HasOne(tc => tc.Parent)
+                .WithMany()
+                .HasForeignKey(tc => tc.ParentId)
+                .OnDelete(DeleteBehavior.NoAction);
             modelBuilder.Entity<InvestmentTransaction>()
             .HasOne(im => im.IncomeTransaction)
             .WithMany()
