@@ -26,6 +26,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                    await _context.CardTransactions.AnyAsync(ct => ct.TransactionClassId == transactionClassId);
         }
 
-
+        public async Task<bool> HasChildrenAsync(int transactionClassId)
+        {
+            return await _context.TransactionClasses.AnyAsync(tc => tc.ParentId == transactionClassId);
+        }
     }
 }

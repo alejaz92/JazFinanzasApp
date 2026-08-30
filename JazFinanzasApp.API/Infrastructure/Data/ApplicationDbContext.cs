@@ -165,6 +165,14 @@ namespace JazFinanzasApp.API.Infrastructure.Data
             modelBuilder.Entity<TransactionClass>()
                 .Property(tc => tc.IsSystem)
                 .HasDefaultValue(false);
+            modelBuilder.Entity<TransactionClass>()
+                .Property(tc => tc.CountsAsIncomeExpense)
+                .HasDefaultValue(true);
+            modelBuilder.Entity<TransactionClass>()
+                .HasOne(tc => tc.Parent)
+                .WithMany(tc => tc.Children)
+                .HasForeignKey(tc => tc.ParentId)
+                .OnDelete(DeleteBehavior.Restrict); // evita ciclos de eliminación en la auto-relación
             modelBuilder.Entity<InvestmentTransaction>()
             .HasOne(im => im.IncomeTransaction)
             .WithMany()
