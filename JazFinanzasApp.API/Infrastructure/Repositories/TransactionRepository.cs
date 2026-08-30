@@ -204,8 +204,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var dollarClassIncomeStats = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -221,8 +220,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var dollarClassExpenseStats = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -239,8 +237,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "I")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .Select(g => new
@@ -269,8 +266,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "E")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .GroupBy(t => new { t.Date.Year, t.Date.Month })
                 .Select(g => new
@@ -313,8 +309,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var incomeTransactionsInPesos = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "I")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -345,8 +340,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var expensesTransactionsInPesos = await _context.Transactions
                 .Include(t => t.TransactionClass)
                 .Where(t => t.TransactionClassId != null)
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .Where(t => t.MovementType == "E")
                 .Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month)
@@ -389,8 +383,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(t => t.Asset)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "I")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Ingreso")
-                .Where(t => t.TransactionClass.Description != "Ingreso Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .ToListAsync(); // Traemos los datos a memoria
 
@@ -450,8 +443,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(t => t.Asset)
                 .Where(t => t.TransactionClassId != null)
                 .Where(t => t.MovementType == "E")
-                .Where(t => t.TransactionClass.Description != "Ajuste Saldos Egreso")
-                .Where(t => t.TransactionClass.Description != "Inversiones")
+                .Where(t => t.TransactionClass.CountsAsIncomeExpense)
                 .Where(t => t.UserId == userId)
                 .ToListAsync(); // Traemos los datos a memoria
 
@@ -528,10 +520,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             // Constantes (si las ten?s como enums, mejor)
             const string MOV_INCOME = "I";
             const string MOV_EXPENSE = "E";
-            const string CLASS_ADJ_IN = "Ajuste Saldos Ingreso";
-            const string CLASS_INV_IN = "Ingreso Inversiones";
-            const string CLASS_ADJ_EX = "Ajuste Saldos Egreso";
-            const string CLASS_INV_EX = "Inversiones";
             const string ARS_NAME = "Peso Argentino";
             const string BLUE = "BLUE";
 
@@ -626,8 +614,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             t.TransactionClassId != null &&
                             t.MovementType == MOV_INCOME &&
                             t.Date >= monthStart && t.Date < monthEnd &&
-                            t.TransactionClass.Description != CLASS_ADJ_IN &&
-                            t.TransactionClass.Description != CLASS_INV_IN)
+                            t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new
                 {
                     ClassDesc = t.TransactionClass.Description,
@@ -644,8 +631,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             t.TransactionClassId != null &&
                             t.MovementType == MOV_EXPENSE &&
                             t.Date >= monthStart && t.Date < monthEnd &&
-                            t.TransactionClass.Description != CLASS_ADJ_EX &&
-                            t.TransactionClass.Description != CLASS_INV_EX)
+                            t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new
                 {
                     ClassDesc = t.TransactionClass.Description,
@@ -690,8 +676,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             t.TransactionClassId != null &&
                             t.MovementType == MOV_INCOME &&
                             t.Date >= cutoff &&
-                            t.TransactionClass.Description != CLASS_ADJ_IN &&
-                            t.TransactionClass.Description != CLASS_INV_IN)
+                            t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
                 .ToListAsync();
 
@@ -701,8 +686,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             t.TransactionClassId != null &&
                             t.MovementType == MOV_EXPENSE &&
                             t.Date >= cutoff &&
-                            t.TransactionClass.Description != CLASS_ADJ_EX &&
-                            t.TransactionClass.Description != CLASS_INV_EX)
+                            t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new { t.Date, t.AssetId, t.Amount, t.QuotePrice })
                 .ToListAsync();
 

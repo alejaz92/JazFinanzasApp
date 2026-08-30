@@ -62,6 +62,37 @@ namespace JazFinanzasApp.Tests.Services
             _transactionClassRepoMock.Verify(r => r.AddAsync(It.IsAny<TransactionClass>()), Times.Exactly(6));
         }
 
+        [Theory]
+        [InlineData("Ajuste Saldos Ingreso", false)]
+        [InlineData("Ingreso Inversiones", false)]
+        [InlineData("Ajuste Saldos Egreso", false)]
+        [InlineData("Inversiones", false)]
+        [InlineData("Gastos Tarjeta", true)]
+        [InlineData("Reintegro", true)]
+        public async Task RegisterAsync_SeedsCountsAsIncomeExpenseCorrectly(string description, bool expected)
+        {
+            var dto = new RegisterUserDTO
+            {
+                Name = "Juan",
+                LastName = "Perez",
+                UserName = "jperez",
+                Email = "j@test.com",
+                Password = "Pass123!"
+            };
+
+            _userRepoMock
+                .Setup(r => r.RegisterUserAsync(dto.Name, dto.LastName, dto.UserName, dto.Email, dto.Password))
+                .ReturnsAsync((IdentityResult.Success, 42));
+
+            _portfolioRepoMock.Setup(r => r.AddAsync(It.IsAny<Portfolio>())).Returns(Task.CompletedTask);
+            _transactionClassRepoMock.Setup(r => r.AddAsync(It.IsAny<TransactionClass>())).Returns(Task.CompletedTask);
+
+            await _sut.RegisterAsync(dto);
+
+            _transactionClassRepoMock.Verify(r => r.AddAsync(It.Is<TransactionClass>(tc =>
+                tc.Description == description && tc.CountsAsIncomeExpense == expected)), Times.Once);
+        }
+
         [Fact]
         public async Task RegisterAsync_WhenUsernameDuplicated_ReturnsFailed()
         {
