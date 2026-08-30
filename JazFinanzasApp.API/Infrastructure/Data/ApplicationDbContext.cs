@@ -46,6 +46,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<SharedEventMovementShare> SharedEventMovementShares { get; set; }
         public DbSet<SharedEventPayment> SharedEventPayments { get; set; }
         public DbSet<SharedEventPaymentAllocation> SharedEventPaymentAllocations { get; set; }
+        public DbSet<Tag> Tags { get; set; }
+        public DbSet<TransactionTag> TransactionTags { get; set; }
+        public DbSet<CardTransactionTag> CardTransactionTags { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -173,6 +176,31 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany(tc => tc.Children)
                 .HasForeignKey(tc => tc.ParentId)
                 .OnDelete(DeleteBehavior.Restrict); // evita ciclos de eliminación en la auto-relación
+            modelBuilder.Entity<Tag>()
+                .HasOne(t => t.User)
+                .WithMany() // Si no hay colección en User
+                .HasForeignKey(t => t.UserId)
+                .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+            modelBuilder.Entity<TransactionTag>()
+                .HasOne(tt => tt.Transaction)
+                .WithMany() // Si no hay colección en Transaction
+                .HasForeignKey(tt => tt.TransactionId)
+                .OnDelete(DeleteBehavior.Cascade); // borrar el movimiento borra sus etiquetas asignadas
+            modelBuilder.Entity<TransactionTag>()
+                .HasOne(tt => tt.Tag)
+                .WithMany() // Si no hay colección en Tag
+                .HasForeignKey(tt => tt.TagId)
+                .OnDelete(DeleteBehavior.Cascade); // borrar la etiqueta borra sus asignaciones
+            modelBuilder.Entity<CardTransactionTag>()
+                .HasOne(ct => ct.CardTransaction)
+                .WithMany() // Si no hay colección en CardTransaction
+                .HasForeignKey(ct => ct.CardTransactionId)
+                .OnDelete(DeleteBehavior.Cascade); // borrar el consumo borra sus etiquetas asignadas
+            modelBuilder.Entity<CardTransactionTag>()
+                .HasOne(ct => ct.Tag)
+                .WithMany() // Si no hay colección en Tag
+                .HasForeignKey(ct => ct.TagId)
+                .OnDelete(DeleteBehavior.Cascade); // borrar la etiqueta borra sus asignaciones
             modelBuilder.Entity<InvestmentTransaction>()
             .HasOne(im => im.IncomeTransaction)
             .WithMany()
