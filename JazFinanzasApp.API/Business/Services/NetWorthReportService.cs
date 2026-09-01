@@ -9,6 +9,9 @@ namespace JazFinanzasApp.API.Business.Services
     public class NetWorthReportService : INetWorthReportService
     {
         private const int MonthlySeriesLength = 12;
+        // T9: "supera los 3 días hábiles" (D-7) aproximado a 5 días de calendario, para no tener
+        // que resolver feriados — un fin de semana de por medio ya cubre los 3 hábiles reales.
+        private const int StaleDaysThreshold = 5;
 
         private readonly ITransactionRepository _transactionRepository;
         private readonly ICardTransactionRepository _cardTransactionRepository;
@@ -35,32 +38,35 @@ namespace JazFinanzasApp.API.Business.Services
 
         // El bruto es GetTotalsBalanceByUserAsync sin tocar (T7) — mismo número que "Saldos" por
         // construcción, no por comparación después.
-        public async Task<IEnumerable<NetWorthTotalDTO>> GetGeneralAsync(int userId)
+        public async Task<NetWorthGeneralDTO> GetGeneralAsync(int userId)
         {
             var referenceAssets = await GetReferenceAssetsOrDefaultAsync(userId);
             var debtInDollars = await GetLiveCardDebtInDollarsAsync(userId);
-            var oldestQuoteDate = await _transactionRepository.GetOldestQuoteDateForHoldingsAsync(userId);
+            var staleAssets = await _transactionRepository.GetStaleAssetsAsync(userId, StaleDaysThreshold);
 
-            var result = new List<NetWorthTotalDTO>();
+            var totals = new List<NetWorthTotalDTO>();
             foreach (var asset in referenceAssets)
             {
                 var gross = await _transactionRepository.GetTotalsBalanceByUserAsync(userId, asset);
                 var (rate, _) = await _transactionRepository.GetReferenceAssetRateAsync(asset);
                 var debtInAsset = asset.Name == "Dolar Estadounidense" ? debtInDollars : debtInDollars * rate;
 
-                result.Add(new NetWorthTotalDTO
+                totals.Add(new NetWorthTotalDTO
                 {
                     Asset = gross.Asset,
                     Symbol = gross.Symbol,
                     Color = gross.Color,
                     GrossBalance = gross.Balance,
                     CardDebt = Math.Round(debtInAsset, 2),
-                    NetBalance = Math.Round(gross.Balance - debtInAsset, 2),
-                    OldestQuoteDate = oldestQuoteDate
+                    NetBalance = Math.Round(gross.Balance - debtInAsset, 2)
                 });
             }
 
-            return result;
+            return new NetWorthGeneralDTO
+            {
+                Totals = totals,
+                StaleAssets = staleAssets.Select(s => new StaleAssetDTO { AssetName = s.AssetName, QuoteDate = s.QuoteDate }).ToList()
+            };
         }
 
         public async Task<IEnumerable<NetWorthMonthlyPointDTO>> GetMonthlySeriesAsync(int userId, int assetId)

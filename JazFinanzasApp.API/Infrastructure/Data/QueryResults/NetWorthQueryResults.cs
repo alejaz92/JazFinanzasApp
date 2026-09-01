@@ -6,6 +6,14 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal Balance { get; set; }
     }
 
+    // T9: un activo que hoy se tiene en cartera pero cuya última cotización supera el umbral de
+    // frescura — no es "el total de hoy no es de hoy", es "esta tenencia puntual está vieja".
+    public class StaleAssetResult
+    {
+        public string AssetName { get; set; }
+        public DateTime QuoteDate { get; set; }
+    }
+
     // Apertura del patrimonio por gran grupo de activo (D-6 / Flujo 2), un punto por mes.
     public class NetWorthMonthlyPointResult
     {

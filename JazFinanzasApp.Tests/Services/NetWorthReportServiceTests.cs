@@ -186,7 +186,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardTransactionRepoMock.Setup(r => r.FindAsync(It.IsAny<System.Linq.Expressions.Expression<Func<CardTransaction, bool>>>()))
                 .ReturnsAsync(new List<CardTransaction>());
             _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
-            _transactionRepoMock.Setup(r => r.GetOldestQuoteDateForHoldingsAsync(UserId)).ReturnsAsync((DateTime?)null);
+            _transactionRepoMock.Setup(r => r.GetStaleAssetsAsync(UserId, It.IsAny<int>())).ReturnsAsync(new List<StaleAssetResult>());
 
             _transactionRepoMock.Setup(r => r.GetTotalsBalanceByUserAsync(UserId, dollar))
                 .ReturnsAsync(new TotalsBalanceResult { Asset = "Dolar Estadounidense", Symbol = "US$", Color = "#000", Balance = 1000m });
@@ -199,11 +199,43 @@ namespace JazFinanzasApp.Tests.Services
                 .ReturnsAsync(new List<CardTransaction> { ct });
             _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(dollar);
 
-            var result = (await _sut.GetGeneralAsync(UserId)).Single();
+            var result = (await _sut.GetGeneralAsync(UserId)).Totals.Single();
 
             result.GrossBalance.Should().Be(1000m);
             result.CardDebt.Should().Be(150m);
             result.NetBalance.Should().Be(850m);
+        }
+
+        [Fact]
+        public async Task GetGeneralAsync_ExposesStaleAssetsOnceRegardlessOfHowManyReferenceCurrencies()
+        {
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#000" };
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            _asset_UserRepoMock.Setup(r => r.GetReferenceAssetsAsync(UserId)).ReturnsAsync(new List<Asset_User>
+            {
+                new Asset_User { AssetId = 2, Asset = dollar },
+                new Asset_User { AssetId = 1, Asset = peso }
+            });
+
+            _cardTransactionRepoMock.Setup(r => r.FindAsync(It.IsAny<System.Linq.Expressions.Expression<Func<CardTransaction, bool>>>()))
+                .ReturnsAsync(new List<CardTransaction>());
+            _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
+
+            var staleDate = new DateTime(2026, 8, 14);
+            _transactionRepoMock.Setup(r => r.GetStaleAssetsAsync(UserId, It.IsAny<int>()))
+                .ReturnsAsync(new List<StaleAssetResult> { new StaleAssetResult { AssetName = "Bonos Rep. Arg. USD Step Up 2030", QuoteDate = staleDate } });
+
+            _transactionRepoMock.Setup(r => r.GetTotalsBalanceByUserAsync(UserId, dollar))
+                .ReturnsAsync(new TotalsBalanceResult { Asset = "Dolar Estadounidense", Symbol = "US$", Color = "#000", Balance = 1000m });
+            _transactionRepoMock.Setup(r => r.GetTotalsBalanceByUserAsync(UserId, peso))
+                .ReturnsAsync(new TotalsBalanceResult { Asset = "Peso Argentino", Symbol = "$", Color = "#111", Balance = 500000m });
+            _transactionRepoMock.Setup(r => r.GetReferenceAssetRateAsync(dollar)).ReturnsAsync((1m, (DateTime?)null));
+            _transactionRepoMock.Setup(r => r.GetReferenceAssetRateAsync(peso)).ReturnsAsync((1500m, (DateTime?)null));
+
+            var result = await _sut.GetGeneralAsync(UserId);
+
+            result.Totals.Should().HaveCount(2);
+            result.StaleAssets.Should().ContainSingle(s => s.AssetName == "Bonos Rep. Arg. USD Step Up 2030" && s.QuoteDate == staleDate);
         }
     }
 }

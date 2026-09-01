@@ -33,7 +33,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
 
         // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
         Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);
-        Task<DateTime?> GetOldestQuoteDateForHoldingsAsync(int userId);
+        Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);
         Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
         Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
         Task<IEnumerable<CurrencyExposureResult>> GetCurrencyExposureAsync(int userId, Asset referenceAsset);

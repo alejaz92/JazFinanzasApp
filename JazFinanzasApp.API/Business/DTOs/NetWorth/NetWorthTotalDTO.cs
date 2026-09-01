@@ -8,9 +8,19 @@ namespace JazFinanzasApp.API.Business.DTO.NetWorth
         public decimal GrossBalance { get; set; }
         public decimal CardDebt { get; set; }
         public decimal NetBalance { get; set; }
+    }
 
-        // T9: la fecha de cotización más vieja usada para valuar alguna tenencia de hoy —
-        // si supera los 3 días hábiles, el frontend la muestra en vez de tratar el número como al día.
-        public DateTime? OldestQuoteDate { get; set; }
+    // T9: qué tenencias de hoy están valuadas con una cotización vieja — no es propiedad de
+    // ninguna moneda de referencia en particular, por eso viaja aparte y una sola vez.
+    public class StaleAssetDTO
+    {
+        public string AssetName { get; set; }
+        public DateTime QuoteDate { get; set; }
+    }
+
+    public class NetWorthGeneralDTO
+    {
+        public List<NetWorthTotalDTO> Totals { get; set; } = new();
+        public List<StaleAssetDTO> StaleAssets { get; set; } = new();
     }
 }

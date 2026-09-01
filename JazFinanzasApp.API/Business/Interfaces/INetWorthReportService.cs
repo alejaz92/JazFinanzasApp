@@ -4,7 +4,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
 {
     public interface INetWorthReportService
     {
-        Task<IEnumerable<NetWorthTotalDTO>> GetGeneralAsync(int userId);
+        Task<NetWorthGeneralDTO> GetGeneralAsync(int userId);
         Task<IEnumerable<NetWorthMonthlyPointDTO>> GetMonthlySeriesAsync(int userId, int assetId);
         Task<IEnumerable<AccountBalanceDTO>> GetByAccountAsync(int userId, int assetId);
         Task<IEnumerable<CurrencyExposureDTO>> GetByCurrencyAsync(int userId, int assetId);

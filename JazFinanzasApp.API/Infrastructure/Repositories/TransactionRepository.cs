@@ -237,26 +237,48 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return (rate ?? 0m, date);
         }
 
-        public async Task<DateTime?> GetOldestQuoteDateForHoldingsAsync(int userId)
+        public async Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold)
         {
-            var assetIds = await _context.Transactions
+            var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId)
-                .Select(t => t.AssetId)
-                .Distinct()
+                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
                 .ToListAsync();
 
-            if (assetIds.Count == 0) return null;
+            if (transactions.Count == 0) return Enumerable.Empty<StaleAssetResult>();
 
-            var latestDatesByAsset = (await _context.AssetQuotes
-                    .Where(q => assetIds.Contains(q.AssetId))
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            // Solo interesa lo que hoy sigue en cartera — un activo ya vendido del todo no debería
+            // avisar por una cotización vieja que ya no valúa nada.
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => new { g.First().AssetName, Rows = g.ToList() });
+            var heldAssetIds = byAsset
+                .Where(kv => kv.Value.Rows.Sum(t => t.Amount * GetSplitFactor(kv.Key, t.Date)) != 0)
+                .Select(kv => kv.Key)
+                .ToList();
+
+            if (heldAssetIds.Count == 0) return Enumerable.Empty<StaleAssetResult>();
+
+            var latestQuoteByAsset = (await _context.AssetQuotes
+                    .Where(q => heldAssetIds.Contains(q.AssetId))
                     .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
                     .Select(q => new { q.AssetId, q.Date })
                     .ToListAsync())
                 .GroupBy(q => q.AssetId)
-                .Select(g => g.Max(x => x.Date))
-                .ToList();
+                .ToDictionary(g => g.Key, g => g.Max(x => x.Date));
 
-            return latestDatesByAsset.Count == 0 ? null : latestDatesByAsset.Min();
+            var cutoff = DateTime.Today.AddDays(-staleDaysThreshold);
+
+            return heldAssetIds
+                .Where(id => latestQuoteByAsset.TryGetValue(id, out var date) && date < cutoff)
+                .Select(id => new StaleAssetResult { AssetName = byAsset[id].AssetName, QuoteDate = latestQuoteByAsset[id] })
+                .OrderBy(r => r.QuoteDate)
+                .ToList();
         }
 
         private async Task<Dictionary<int, List<(DateTime Date, decimal Value)>>> GetQuotesByAssetAsync(IEnumerable<int> assetIds)
