@@ -199,6 +199,349 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             };
         }
 
+        // ── Patrimonio (Fase 10) ──────────────────────────────────────────────
+        // No reutiliza ni modifica GetTotalsBalanceByUserAsync (T7) — son cálculos nuevos, paralelos.
+        // Mismo pivote dólar (Id 2) y mismo criterio de "última cotización propia" que ese método,
+        // para que el resto de las aperturas de Patrimonio sea consistente con el total de "hoy".
+
+        private const int NetWorthDollarPivotAssetId = 2;
+
+        // Historial de cotizaciones propias de un activo, más reciente primero — mismo criterio que
+        // el bloque final de GetTotalsBalanceByUserAsync (Peso Argentino: su Type='BOLSA'; el resto,
+        // cualquier Type), generalizado para poder resolver "a una fecha" y no solo "hoy".
+        private async Task<List<(DateTime Date, decimal Value)>> GetOwnRateHistoryAsync(Asset asset)
+        {
+            if (asset.Name == "Dolar Estadounidense") return new List<(DateTime, decimal)>();
+
+            var query = asset.Name == "Peso Argentino"
+                ? _context.AssetQuotes.Where(q => q.AssetId == asset.Id && q.Type == "BOLSA")
+                : _context.AssetQuotes.Where(q => q.AssetId == asset.Id);
+
+            return (await query.OrderByDescending(q => q.Date).Select(q => new { q.Date, q.Value }).ToListAsync())
+                .Select(q => (q.Date, q.Value))
+                .ToList();
+        }
+
+        private static (decimal? Rate, DateTime? Date) GetRateOnOrBefore(Asset asset, List<(DateTime Date, decimal Value)> history, DateTime date)
+        {
+            if (asset.Name == "Dolar Estadounidense") return (1m, null);
+            foreach (var q in history)
+                if (q.Date <= date) return (q.Value, q.Date);
+            return (null, null);
+        }
+
+        public async Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset)
+        {
+            var history = await GetOwnRateHistoryAsync(asset);
+            var (rate, date) = GetRateOnOrBefore(asset, history, DateTime.Today);
+            return (rate ?? 0m, date);
+        }
+
+        public async Task<DateTime?> GetOldestQuoteDateForHoldingsAsync(int userId)
+        {
+            var assetIds = await _context.Transactions
+                .Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId)
+                .Select(t => t.AssetId)
+                .Distinct()
+                .ToListAsync();
+
+            if (assetIds.Count == 0) return null;
+
+            var latestDatesByAsset = (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                    .Select(q => new { q.AssetId, q.Date })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .Select(g => g.Max(x => x.Date))
+                .ToList();
+
+            return latestDatesByAsset.Count == 0 ? null : latestDatesByAsset.Min();
+        }
+
+        private async Task<Dictionary<int, List<(DateTime Date, decimal Value)>>> GetQuotesByAssetAsync(IEnumerable<int> assetIds)
+        {
+            return (await _context.AssetQuotes
+                    .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                    .Select(q => new { q.AssetId, q.Date, q.Value })
+                    .ToListAsync())
+                .GroupBy(q => q.AssetId)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(q => q.Date).Select(q => (q.Date, q.Value)).ToList());
+        }
+
+        private static List<decimal> GetAssetQuotesOnOrBefore(Dictionary<int, List<(DateTime Date, decimal Value)>> quotesByAsset, int assetId, DateTime date)
+        {
+            if (!quotesByAsset.TryGetValue(assetId, out var quotes)) return new List<decimal>();
+            var match = quotes.FirstOrDefault(q => q.Date <= date);
+            return match == default ? new List<decimal>() : quotes.Where(q => q.Date == match.Date).Select(q => q.Value).ToList();
+        }
+
+        private static decimal ToUsd(int assetId, decimal nativeAmount, Dictionary<int, List<(DateTime Date, decimal Value)>> quotesByAsset, DateTime date)
+        {
+            if (nativeAmount == 0) return 0m;
+            if (assetId == NetWorthDollarPivotAssetId) return nativeAmount;
+            var quotes = GetAssetQuotesOnOrBefore(quotesByAsset, assetId, date);
+            if (quotes.Count == 0) return 0m;
+            return quotes.Where(q => q != 0).Sum(q => nativeAmount / q);
+        }
+
+        private static string ClassifyNetWorthBucket(string assetTypeName, string environment)
+        {
+            if (environment == "FIAT") return "Accounts";
+            if (environment == "CRYPTO") return "Crypto";
+            if (assetTypeName == "Bono" || assetTypeName == "Obligacion Negociable") return "Bonds";
+            return "Stocks"; // resto de BOLSA: Accion Argentina, CEDEAR, FCI, Accion USA
+        }
+
+        // Devuelve, de más viejo a más nuevo, los cortes de fecha de los últimos `months` meses: fin de
+        // cada mes salvo el último punto, que es hoy (mes en curso, todavía no cerrado).
+        private static List<(DateTime Cutoff, DateTime MonthLabel)> GetMonthlyCutoffs(int months)
+        {
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var cutoffs = new List<(DateTime, DateTime)>();
+            for (int i = months - 1; i >= 0; i--)
+            {
+                if (i == 0) { cutoffs.Add((today, currentMonthStart)); continue; }
+                var monthStart = currentMonthStart.AddMonths(-i);
+                cutoffs.Add((monthStart.AddMonths(1).AddDays(-1), monthStart));
+            }
+            return cutoffs;
+        }
+
+        public async Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Select(t => new { t.AssetId, t.Amount, t.Date, AssetTypeName = t.Asset.AssetType.Name, Environment = t.Asset.AssetType.Environment })
+                .ToListAsync();
+
+            if (transactions.Count == 0) return Enumerable.Empty<NetWorthMonthlyPointResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+            var bucketByAsset = transactions.GroupBy(t => t.AssetId)
+                .ToDictionary(g => g.Key, g => ClassifyNetWorthBucket(g.First().AssetTypeName, g.First().Environment));
+
+            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
+            var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
+
+            var points = new List<NetWorthMonthlyPointResult>();
+            foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
+            {
+                var (refRate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, cutoff);
+                decimal accounts = 0, stocks = 0, crypto = 0, bonds = 0;
+
+                foreach (var assetId in assetIds)
+                {
+                    var nativeAmount = byAsset[assetId].Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
+                    if (nativeAmount == 0) continue;
+
+                    var usd = ToUsd(assetId, nativeAmount, quotesByAsset, cutoff);
+                    var inReference = refRate.HasValue ? usd * refRate.Value : 0m;
+
+                    switch (bucketByAsset[assetId])
+                    {
+                        case "Accounts": accounts += inReference; break;
+                        case "Crypto": crypto += inReference; break;
+                        case "Bonds": bonds += inReference; break;
+                        default: stocks += inReference; break;
+                    }
+                }
+
+                points.Add(new NetWorthMonthlyPointResult
+                {
+                    Month = monthLabel,
+                    Accounts = Math.Round(accounts, 2),
+                    Stocks = Math.Round(stocks, 2),
+                    Crypto = Math.Round(crypto, 2),
+                    Bonds = Math.Round(bonds, 2)
+                });
+            }
+
+            return points;
+        }
+
+        public async Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths)
+        {
+            var rows = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Select(t => new { t.AccountId, AccountName = t.Account.Name, t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, t.Amount, t.Date })
+                .ToListAsync();
+
+            if (rows.Count == 0) return Enumerable.Empty<AccountBalanceResult>();
+
+            var assetIds = rows.Select(r => r.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
+            var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
+
+            decimal ToReference(int assetId, decimal nativeAmount, DateTime asOf)
+            {
+                var usd = ToUsd(assetId, nativeAmount, quotesByAsset, asOf);
+                var (rate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, asOf);
+                return rate.HasValue ? usd * rate.Value : 0m;
+            }
+
+            var byAccountAsset = rows.GroupBy(r => (r.AccountId, r.AssetId))
+                .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Date).ToList());
+
+            var today = DateTime.Today;
+            var result = rows
+                .GroupBy(r => new { r.AccountId, r.AccountName })
+                .Select(accGroup =>
+                {
+                    var holdings = accGroup
+                        .Select(x => x.AssetId).Distinct()
+                        .Select(assetId =>
+                        {
+                            var info = accGroup.First(x => x.AssetId == assetId);
+                            var native = byAccountAsset[(accGroup.Key.AccountId, assetId)]
+                                .Where(x => x.Date <= today)
+                                .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date));
+                            return new AccountHoldingResult
+                            {
+                                AssetId = assetId,
+                                AssetName = info.AssetName,
+                                AssetSymbol = info.AssetSymbol,
+                                NativeBalance = Math.Round(native, 2),
+                                BalanceInReferenceAsset = Math.Round(ToReference(assetId, native, today), 2)
+                            };
+                        })
+                        .Where(h => h.NativeBalance != 0)
+                        .OrderByDescending(h => h.BalanceInReferenceAsset)
+                        .ToList();
+
+                    return new AccountBalanceResult
+                    {
+                        AccountId = accGroup.Key.AccountId,
+                        AccountName = accGroup.Key.AccountName,
+                        Balance = holdings.Sum(h => h.BalanceInReferenceAsset),
+                        Holdings = holdings
+                    };
+                })
+                .Where(a => a.Holdings.Count > 0)
+                .ToList();
+
+            foreach (var account in result)
+            {
+                var accountAssetIds = account.Holdings.Select(h => h.AssetId).ToList();
+                foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(evolutionMonths))
+                {
+                    var total = accountAssetIds.Sum(assetId =>
+                    {
+                        var native = byAccountAsset[(account.AccountId, assetId)]
+                            .Where(x => x.Date <= cutoff)
+                            .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date));
+                        return ToReference(assetId, native, cutoff);
+                    });
+                    account.Evolution.Add(new MonthlyBalanceResult { Month = monthLabel, Balance = Math.Round(total, 2) });
+                }
+            }
+
+            return result.OrderByDescending(a => a.Balance).ToList();
+        }
+
+        public async Task<IEnumerable<CurrencyExposureResult>> GetCurrencyExposureAsync(int userId, Asset referenceAsset)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
+                .ToListAsync();
+
+            if (transactions.Count == 0) return Enumerable.Empty<CurrencyExposureResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
+            var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
+            var today = DateTime.Today;
+            var (refRate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, today);
+
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+
+            decimal pesos = 0, dolarizado = 0;
+            foreach (var assetId in assetIds)
+            {
+                var rowsForAsset = byAsset[assetId];
+                var native = rowsForAsset.Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
+                if (native == 0) continue;
+
+                var usd = ToUsd(assetId, native, quotesByAsset, today);
+                var inReference = refRate.HasValue ? usd * refRate.Value : 0m;
+
+                if (rowsForAsset[0].AssetName == "Peso Argentino") pesos += inReference; else dolarizado += inReference;
+            }
+
+            return new List<CurrencyExposureResult>
+            {
+                new CurrencyExposureResult { Label = "Pesos", Balance = Math.Round(pesos, 2) },
+                new CurrencyExposureResult { Label = "Dolarizado", Balance = Math.Round(dolarizado, 2) }
+            };
+        }
+
+        public async Task<IEnumerable<MonthlyBalanceResult>> GetDollarizedPercentSeriesAsync(int userId, int months)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
+                .ToListAsync();
+
+            if (transactions.Count == 0) return Enumerable.Empty<MonthlyBalanceResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+            decimal GetSplitFactor(int assetId, DateTime date) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+
+            var points = new List<MonthlyBalanceResult>();
+            foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
+            {
+                decimal pesosUsd = 0, dolarizadoUsd = 0;
+                foreach (var assetId in assetIds)
+                {
+                    var rowsForAsset = byAsset[assetId];
+                    var native = rowsForAsset.Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
+                    if (native == 0) continue;
+
+                    var usd = ToUsd(assetId, native, quotesByAsset, cutoff);
+                    if (rowsForAsset[0].AssetName == "Peso Argentino") pesosUsd += usd; else dolarizadoUsd += usd;
+                }
+
+                var totalUsd = pesosUsd + dolarizadoUsd;
+                var percent = totalUsd == 0 ? 0m : Math.Round(dolarizadoUsd / totalUsd * 100m, 1);
+                points.Add(new MonthlyBalanceResult { Month = monthLabel, Balance = percent });
+            }
+
+            return points;
+        }
+
         public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)
         {
             var dollarClassIncomeStats = await _context.Transactions

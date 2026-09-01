@@ -28,5 +28,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(cp => cp.Date)
                 .ToListAsync();
         }
+
+        public async Task<Dictionary<int, DateTime>> GetLastPaidMonthByCardAsync(int userId)
+        {
+            return await _context.CardPayments
+                .Where(cp => cp.Card.UserId == userId)
+                .GroupBy(cp => cp.CardId)
+                .Select(g => new { CardId = g.Key, LastPaid = g.Max(cp => cp.Date) })
+                .ToDictionaryAsync(x => x.CardId, x => x.LastPaid);
+        }
     }
 }

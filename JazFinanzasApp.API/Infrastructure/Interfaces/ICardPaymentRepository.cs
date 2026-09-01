@@ -10,5 +10,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // ya se pagaron a precio pleno, y por lo tanto no pueden recibir un descuento que
         // el banco acredito despues.
         Task<IEnumerable<DateTime>> GetPaidMonthsAsync(int cardId);
+
+        // Último mes de resumen pagado por tarjeta, de todas las tarjetas del usuario (Fase 10,
+        // deuda de tarjeta viva — T8). Una tarjeta sin pagos registrados no aparece en el diccionario.
+        Task<Dictionary<int, DateTime>> GetLastPaidMonthByCardAsync(int userId);
     }
 }

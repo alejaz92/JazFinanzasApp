@@ -82,6 +82,7 @@ builder.Services.AddScoped<ISharedEventService, SharedEventService>();
 builder.Services.AddScoped<ISharedEventPaymentService, SharedEventPaymentService>();
 builder.Services.AddScoped<ISharedEventImportService, SharedEventImportService>();
 builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<INetWorthReportService, NetWorthReportService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

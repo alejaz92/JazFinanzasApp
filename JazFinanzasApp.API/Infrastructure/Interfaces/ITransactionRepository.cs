@@ -30,5 +30,13 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<Transaction>> SearchTripAssociableTransactionsAsync(int userId, string? search);
         Task<IEnumerable<Transaction>> GetByCardTransactionIdAsync(int cardTransactionId);
         Task DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(int transactionId);
+
+        // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
+        Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);
+        Task<DateTime?> GetOldestQuoteDateForHoldingsAsync(int userId);
+        Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
+        Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
+        Task<IEnumerable<CurrencyExposureResult>> GetCurrencyExposureAsync(int userId, Asset referenceAsset);
+        Task<IEnumerable<MonthlyBalanceResult>> GetDollarizedPercentSeriesAsync(int userId, int months);
     }
 }
