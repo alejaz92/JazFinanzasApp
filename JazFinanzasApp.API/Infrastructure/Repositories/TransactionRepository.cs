@@ -308,12 +308,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return quotes.Where(q => q != 0).Sum(q => nativeAmount / q);
         }
 
-        private static string ClassifyNetWorthBucket(string assetTypeName, string environment)
+        // Mismo criterio de stablecoin que el resto de los reportes de cripto (GetInvestmentValueContributionsAsync).
+        private static readonly string[] StableCryptoSymbols = { "DAI", "USDT", "USDC" };
+
+        private static string ClassifyNetWorthBucket(string assetTypeName, string environment, string assetSymbol)
         {
             if (environment == "FIAT") return "Accounts";
-            if (environment == "CRYPTO") return "Crypto";
-            if (assetTypeName == "Bono" || assetTypeName == "Obligacion Negociable") return "Bonds";
-            return "Stocks"; // resto de BOLSA: Accion Argentina, CEDEAR, FCI, Accion USA
+            if (environment == "CRYPTO") return StableCryptoSymbols.Contains(assetSymbol) ? "CryptoStable" : "CryptoVolatile";
+            if (assetTypeName == "Bono" || assetTypeName == "Obligacion Negociable") return "Bonds"; // renta fija
+            return "Stocks"; // renta variable: Accion Argentina, CEDEAR, FCI, Accion USA
         }
 
         // Devuelve, de más viejo a más nuevo, los cortes de fecha de los últimos `months` meses: fin de
@@ -336,7 +339,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
-                .Select(t => new { t.AssetId, t.Amount, t.Date, AssetTypeName = t.Asset.AssetType.Name, Environment = t.Asset.AssetType.Environment })
+                .Select(t => new { t.AssetId, t.Amount, t.Date, AssetTypeName = t.Asset.AssetType.Name, Environment = t.Asset.AssetType.Environment, AssetSymbol = t.Asset.Symbol })
                 .ToListAsync();
 
             if (transactions.Count == 0) return Enumerable.Empty<NetWorthMonthlyPointResult>();
@@ -351,7 +354,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
             var bucketByAsset = transactions.GroupBy(t => t.AssetId)
-                .ToDictionary(g => g.Key, g => ClassifyNetWorthBucket(g.First().AssetTypeName, g.First().Environment));
+                .ToDictionary(g => g.Key, g => ClassifyNetWorthBucket(g.First().AssetTypeName, g.First().Environment, g.First().AssetSymbol));
 
             var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
             var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
@@ -360,7 +363,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
             {
                 var (refRate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, cutoff);
-                decimal accounts = 0, stocks = 0, crypto = 0, bonds = 0;
+                decimal accounts = 0, stocks = 0, cryptoStable = 0, cryptoVolatile = 0, bonds = 0;
 
                 foreach (var assetId in assetIds)
                 {
@@ -373,7 +376,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     switch (bucketByAsset[assetId])
                     {
                         case "Accounts": accounts += inReference; break;
-                        case "Crypto": crypto += inReference; break;
+                        case "CryptoStable": cryptoStable += inReference; break;
+                        case "CryptoVolatile": cryptoVolatile += inReference; break;
                         case "Bonds": bonds += inReference; break;
                         default: stocks += inReference; break;
                     }
@@ -384,7 +388,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     Month = monthLabel,
                     Accounts = Math.Round(accounts, 2),
                     Stocks = Math.Round(stocks, 2),
-                    Crypto = Math.Round(crypto, 2),
+                    CryptoStable = Math.Round(cryptoStable, 2),
+                    CryptoVolatile = Math.Round(cryptoVolatile, 2),
                     Bonds = Math.Round(bonds, 2)
                 });
             }

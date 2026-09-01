@@ -80,7 +80,8 @@ namespace JazFinanzasApp.API.Business.Services
                 Month = p.Month,
                 Accounts = p.Accounts,
                 Stocks = p.Stocks,
-                Crypto = p.Crypto,
+                CryptoStable = p.CryptoStable,
+                CryptoVolatile = p.CryptoVolatile,
                 Bonds = p.Bonds
             });
         }

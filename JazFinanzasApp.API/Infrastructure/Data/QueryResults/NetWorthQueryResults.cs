@@ -19,9 +19,10 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
     {
         public DateTime Month { get; set; }
         public decimal Accounts { get; set; }
-        public decimal Stocks { get; set; }
-        public decimal Crypto { get; set; }
-        public decimal Bonds { get; set; }
+        public decimal Stocks { get; set; } // Bolsa, renta variable
+        public decimal CryptoStable { get; set; }
+        public decimal CryptoVolatile { get; set; }
+        public decimal Bonds { get; set; } // Bolsa, renta fija
     }
 
     public class AccountHoldingResult
