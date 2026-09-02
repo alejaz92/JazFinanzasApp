@@ -36,7 +36,5 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);
         Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
         Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
-        Task<IEnumerable<CurrencyExposureResult>> GetCurrencyExposureAsync(int userId, Asset referenceAsset);
-        Task<IEnumerable<MonthlyBalanceResult>> GetDollarizedPercentSeriesAsync(int userId, int months);
     }
 }

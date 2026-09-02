@@ -110,11 +110,6 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany(at => at.Assets) // Si no hay colecci�n en User
                 .HasForeignKey(cm => cm.AssetTypeId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminaci�n
-            modelBuilder.Entity<Asset>()
-                .HasOne(a => a.LinkedCurrency)
-                .WithMany()
-                .HasForeignKey(a => a.LinkedCurrencyAssetId)
-                .OnDelete(DeleteBehavior.NoAction); // auto-relación: nunca cascada
             modelBuilder.Entity<Asset_User>()
                 .HasOne(cm => cm.User)
                 .WithMany() // Si no hay colecci�n en User

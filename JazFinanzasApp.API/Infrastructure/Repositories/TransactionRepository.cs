@@ -1,4 +1,4 @@
-using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
+﻿using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
@@ -481,107 +481,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             }
 
             return result.OrderByDescending(a => a.Balance).ToList();
-        }
-
-        public async Task<IEnumerable<CurrencyExposureResult>> GetCurrencyExposureAsync(int userId, Asset referenceAsset)
-        {
-            var transactions = await _context.Transactions
-                .Where(t => t.UserId == userId)
-                .Select(t => new
-                {
-                    t.AssetId,
-                    t.Amount,
-                    t.Date,
-                    LinkedCurrencyName = t.Asset.LinkedCurrency != null ? t.Asset.LinkedCurrency.Name : null
-                })
-                .ToListAsync();
-
-            if (transactions.Count == 0) return Enumerable.Empty<CurrencyExposureResult>();
-
-            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
-            var splits = await _context.AssetSplitEvents
-                .Where(s => assetIds.Contains(s.AssetId))
-                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
-                .ToListAsync();
-            decimal GetSplitFactor(int assetId, DateTime date) =>
-                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
-
-            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
-            var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
-            var today = DateTime.Today;
-            var (refRate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, today);
-
-            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
-
-            // Se agrupa por la moneda a la que cada activo está atado (Asset.LinkedCurrencyAssetId),
-            // que es un dato cargado y no una inferencia por tipo: un CEDEAR suma al dólar aunque
-            // cotice en pesos, y un bono CER suma al peso aunque se opere como uno en dólares.
-            var totalsByCurrency = new Dictionary<string, decimal>();
-            foreach (var assetId in assetIds)
-            {
-                var rowsForAsset = byAsset[assetId];
-                var native = rowsForAsset.Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
-                if (native == 0) continue;
-
-                var usd = ToUsd(assetId, native, quotesByAsset, today);
-                var inReference = refRate.HasValue ? usd * refRate.Value : 0m;
-
-                var label = rowsForAsset[0].LinkedCurrencyName ?? SinMonedaAtadaLabel;
-                totalsByCurrency[label] = totalsByCurrency.GetValueOrDefault(label) + inReference;
-            }
-
-            return totalsByCurrency
-                .Select(kv => new CurrencyExposureResult { Label = kv.Key, Balance = Math.Round(kv.Value, 2) })
-                .OrderByDescending(r => r.Label == SinMonedaAtadaLabel ? decimal.MinValue : r.Balance)
-                .ToList();
-        }
-
-        // Un activo sin moneda atada no es un dato faltante: es que no sigue a ninguna (cripto
-        // volátil, un FCI mixto). Va último en el reporte, después de las monedas reales.
-        private const string SinMonedaAtadaLabel = "Sin moneda atada";
-
-        public async Task<IEnumerable<MonthlyBalanceResult>> GetDollarizedPercentSeriesAsync(int userId, int months)
-        {
-            var transactions = await _context.Transactions
-                .Where(t => t.UserId == userId)
-                .Select(t => new { t.AssetId, t.Amount, t.Date, LinkedCurrencyAssetId = t.Asset.LinkedCurrencyAssetId })
-                .ToListAsync();
-
-            if (transactions.Count == 0) return Enumerable.Empty<MonthlyBalanceResult>();
-
-            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
-            var splits = await _context.AssetSplitEvents
-                .Where(s => assetIds.Contains(s.AssetId))
-                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
-                .ToListAsync();
-            decimal GetSplitFactor(int assetId, DateTime date) =>
-                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
-
-            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
-            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
-
-            var points = new List<MonthlyBalanceResult>();
-            foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
-            {
-                // "Dolarizado" es lo atado al dólar según el dato cargado en el activo, no "todo lo
-                // que no es peso": una cripto volátil no suma acá, suma al total y nada más.
-                decimal dolarizadoUsd = 0, totalUsd = 0;
-                foreach (var assetId in assetIds)
-                {
-                    var rowsForAsset = byAsset[assetId];
-                    var native = rowsForAsset.Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
-                    if (native == 0) continue;
-
-                    var usd = ToUsd(assetId, native, quotesByAsset, cutoff);
-                    totalUsd += usd;
-                    if (rowsForAsset[0].LinkedCurrencyAssetId == NetWorthDollarPivotAssetId) dolarizadoUsd += usd;
-                }
-
-                var percent = totalUsd == 0 ? 0m : Math.Round(dolarizadoUsd / totalUsd * 100m, 1);
-                points.Add(new MonthlyBalanceResult { Month = monthLabel, Balance = percent });
-            }
-
-            return points;
         }
 
         public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)

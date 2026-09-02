@@ -42,11 +42,4 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public List<MonthlyBalanceResult> Evolution { get; set; } = new();
         public List<AccountHoldingResult> Holdings { get; set; } = new();
     }
-
-    // "Pesos" vs "Dolarizado" (D-6bis: todo lo que no está en Peso Argentino protege contra la devaluación).
-    public class CurrencyExposureResult
-    {
-        public string Label { get; set; }
-        public decimal Balance { get; set; }
-    }
 }

@@ -7,8 +7,6 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<NetWorthGeneralDTO> GetGeneralAsync(int userId);
         Task<IEnumerable<NetWorthMonthlyPointDTO>> GetMonthlySeriesAsync(int userId, int assetId);
         Task<IEnumerable<AccountBalanceDTO>> GetByAccountAsync(int userId, int assetId);
-        Task<IEnumerable<CurrencyExposureDTO>> GetByCurrencyAsync(int userId, int assetId);
-        Task<IEnumerable<MonthlyBalanceDTO>> GetDollarizedPercentSeriesAsync(int userId);
         Task<decimal> GetLiveCardDebtInDollarsAsync(int userId);
     }
 }

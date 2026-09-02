@@ -109,28 +109,6 @@ namespace JazFinanzasApp.API.Business.Services
             });
         }
 
-        public async Task<IEnumerable<CurrencyExposureDTO>> GetByCurrencyAsync(int userId, int assetId)
-        {
-            var asset = await _assetRepository.GetByIdAsync(assetId)
-                ?? throw new NotFoundException("Asset not found");
-
-            var exposure = (await _transactionRepository.GetCurrencyExposureAsync(userId, asset)).ToList();
-            var total = exposure.Sum(e => e.Balance);
-
-            return exposure.Select(e => new CurrencyExposureDTO
-            {
-                Label = e.Label,
-                Balance = e.Balance,
-                Percentage = total == 0 ? 0m : Math.Round(e.Balance / total * 100m, 1)
-            });
-        }
-
-        public async Task<IEnumerable<MonthlyBalanceDTO>> GetDollarizedPercentSeriesAsync(int userId)
-        {
-            var points = await _transactionRepository.GetDollarizedPercentSeriesAsync(userId, MonthlySeriesLength);
-            return points.Select(p => new MonthlyBalanceDTO { Month = p.Month, Balance = p.Balance });
-        }
-
         // T8 — deuda de tarjeta viva: suma de las cuotas todavía no vencidas de los consumos cuya
         // última cuota es futura, valuadas con la cotización del consumo (no la de hoy).
         public async Task<decimal> GetLiveCardDebtInDollarsAsync(int userId)
