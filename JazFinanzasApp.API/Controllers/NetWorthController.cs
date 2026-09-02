@@ -40,18 +40,5 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
-        [HttpGet("ByCurrency/{assetId}")]
-        public async Task<IActionResult> GetByCurrency(int assetId)
-        {
-            var result = await _netWorthReportService.GetByCurrencyAsync(GetUserId(), assetId);
-            return Ok(result);
-        }
-
-        [HttpGet("DollarizedSeries")]
-        public async Task<IActionResult> GetDollarizedPercentSeries()
-        {
-            var result = await _netWorthReportService.GetDollarizedPercentSeriesAsync(GetUserId());
-            return Ok(result);
-        }
     }
 }
