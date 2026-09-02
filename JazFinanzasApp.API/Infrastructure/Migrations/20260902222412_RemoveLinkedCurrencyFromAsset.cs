@@ -9,6 +9,13 @@ namespace JazFinanzasApp.API.Infrastructure.Migrations
     public partial class RemoveLinkedCurrencyFromAsset : Migration
     {
         /// <inheritdoc />
+        // Da de baja el reporte "Por moneda" (Patrimonio): el campo se agregó y se cargó el
+        // 2026-09-02 y se descartó el mismo día porque el reporte no terminó de convencer.
+        // Se elimina "hacia adelante" y no revirtiendo la migración anterior, porque esa ya se
+        // había desplegado: el proceso viejo tiene la columna mapeada y dropearla por fuera del
+        // deploy deja toda consulta sobre Assets tirando 500 (pasó, y se recuperó restaurando la
+        // columna). Este drop tiene que correr al arrancar el proceso nuevo, que es el que ya no
+        // referencia el campo — es decir, se aplica sola en el deploy, nunca a mano antes.
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(
