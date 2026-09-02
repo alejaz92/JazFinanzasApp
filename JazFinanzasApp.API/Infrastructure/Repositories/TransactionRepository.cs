@@ -487,7 +487,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
-                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
+                .Select(t => new
+                {
+                    t.AssetId,
+                    t.Amount,
+                    t.Date,
+                    LinkedCurrencyName = t.Asset.LinkedCurrency != null ? t.Asset.LinkedCurrency.Name : null
+                })
                 .ToListAsync();
 
             if (transactions.Count == 0) return Enumerable.Empty<CurrencyExposureResult>();
@@ -507,7 +513,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
 
-            decimal pesos = 0, dolarizado = 0;
+            // Se agrupa por la moneda a la que cada activo está atado (Asset.LinkedCurrencyAssetId),
+            // que es un dato cargado y no una inferencia por tipo: un CEDEAR suma al dólar aunque
+            // cotice en pesos, y un bono CER suma al peso aunque se opere como uno en dólares.
+            var totalsByCurrency = new Dictionary<string, decimal>();
             foreach (var assetId in assetIds)
             {
                 var rowsForAsset = byAsset[assetId];
@@ -517,21 +526,25 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 var usd = ToUsd(assetId, native, quotesByAsset, today);
                 var inReference = refRate.HasValue ? usd * refRate.Value : 0m;
 
-                if (rowsForAsset[0].AssetName == "Peso Argentino") pesos += inReference; else dolarizado += inReference;
+                var label = rowsForAsset[0].LinkedCurrencyName ?? SinMonedaAtadaLabel;
+                totalsByCurrency[label] = totalsByCurrency.GetValueOrDefault(label) + inReference;
             }
 
-            return new List<CurrencyExposureResult>
-            {
-                new CurrencyExposureResult { Label = "Pesos", Balance = Math.Round(pesos, 2) },
-                new CurrencyExposureResult { Label = "Dolarizado", Balance = Math.Round(dolarizado, 2) }
-            };
+            return totalsByCurrency
+                .Select(kv => new CurrencyExposureResult { Label = kv.Key, Balance = Math.Round(kv.Value, 2) })
+                .OrderByDescending(r => r.Label == SinMonedaAtadaLabel ? decimal.MinValue : r.Balance)
+                .ToList();
         }
+
+        // Un activo sin moneda atada no es un dato faltante: es que no sigue a ninguna (cripto
+        // volátil, un FCI mixto). Va último en el reporte, después de las monedas reales.
+        private const string SinMonedaAtadaLabel = "Sin moneda atada";
 
         public async Task<IEnumerable<MonthlyBalanceResult>> GetDollarizedPercentSeriesAsync(int userId, int months)
         {
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId)
-                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
+                .Select(t => new { t.AssetId, t.Amount, t.Date, LinkedCurrencyAssetId = t.Asset.LinkedCurrencyAssetId })
                 .ToListAsync();
 
             if (transactions.Count == 0) return Enumerable.Empty<MonthlyBalanceResult>();
@@ -550,7 +563,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var points = new List<MonthlyBalanceResult>();
             foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
             {
-                decimal pesosUsd = 0, dolarizadoUsd = 0;
+                // "Dolarizado" es lo atado al dólar según el dato cargado en el activo, no "todo lo
+                // que no es peso": una cripto volátil no suma acá, suma al total y nada más.
+                decimal dolarizadoUsd = 0, totalUsd = 0;
                 foreach (var assetId in assetIds)
                 {
                     var rowsForAsset = byAsset[assetId];
@@ -558,10 +573,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     if (native == 0) continue;
 
                     var usd = ToUsd(assetId, native, quotesByAsset, cutoff);
-                    if (rowsForAsset[0].AssetName == "Peso Argentino") pesosUsd += usd; else dolarizadoUsd += usd;
+                    totalUsd += usd;
+                    if (rowsForAsset[0].LinkedCurrencyAssetId == NetWorthDollarPivotAssetId) dolarizadoUsd += usd;
                 }
 
-                var totalUsd = pesosUsd + dolarizadoUsd;
                 var percent = totalUsd == 0 ? 0m : Math.Round(dolarizadoUsd / totalUsd * 100m, 1);
                 points.Add(new MonthlyBalanceResult { Month = monthLabel, Balance = percent });
             }
