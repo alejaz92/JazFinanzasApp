@@ -36,5 +36,12 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);
         Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
         Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
+
+        // Ingresos y Egresos (Fase 12) — mismas guardas T1/T2 que GetIncExpStatsAsync, sin tocarlo.
+        Task<IncExpWaterfallResult> GetIncExpWaterfallAsync(int userId, DateTime month, Asset asset);
+        Task<IEnumerable<IncExpEvolutionPointResult>> GetIncExpEvolutionAsync(int userId, Asset asset, int months);
+        Task<IEnumerable<CategorySpendingResult>> GetSpendingByCategoryMonthlySeriesAsync(int userId, Asset asset, DateTime month, int months);
+        Task<IEnumerable<TagSpendingResult>> GetSpendingByTagAsync(int userId, Asset asset, int months);
+        Task<IEnumerable<DailySpendingResult>> GetDailySpendingAsync(int userId, Asset asset, int year);
     }
 }

@@ -488,6 +488,361 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result.OrderByDescending(a => a.Balance).ToList();
         }
 
+        // ── Ingresos y Egresos (Fase 12) ─────────────────────────────────────────────────────────
+        // Mismas guardas T1/T2 que GetIncExpStatsAsync (TransactionClassId != null, CountsAsIncomeExpense,
+        // sin excluir CardTransactionId — el gasto es la cuota, cuando se paga). La conversión de moneda
+        // es la misma lógica de GetIncExpStatsAsync, extraída acá para no repetirla cinco veces.
+
+        private const string MOV_INCOME = "I";
+        private const string MOV_EXPENSE = "E";
+
+        private class IncExpRawRow
+        {
+            public string MovementType { get; set; } = "";
+            public string ClassName { get; set; } = "";
+            public int AssetId { get; set; }
+            public decimal Amount { get; set; }
+            public decimal? QuotePrice { get; set; }
+            public DateTime Date { get; set; }
+        }
+
+        // Devuelve un conversor (assetId origen, monto, cotización origen, fecha) -> monto en `targetAsset`,
+        // con la misma política que GetIncExpStatsAsync: si el destino es ARS se usa la serie BLUE, si no,
+        // la serie propia del destino; última cotización <= fecha, sin dividir por cero.
+        private async Task<Func<int, decimal, decimal?, DateTime, decimal>> BuildCurrencyConverterAsync(Asset targetAsset)
+        {
+            const string ARS_NAME = "Peso Argentino";
+            const string BLUE = "BLUE";
+            var isTargetARS = string.Equals(targetAsset.Name, ARS_NAME, StringComparison.OrdinalIgnoreCase);
+
+            var quotesQuery = isTargetARS
+                ? _context.AssetQuotes.AsNoTracking().Where(aq => aq.Asset.Name == ARS_NAME && aq.Type == BLUE)
+                : _context.AssetQuotes.AsNoTracking().Where(aq => aq.Asset.Name == targetAsset.Name);
+
+            var quotes = (await quotesQuery
+                .OrderBy(aq => aq.Date)
+                .Select(aq => new { aq.Date, aq.Value })
+                .ToListAsync())
+                .Select(x => (x.Date, x.Value))
+                .ToList();
+
+            decimal GetQuoteAt(DateTime date)
+            {
+                if (quotes.Count == 0) return 1m;
+                int lo = 0, hi = quotes.Count - 1, best = -1;
+                while (lo <= hi)
+                {
+                    int mid = (lo + hi) / 2;
+                    if (quotes[mid].Date <= date) { best = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                return best >= 0 ? quotes[best].Value : quotes[0].Value;
+            }
+
+            return (sourceAssetId, amount, sourceQuotePrice, date) =>
+            {
+                if (sourceAssetId == targetAsset.Id) return amount;
+                var srcQuote = sourceQuotePrice ?? 0m;
+                if (srcQuote <= 0m) return 0m;
+                return amount / srcQuote * GetQuoteAt(date);
+            };
+        }
+
+        // Serie de cotizaciones de un tipo dado, por asset de origen — para convertir montos que no
+        // traen su propia cotización guardada (CardTransaction no tiene QuotePrice, a diferencia de
+        // Transaction). Misma búsqueda binaria "última <= fecha" que BuildCurrencyConverterAsync.
+        private async Task<Dictionary<int, List<(DateTime Date, decimal Value)>>> LoadQuoteSeriesByAssetAsync(IEnumerable<int> assetIds, string type)
+        {
+            var ids = assetIds.Distinct().ToList();
+            if (ids.Count == 0) return new();
+
+            var rows = await _context.AssetQuotes.AsNoTracking()
+                .Where(aq => ids.Contains(aq.AssetId) && aq.Type == type)
+                .OrderBy(aq => aq.Date)
+                .Select(aq => new { aq.AssetId, aq.Date, aq.Value })
+                .ToListAsync();
+
+            return rows.GroupBy(r => r.AssetId)
+                .ToDictionary(g => g.Key, g => g.Select(x => (x.Date, x.Value)).ToList());
+        }
+
+        private static decimal LookupQuote(List<(DateTime Date, decimal Value)> series, DateTime date)
+        {
+            if (series.Count == 0) return 0m;
+            int lo = 0, hi = series.Count - 1, best = -1;
+            while (lo <= hi)
+            {
+                int mid = (lo + hi) / 2;
+                if (series[mid].Date <= date) { best = mid; lo = mid + 1; }
+                else hi = mid - 1;
+            }
+            return best >= 0 ? series[best].Value : series[0].Value;
+        }
+
+        // Resumen del mes en cascada: ingresos del mes, un escalón por categoría de egreso (mayor a
+        // menor) y el resultado del mes anterior, para la comparación siempre presente (sección 7).
+        public async Task<IncExpWaterfallResult> GetIncExpWaterfallAsync(int userId, DateTime month, Asset asset)
+        {
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+            var prevMonthStart = monthStart.AddMonths(-1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            (t.MovementType == MOV_INCOME || t.MovementType == MOV_EXPENSE) &&
+                            t.Date >= prevMonthStart && t.Date < monthEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new IncExpRawRow { MovementType = t.MovementType, ClassName = t.TransactionClass.Description, AssetId = t.AssetId, Amount = t.Amount, QuotePrice = t.QuotePrice, Date = t.Date })
+                .ToListAsync();
+
+            decimal SumConverted(IEnumerable<IncExpRawRow> rows) => rows.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date));
+
+            var totalIncome = Math.Round(SumConverted(raw.Where(x => x.MovementType == MOV_INCOME && x.Date >= monthStart && x.Date < monthEnd)), 2);
+
+            var steps = raw
+                .Where(x => x.MovementType == MOV_EXPENSE && x.Date >= monthStart && x.Date < monthEnd)
+                .GroupBy(x => x.ClassName)
+                .Select(g => new WaterfallStepResult
+                {
+                    CategoryName = g.Key,
+                    Amount = Math.Round(Math.Abs(g.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date))), 2)
+                })
+                .OrderByDescending(s => s.Amount)
+                .ToList();
+
+            var totalExpense = steps.Sum(s => s.Amount);
+
+            var prevIncome = Math.Round(SumConverted(raw.Where(x => x.MovementType == MOV_INCOME && x.Date >= prevMonthStart && x.Date < monthStart)), 2);
+            var prevExpense = Math.Round(Math.Abs(SumConverted(raw.Where(x => x.MovementType == MOV_EXPENSE && x.Date >= prevMonthStart && x.Date < monthStart))), 2);
+
+            return new IncExpWaterfallResult
+            {
+                Month = monthStart,
+                TotalIncome = totalIncome,
+                ExpenseSteps = steps,
+                TotalExpense = totalExpense,
+                Result = Math.Round(totalIncome - totalExpense, 2),
+                PreviousMonthResult = Math.Round(prevIncome - prevExpense, 2)
+            };
+        }
+
+        // Serie mensual de ingreso/egreso — evolución + tendencia (D-A: el promedio móvil se arma en
+        // el service sobre esta serie, es aritmética pura y no necesita otra consulta).
+        public async Task<IEnumerable<IncExpEvolutionPointResult>> GetIncExpEvolutionAsync(int userId, Asset asset, int months)
+        {
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var cutoff = currentMonthStart.AddMonths(-(months - 1));
+            var rangeEnd = currentMonthStart.AddMonths(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            (t.MovementType == MOV_INCOME || t.MovementType == MOV_EXPENSE) &&
+                            t.Date >= cutoff && t.Date < rangeEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new { t.MovementType, t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .ToListAsync();
+
+            var points = new List<IncExpEvolutionPointResult>();
+            for (int i = months - 1; i >= 0; i--)
+            {
+                var bucketStart = currentMonthStart.AddMonths(-i);
+                var bucketEnd = bucketStart.AddMonths(1);
+
+                var income = Math.Round(raw.Where(x => x.MovementType == MOV_INCOME && x.Date >= bucketStart && x.Date < bucketEnd)
+                    .Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date)), 2);
+                var expense = Math.Round(Math.Abs(raw.Where(x => x.MovementType == MOV_EXPENSE && x.Date >= bucketStart && x.Date < bucketEnd)
+                    .Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date))), 2);
+
+                points.Add(new IncExpEvolutionPointResult { Month = bucketStart, Income = income, Expense = expense, Result = Math.Round(income - expense, 2) });
+            }
+
+            return points;
+        }
+
+        // Gasto por categoría con su mini-serie mensual (D-1/D-2: el agrupado por rubro sale del
+        // ParentId en el service — acá alcanza con traer el padre de cada categoría, un solo hop por T4).
+        public async Task<IEnumerable<CategorySpendingResult>> GetSpendingByCategoryMonthlySeriesAsync(int userId, Asset asset, DateTime month, int months)
+        {
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+            var cutoff = monthStart.AddMonths(-(months - 1));
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= cutoff && t.Date < monthEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new
+                {
+                    ClassId = t.TransactionClassId!.Value,
+                    ClassName = t.TransactionClass.Description,
+                    ParentId = t.TransactionClass.ParentId,
+                    ParentName = t.TransactionClass.Parent != null ? t.TransactionClass.Parent.Description : null,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice,
+                    t.Date
+                })
+                .ToListAsync();
+
+            var result = new List<CategorySpendingResult>();
+            foreach (var g in raw.GroupBy(x => new { x.ClassId, x.ClassName, x.ParentId, x.ParentName }))
+            {
+                var trend = new List<decimal>();
+                for (int i = months - 1; i >= 0; i--)
+                {
+                    var bucketStart = monthStart.AddMonths(-i);
+                    var bucketEnd = bucketStart.AddMonths(1);
+                    var sum = g.Where(x => x.Date >= bucketStart && x.Date < bucketEnd)
+                        .Sum(x => Math.Abs(convert(x.AssetId, x.Amount, x.QuotePrice, x.Date)));
+                    trend.Add(Math.Round(sum, 2));
+                }
+
+                result.Add(new CategorySpendingResult
+                {
+                    CategoryId = g.Key.ClassId,
+                    CategoryName = g.Key.ClassName,
+                    ParentId = g.Key.ParentId,
+                    ParentName = g.Key.ParentName,
+                    MonthlyTrend = trend
+                });
+            }
+
+            return result;
+        }
+
+        // Por etiqueta (D-4): combina movimientos de cuenta etiquetados (Transaction.QuotePrice propio)
+        // con consumos de tarjeta etiquetados (CardTransaction no tiene QuotePrice — se resuelve con la
+        // cotización "TARJETA" del asset de origen, mismo criterio que GetLiveCardDebtInDollarsAsync).
+        // Un gasto de tarjeta se etiqueta siempre en el CardTransaction, nunca en una cuota (CLAUDE.md).
+        public async Task<IEnumerable<TagSpendingResult>> GetSpendingByTagAsync(int userId, Asset asset, int months)
+        {
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var cutoff = currentMonthStart.AddMonths(-(months - 1));
+            var rangeEnd = currentMonthStart.AddMonths(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var transactionRows = await _context.TransactionTags
+                .AsNoTracking()
+                .Where(tt => tt.Transaction.UserId == userId &&
+                             tt.Transaction.MovementType == MOV_EXPENSE &&
+                             tt.Transaction.TransactionClassId != null &&
+                             tt.Transaction.Date >= cutoff && tt.Transaction.Date < rangeEnd &&
+                             tt.Transaction.TransactionClass!.CountsAsIncomeExpense)
+                .Select(tt => new
+                {
+                    tt.TagId,
+                    TagName = tt.Tag.Name,
+                    tt.Tag.Color,
+                    ClassName = tt.Transaction.TransactionClass!.Description,
+                    tt.Transaction.AssetId,
+                    tt.Transaction.Amount,
+                    tt.Transaction.QuotePrice,
+                    tt.Transaction.Date
+                })
+                .ToListAsync();
+
+            var cardRowsRaw = await _context.CardTransactionTags
+                .AsNoTracking()
+                .Where(ct => ct.CardTransaction.UserId == userId &&
+                             ct.CardTransaction.Date >= cutoff && ct.CardTransaction.Date < rangeEnd)
+                .Select(ct => new
+                {
+                    ct.TagId,
+                    TagName = ct.Tag.Name,
+                    ct.Tag.Color,
+                    ClassName = ct.CardTransaction.TransactionClass.Description,
+                    ct.CardTransaction.AssetId,
+                    Amount = ct.CardTransaction.TotalAmount,
+                    ct.CardTransaction.Date
+                })
+                .ToListAsync();
+
+            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cardRowsRaw.Select(x => x.AssetId), "TARJETA");
+
+            var combined = transactionRows
+                .Select(x => (x.TagId, x.TagName, x.Color, x.ClassName, x.Date,
+                    Amount: Math.Abs(convert(x.AssetId, x.Amount, x.QuotePrice, x.Date))))
+                .Concat(cardRowsRaw.Select(x => (x.TagId, x.TagName, x.Color, x.ClassName, x.Date,
+                    Amount: Math.Abs(convert(x.AssetId, x.Amount, LookupQuote(cardQuoteSeries.GetValueOrDefault(x.AssetId, new()), x.Date), x.Date)))))
+                .ToList();
+
+            var result = new List<TagSpendingResult>();
+            foreach (var g in combined.GroupBy(x => new { x.TagId, x.TagName, x.Color }))
+            {
+                var evolution = new List<MonthlyAmountResult>();
+                for (int i = months - 1; i >= 0; i--)
+                {
+                    var bucketStart = currentMonthStart.AddMonths(-i);
+                    var bucketEnd = bucketStart.AddMonths(1);
+                    var sum = g.Where(x => x.Date >= bucketStart && x.Date < bucketEnd).Sum(x => x.Amount);
+                    evolution.Add(new MonthlyAmountResult { Month = bucketStart, Amount = Math.Round(sum, 2) });
+                }
+
+                var byCategory = g.GroupBy(x => x.ClassName)
+                    .Select(cg => new CategoryAmountResult { CategoryName = cg.Key, Amount = Math.Round(cg.Sum(x => x.Amount), 2) })
+                    .OrderByDescending(c => c.Amount)
+                    .ToList();
+
+                result.Add(new TagSpendingResult
+                {
+                    TagId = g.Key.TagId,
+                    TagName = g.Key.TagName,
+                    Color = g.Key.Color,
+                    TotalAmount = Math.Round(g.Sum(x => x.Amount), 2),
+                    MonthlyEvolution = evolution,
+                    ByCategory = byCategory
+                });
+            }
+
+            return result.OrderByDescending(r => r.TotalAmount).ToList();
+        }
+
+        // Calendario de gastos: un monto por día del año pedido (T1/T2), para el mapa de calor y el
+        // promedio por día de semana, que se calcula en el service (aritmética pura sobre esto).
+        public async Task<IEnumerable<DailySpendingResult>> GetDailySpendingAsync(int userId, Asset asset, int year)
+        {
+            var yearStart = new DateTime(year, 1, 1);
+            var yearEnd = yearStart.AddYears(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.Date >= yearStart && t.Date < yearEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new { t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .ToListAsync();
+
+            return raw
+                .GroupBy(x => x.Date.Date)
+                .Select(g => new DailySpendingResult
+                {
+                    Date = g.Key,
+                    Amount = Math.Round(Math.Abs(g.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date))), 2)
+                })
+                .OrderBy(x => x.Date)
+                .ToList();
+        }
+
         public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)
         {
             var dollarClassIncomeStats = await _context.Transactions
