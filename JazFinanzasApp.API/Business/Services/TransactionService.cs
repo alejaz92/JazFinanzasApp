@@ -50,9 +50,10 @@ namespace JazFinanzasApp.API.Business.Services
             _sharedEventMovementRepository = sharedEventMovementRepository;
         }
 
-        public async Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize)
+        public async Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize,
+            int? classId = null, int? tagId = null, DateTime? from = null, DateTime? to = null)
         {
-            var (transactions, totalCount) = await _transactionRepository.GetPaginatedTransactions(userId, page, pageSize);
+            var (transactions, totalCount) = await _transactionRepository.GetPaginatedTransactions(userId, page, pageSize, classId, tagId, from, to);
 
             var transactionsDTO = transactions.Select(m => new TransactionListDTO
             {

@@ -523,7 +523,7 @@ namespace JazFinanzasApp.Tests.Services
             };
 
             _transactionRepoMock
-                .Setup(r => r.GetPaginatedTransactions(UserId, 1, 10))
+                .Setup(r => r.GetPaginatedTransactions(UserId, 1, 10, null, null, null, null))
                 .ReturnsAsync((transactions.AsEnumerable(), 1));
 
             // Act

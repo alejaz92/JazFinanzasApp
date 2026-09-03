@@ -16,7 +16,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             _context = context;
         }
 
-        public async Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize)
+        // classId/tagId/from/to: drill-down desde los reportes de Ingresos y Egresos (Fase 13) — clic en
+        // una categoría o etiqueta lleva acá filtrado. Todos nullable y sin filtrar por default, así que
+        // no cambia el comportamiento de la pantalla general de movimientos.
+        public async Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize,
+            int? classId = null, int? tagId = null, DateTime? from = null, DateTime? to = null)
         {
 
 
@@ -25,6 +29,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
                 .Where(m => !_context.InvestmentTransactions.Any(im => im.IncomeTransactionId == m.Id || im.ExpenseTransactionId == m.Id))
+                .Where(m => classId == null || m.TransactionClassId == classId)
+                .Where(m => from == null || m.Date >= from)
+                .Where(m => to == null || m.Date < to)
+                .Where(m => tagId == null || _context.TransactionTags.Any(tt => tt.TransactionId == m.Id && tt.TagId == tagId))
                 .CountAsync();
 
             var transactions = await _context.Transactions
@@ -32,6 +40,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(m => m.TransactionClassId != null)
                 .Where(m => m.MovementType == "E" || m.MovementType == "I")
                 .Where(m => !_context.InvestmentTransactions.Any(im => im.IncomeTransactionId == m.Id || im.ExpenseTransactionId == m.Id))
+                .Where(m => classId == null || m.TransactionClassId == classId)
+                .Where(m => from == null || m.Date >= from)
+                .Where(m => to == null || m.Date < to)
+                .Where(m => tagId == null || _context.TransactionTags.Any(tt => tt.TransactionId == m.Id && tt.TagId == tagId))
                 .Include(m => m.Account)
                 .Include(m => m.Asset)
                 .Include(m => m.TransactionClass)

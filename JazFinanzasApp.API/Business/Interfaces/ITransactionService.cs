@@ -5,7 +5,8 @@ namespace JazFinanzasApp.API.Business.Interfaces
 {
     public interface ITransactionService
     {
-        Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize);
+        Task<(IEnumerable<TransactionListDTO> Transactions, int TotalCount)> GetPaginatedTransactionsAsync(int userId, int page, int pageSize,
+            int? classId = null, int? tagId = null, DateTime? from = null, DateTime? to = null);
         Task<TransactionListDTO> GetTransactionByIdAsync(int userId, int id);
         Task<int> CreateTransactionAsync(int userId, TransactionAddDTO dto);
         Task EditTransactionAsync(int userId, int id, TransactionEditDTO dto);

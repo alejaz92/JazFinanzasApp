@@ -21,9 +21,10 @@ namespace JazFinanzasApp.API.Controllers
         private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
         [HttpGet]
-        public async Task<IActionResult> GetPaginatedTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetPaginatedTransactions([FromQuery] int page = 1, [FromQuery] int pageSize = 20,
+            [FromQuery] int? classId = null, [FromQuery] int? tagId = null, [FromQuery] DateTime? from = null, [FromQuery] DateTime? to = null)
         {
-            var (transactions, totalCount) = await _transactionService.GetPaginatedTransactionsAsync(GetUserId(), page, pageSize);
+            var (transactions, totalCount) = await _transactionService.GetPaginatedTransactionsAsync(GetUserId(), page, pageSize, classId, tagId, from, to);
             return Ok(new { Transactions = transactions, TotalCount = totalCount });
         }
 

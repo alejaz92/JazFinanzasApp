@@ -6,7 +6,8 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     public interface ITransactionRepository : IGenericRepository<Transaction>
     {
         Task<Transaction> GetTransactionByIdAsync(int id);
-        Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize);
+        Task<(IEnumerable<Transaction> Transactions, int TotalCount)> GetPaginatedTransactions(int userId, int page, int pageSize,
+            int? classId = null, int? tagId = null, DateTime? from = null, DateTime? to = null);
         Task<IEnumerable<BalanceResult>> GetBalanceByAssetAndUserAsync(int assetId, int userId);
         Task<TotalsBalanceResult> GetTotalsBalanceByUserAsync(int userId, Asset asset);
         Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month);
