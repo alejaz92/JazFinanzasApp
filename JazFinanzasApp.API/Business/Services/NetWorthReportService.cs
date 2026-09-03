@@ -103,6 +103,7 @@ namespace JazFinanzasApp.API.Business.Services
                     AssetId = h.AssetId,
                     AssetName = h.AssetName,
                     AssetSymbol = h.AssetSymbol,
+                    AssetTypeName = h.AssetTypeName,
                     NativeBalance = h.NativeBalance,
                     BalanceInReferenceAsset = h.BalanceInReferenceAsset
                 }).ToList()

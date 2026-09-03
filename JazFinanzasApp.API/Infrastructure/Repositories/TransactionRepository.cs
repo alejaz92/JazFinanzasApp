@@ -401,7 +401,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             var rows = await _context.Transactions
                 .Where(t => t.UserId == userId)
-                .Select(t => new { t.AccountId, AccountName = t.Account.Name, t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, t.Amount, t.Date })
+                .Select(t => new { t.AccountId, AccountName = t.Account.Name, t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, AssetTypeName = t.Asset.AssetType.Name, t.Amount, t.Date })
                 .ToListAsync();
 
             if (rows.Count == 0) return Enumerable.Empty<AccountBalanceResult>();
@@ -445,7 +445,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                                 AssetId = assetId,
                                 AssetName = info.AssetName,
                                 AssetSymbol = info.AssetSymbol,
-                                NativeBalance = Math.Round(native, 2),
+                                AssetTypeName = info.AssetTypeName,
+                                // Sin redondear a 2 decimales: una tenencia cripto chica (ej. 0,0022709 BTC en
+                                // BuenBit) redondea a 0,00 y el filtro de abajo la descarta silenciosamente —
+                                // confirmado real en producción. GetBalanceByAssetAndUserAsync (viejo "Saldos")
+                                // nunca redondeaba este número por la misma razón.
+                                NativeBalance = native,
                                 BalanceInReferenceAsset = Math.Round(ToReference(assetId, native, today), 2)
                             };
                         })

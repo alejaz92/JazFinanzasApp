@@ -5,6 +5,7 @@ namespace JazFinanzasApp.API.Business.DTO.NetWorth
         public int AssetId { get; set; }
         public string AssetName { get; set; }
         public string AssetSymbol { get; set; }
+        public string AssetTypeName { get; set; }
         public decimal NativeBalance { get; set; }
         public decimal BalanceInReferenceAsset { get; set; }
     }
