@@ -855,6 +855,78 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
         }
 
+        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en el tiempo,
+        // en vez de la composición de un mes — misma guarda T1/T2 que el resto, pero MOV_INCOME.
+        public async Task<IEnumerable<IncomeCategorySeriesResult>> GetIncomeByCategoryMonthlySeriesAsync(int userId, Asset asset, int months)
+        {
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var cutoff = currentMonthStart.AddMonths(-(months - 1));
+            var rangeEnd = currentMonthStart.AddMonths(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= cutoff && t.Date < rangeEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new { ClassId = t.TransactionClassId!.Value, ClassName = t.TransactionClass.Description, t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .ToListAsync();
+
+            var result = new List<IncomeCategorySeriesResult>();
+            foreach (var g in raw.GroupBy(x => new { x.ClassId, x.ClassName }))
+            {
+                var trend = new List<decimal>();
+                for (int i = months - 1; i >= 0; i--)
+                {
+                    var bucketStart = currentMonthStart.AddMonths(-i);
+                    var bucketEnd = bucketStart.AddMonths(1);
+                    var sum = g.Where(x => x.Date >= bucketStart && x.Date < bucketEnd)
+                        .Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date));
+                    trend.Add(Math.Round(sum, 2));
+                }
+
+                result.Add(new IncomeCategorySeriesResult { CategoryId = g.Key.ClassId, CategoryName = g.Key.ClassName, MonthlyTrend = trend });
+            }
+
+            return result;
+        }
+
+        // Días de cobro: monto de ingreso por día calendario, en la ventana de meses pedida — el
+        // agrupado por día-del-mes (con su frecuencia) se arma en el service, es aritmética pura.
+        public async Task<IEnumerable<DailySpendingResult>> GetDailyIncomeAsync(int userId, Asset asset, int months)
+        {
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            var start = currentMonthStart.AddMonths(-(months - 1));
+            var end = currentMonthStart.AddMonths(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= start && t.Date < end &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new { t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .ToListAsync();
+
+            return raw
+                .GroupBy(x => x.Date.Date)
+                .Select(g => new DailySpendingResult
+                {
+                    Date = g.Key,
+                    Amount = Math.Round(g.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date)), 2)
+                })
+                .OrderBy(x => x.Date)
+                .ToList();
+        }
+
         public async Task<IncExpResult> GetDollarIncExpStatsAsync(int userId, DateTime month)
         {
             var dollarClassIncomeStats = await _context.Transactions

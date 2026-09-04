@@ -53,5 +53,19 @@ namespace JazFinanzasApp.API.Controllers
             var result = await _incomeExpenseReportService.GetCalendarAsync(GetUserId(), assetId, year);
             return Ok(result);
         }
+
+        [HttpGet("IncomeByCategory/{assetId}")]
+        public async Task<IActionResult> GetIncomeByCategory(int assetId, [FromQuery] int months = 24)
+        {
+            var result = await _incomeExpenseReportService.GetIncomeByCategoryAsync(GetUserId(), assetId, months);
+            return Ok(result);
+        }
+
+        [HttpGet("PayDays/{assetId}")]
+        public async Task<IActionResult> GetPayDays(int assetId, [FromQuery] int months = 12)
+        {
+            var result = await _incomeExpenseReportService.GetPayDaysAsync(GetUserId(), assetId, months);
+            return Ok(result);
+        }
     }
 }

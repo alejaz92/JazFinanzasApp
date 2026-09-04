@@ -15,6 +15,7 @@ namespace JazFinanzasApp.API.Business.Services
         private const int CategoryTrendMonths = 6;
         private const int DefaultEvolutionMonths = 24;
         private const int DefaultTagMonths = 6;
+        private const int DefaultPayDayMonths = 12;
 
         private readonly ITransactionRepository _transactionRepository;
         private readonly IAssetRepository _assetRepository;
@@ -77,6 +78,63 @@ namespace JazFinanzasApp.API.Business.Services
             var asset = await GetCurrencyAssetAsync(assetId);
             var days = (await _transactionRepository.GetDailySpendingAsync(userId, asset, year)).ToList();
             return BuildCalendarDTO(year, days);
+        }
+
+        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en el tiempo.
+        public async Task<IEnumerable<IncomeCategorySeriesDTO>> GetIncomeByCategoryAsync(int userId, int assetId, int months = DefaultEvolutionMonths)
+        {
+            var asset = await GetCurrencyAssetAsync(assetId);
+            var series = await _transactionRepository.GetIncomeByCategoryMonthlySeriesAsync(userId, asset, months);
+            return series.Select(s => new IncomeCategorySeriesDTO { CategoryId = s.CategoryId, CategoryName = s.CategoryName, MonthlyTrend = s.MonthlyTrend });
+        }
+
+        public async Task<PayDayCalendarDTO> GetPayDaysAsync(int userId, int assetId, int months = DefaultPayDayMonths)
+        {
+            var asset = await GetCurrencyAssetAsync(assetId);
+            var days = (await _transactionRepository.GetDailyIncomeAsync(userId, asset, months)).ToList();
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+            return BuildPayDayCalendarDTO(currentMonthStart, months, days);
+        }
+
+        // Pura — testeable sin mocks. Un día "recibido" es un día con ingreso > 0; el promedio se
+        // calcula solo sobre esos días (no se diluye con los meses en que ese día no cobró nada) y
+        // la frecuencia (ver PayDayDTO.FrequencyPct) es la que dice si es un día de cobro habitual
+        // o un ingreso ocasional grande.
+        public static PayDayCalendarDTO BuildPayDayCalendarDTO(DateTime currentMonthStart, int months, List<DailySpendingResult> days)
+        {
+            var start = currentMonthStart.AddMonths(-(months - 1));
+
+            var monthsInWindowByDay = new int[32];
+            for (var m = start; m <= currentMonthStart; m = m.AddMonths(1))
+            {
+                var daysInMonth = DateTime.DaysInMonth(m.Year, m.Month);
+                for (int d = 1; d <= daysInMonth; d++) monthsInWindowByDay[d]++;
+            }
+
+            var totalsByDay = new decimal[32];
+            var countsByDay = new int[32];
+            foreach (var d in days)
+            {
+                if (d.Amount <= 0) continue;
+                var day = d.Date.Day;
+                totalsByDay[day] += d.Amount;
+                countsByDay[day]++;
+            }
+
+            var result = new PayDayCalendarDTO();
+            for (int day = 1; day <= 31; day++)
+            {
+                if (monthsInWindowByDay[day] == 0) continue;
+                result.Days.Add(new PayDayDTO
+                {
+                    Day = day,
+                    AverageAmountWhenReceived = countsByDay[day] > 0 ? Math.Round(totalsByDay[day] / countsByDay[day], 2) : 0m,
+                    TimesReceived = countsByDay[day],
+                    MonthsInWindow = monthsInWindowByDay[day]
+                });
+            }
+            return result;
         }
 
         private async Task<Asset> GetCurrencyAssetAsync(int assetId)

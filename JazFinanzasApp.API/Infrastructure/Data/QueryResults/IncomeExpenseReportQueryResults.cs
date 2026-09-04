@@ -63,4 +63,25 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public DateTime Date { get; set; }
         public decimal Amount { get; set; }
     }
+
+    // Sueldo/Aporte familiar/etc. — sin rubro (no aplica a ingresos), a diferencia de
+    // CategorySpendingResult que sí lo tiene para egresos.
+    public class IncomeCategorySeriesResult
+    {
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+
+        // Ascendente, el último elemento es el mes en curso.
+        public List<decimal> MonthlyTrend { get; set; } = new();
+    }
+
+    // Un día del mes (1-31) — cuánto se suele cobrar ese día y con qué frecuencia, sobre la
+    // ventana de meses pedida. MonthsInWindow varía por día (el 31 no existe en todos los meses).
+    public class PayDayResult
+    {
+        public int Day { get; set; }
+        public decimal AverageAmountWhenReceived { get; set; }
+        public int TimesReceived { get; set; }
+        public int MonthsInWindow { get; set; }
+    }
 }

@@ -44,5 +44,11 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<CategorySpendingResult>> GetSpendingByCategoryMonthlySeriesAsync(int userId, Asset asset, DateTime month, int months);
         Task<IEnumerable<TagSpendingResult>> GetSpendingByTagAsync(int userId, Asset asset, int months);
         Task<IEnumerable<DailySpendingResult>> GetDailySpendingAsync(int userId, Asset asset, int year);
+
+        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en vez de
+        // composición de un mes — sueldo/aporte familiar explican el 90% del ingreso (1.2 del plan),
+        // así que una foto de un mes no dice nada; en el tiempo sí (aumentos, aguinaldo, extra).
+        Task<IEnumerable<IncomeCategorySeriesResult>> GetIncomeByCategoryMonthlySeriesAsync(int userId, Asset asset, int months);
+        Task<IEnumerable<DailySpendingResult>> GetDailyIncomeAsync(int userId, Asset asset, int months);
     }
 }

@@ -247,5 +247,72 @@ namespace JazFinanzasApp.Tests.Services
             dto.Days.Should().HaveCount(2);
             dto.Year.Should().Be(2023);
         }
+
+        // ── Días de cobro (corrección 2026-09-04): BuildPayDayCalendarDTO (lógica pura) ─────────
+
+        [Fact]
+        public void BuildPayDayCalendarDTO_CountsMonthsInWindowPerDay_AccountingForShorterMonths()
+        {
+            var currentMonthStart = new DateTime(2026, 3, 1); // ventana: ene, feb (28 días), mar
+            var days = new List<DailySpendingResult>();
+
+            var dto = IncomeExpenseReportService.BuildPayDayCalendarDTO(currentMonthStart, 3, days);
+
+            dto.Days.Single(d => d.Day == 15).MonthsInWindow.Should().Be(3);
+            dto.Days.Single(d => d.Day == 31).MonthsInWindow.Should().Be(2); // enero y marzo, no febrero
+        }
+
+        [Fact]
+        public void BuildPayDayCalendarDTO_AveragesOnlyOverMonthsActuallyReceived()
+        {
+            var currentMonthStart = new DateTime(2026, 3, 1);
+            var days = new List<DailySpendingResult>
+            {
+                new() { Date = new DateTime(2026, 1, 1), Amount = 1000m },
+                new() { Date = new DateTime(2026, 3, 1), Amount = 1200m },
+                // febrero, día 1: sin ingreso ese mes.
+            };
+
+            var dto = IncomeExpenseReportService.BuildPayDayCalendarDTO(currentMonthStart, 3, days);
+
+            var day1 = dto.Days.Single(d => d.Day == 1);
+            day1.TimesReceived.Should().Be(2);
+            day1.MonthsInWindow.Should().Be(3);
+            day1.AverageAmountWhenReceived.Should().Be(1100m); // (1000+1200)/2, no diluido por los 3 meses
+            day1.FrequencyPct.Should().Be(66.7m);
+        }
+
+        [Fact]
+        public void BuildPayDayCalendarDTO_OccasionalBigIncome_HasLowFrequencyDespiteHighAverage()
+        {
+            var currentMonthStart = new DateTime(2026, 6, 1);
+            var days = new List<DailySpendingResult>
+            {
+                new() { Date = new DateTime(2026, 3, 20), Amount = 500000m }, // ej. un aguinaldo puntual
+            };
+
+            var dto = IncomeExpenseReportService.BuildPayDayCalendarDTO(currentMonthStart, 6, days);
+
+            var day20 = dto.Days.Single(d => d.Day == 20);
+            day20.TimesReceived.Should().Be(1);
+            day20.MonthsInWindow.Should().Be(6);
+            day20.FrequencyPct.Should().Be(16.7m);
+        }
+
+        [Fact]
+        public void BuildPayDayCalendarDTO_IgnoresNonPositiveAmounts()
+        {
+            var currentMonthStart = new DateTime(2026, 3, 1);
+            var days = new List<DailySpendingResult>
+            {
+                new() { Date = new DateTime(2026, 3, 5), Amount = 0m },
+            };
+
+            var dto = IncomeExpenseReportService.BuildPayDayCalendarDTO(currentMonthStart, 1, days);
+
+            var day5 = dto.Days.Single(d => d.Day == 5);
+            day5.TimesReceived.Should().Be(0);
+            day5.AverageAmountWhenReceived.Should().Be(0m);
+        }
     }
 }

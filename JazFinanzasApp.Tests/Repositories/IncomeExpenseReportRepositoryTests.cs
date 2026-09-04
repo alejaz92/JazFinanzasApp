@@ -366,5 +366,83 @@ namespace JazFinanzasApp.Tests.Repositories
             days.Should().Contain(d => d.Date == new DateTime(year, 3, 10) && d.Amount == 150m);
             days.Should().Contain(d => d.Date == new DateTime(year, 3, 11) && d.Amount == 30m);
         }
+
+        // ── Ingresos (corrección 2026-09-04): evolución por categoría, misma guarda T2/D-3 ──────
+
+        [Fact]
+        public async Task GetIncomeByCategoryMonthlySeriesAsync_GroupsByCategoryAndBuildsAscendingTrend()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var sueldo = AddClass(context, "Sueldo");
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+
+            AddIncome(context, asset, sueldo, currentMonthStart.AddMonths(-1).AddDays(1), 1000m);
+            AddIncome(context, asset, sueldo, currentMonthStart.AddDays(1), 1200m);
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetIncomeByCategoryMonthlySeriesAsync(UserId, asset, 2)).Single();
+
+            result.CategoryName.Should().Be("Sueldo");
+            result.MonthlyTrend.Should().Equal(1000m, 1200m);
+        }
+
+        [Fact]
+        public async Task GetIncomeByCategoryMonthlySeriesAsync_ExcludesClassesThatDontCountAsIncomeExpense()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var ajusteSaldos = AddClass(context, "Ajuste Saldos Ingreso", countsAsIncomeExpense: false);
+            var sueldo = AddClass(context, "Sueldo");
+
+            AddIncome(context, asset, ajusteSaldos, DateTime.Today, 5000m);
+            AddIncome(context, asset, sueldo, DateTime.Today, 1000m);
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetIncomeByCategoryMonthlySeriesAsync(UserId, asset, 1)).ToList();
+
+            result.Should().ContainSingle(r => r.CategoryName == "Sueldo");
+        }
+
+        [Fact]
+        public async Task GetIncomeByCategoryMonthlySeriesAsync_ExcludesExpenses()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var sueldo = AddClass(context, "Sueldo");
+            AddExpense(context, asset, sueldo, DateTime.Today, 100m); // mismo nombre de clase, movimiento distinto
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = await repo.GetIncomeByCategoryMonthlySeriesAsync(UserId, asset, 1);
+
+            result.Should().BeEmpty();
+        }
+
+        // ── Días de cobro: un monto por día de ingreso, misma guarda T2/D-3 ─────────────────────
+
+        [Fact]
+        public async Task GetDailyIncomeAsync_GroupsByDayAndExcludesExpenses()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var sueldo = AddClass(context, "Sueldo");
+            var today = DateTime.Today;
+            var currentMonthStart = new DateTime(today.Year, today.Month, 1);
+
+            AddIncome(context, asset, sueldo, currentMonthStart.AddDays(0), 1000m);
+            AddIncome(context, asset, sueldo, currentMonthStart.AddDays(0), 200m); // mismo día, se suma
+            AddExpense(context, asset, sueldo, currentMonthStart.AddDays(0), 50m); // no debe sumar acá
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var days = (await repo.GetDailyIncomeAsync(UserId, asset, 1)).ToList();
+
+            days.Should().ContainSingle(d => d.Date == currentMonthStart && d.Amount == 1200m);
+        }
     }
 }
