@@ -75,13 +75,23 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public List<decimal> MonthlyTrend { get; set; } = new();
     }
 
-    // Un día del mes (1-31) — cuánto se suele cobrar ese día y con qué frecuencia, sobre la
-    // ventana de meses pedida. MonthsInWindow varía por día (el 31 no existe en todos los meses).
-    public class PayDayResult
+    // Composición de ingresos de UN mes puntual (sin rubro, sin tendencia) — corrección 2026-09-04:
+    // el usuario quería poder elegir un mes y ver su composición, no una evolución en el tiempo.
+    public class IncomeCategoryAmountResult
     {
-        public int Day { get; set; }
-        public decimal AverageAmountWhenReceived { get; set; }
-        public int TimesReceived { get; set; }
-        public int MonthsInWindow { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    // Una fila por (categoría, día) con ingreso real — dato crudo sin agregar, para que el
+    // frontend arme las 3 variantes de "días de cobro" en comparación (tabla/timeline/calendario
+    // por categoría) sin pedir un endpoint distinto por cada una.
+    public class IncomeCategoryDayResult
+    {
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public DateTime Date { get; set; }
+        public decimal Amount { get; set; }
     }
 }

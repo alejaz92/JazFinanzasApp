@@ -422,27 +422,74 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().BeEmpty();
         }
 
-        // ── Días de cobro: un monto por día de ingreso, misma guarda T2/D-3 ─────────────────────
+        // ── Ingresos (corrección 2026-09-04, segunda vuelta): composición de UN mes elegido ─────
 
         [Fact]
-        public async Task GetDailyIncomeAsync_GroupsByDayAndExcludesExpenses()
+        public async Task GetIncomeCompositionForMonthAsync_GroupsByCategoryForThatMonthOnly()
         {
             using var context = CreateContext();
             var asset = AddCurrencyAsset(context);
             var sueldo = AddClass(context, "Sueldo");
+            var aporte = AddClass(context, "Aporte Familiar");
+            var month = new DateTime(2026, 6, 1);
+
+            AddIncome(context, asset, sueldo, month.AddDays(1), 1000m);
+            AddIncome(context, asset, aporte, month.AddDays(2), 300m);
+            AddIncome(context, asset, sueldo, month.AddMonths(-1).AddDays(1), 5000m); // otro mes, no debe contar
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetIncomeCompositionForMonthAsync(UserId, asset, month)).ToList();
+
+            result.Should().HaveCount(2);
+            result.Should().ContainSingle(c => c.CategoryName == "Sueldo" && c.Amount == 1000m);
+            result.Should().ContainSingle(c => c.CategoryName == "Aporte Familiar" && c.Amount == 300m);
+        }
+
+        [Fact]
+        public async Task GetIncomeCompositionForMonthAsync_ExcludesClassesThatDontCountAsIncomeExpense()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var ajusteSaldos = AddClass(context, "Ajuste Saldos Ingreso", countsAsIncomeExpense: false);
+            var sueldo = AddClass(context, "Sueldo");
+            var month = new DateTime(2026, 6, 1);
+
+            AddIncome(context, asset, ajusteSaldos, month.AddDays(1), 5000m);
+            AddIncome(context, asset, sueldo, month.AddDays(2), 1000m);
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetIncomeCompositionForMonthAsync(UserId, asset, month)).ToList();
+
+            result.Should().ContainSingle(c => c.CategoryName == "Sueldo");
+        }
+
+        // ── Días de cobro: fila cruda (categoría, día, monto), misma guarda T2/D-3 ──────────────
+
+        [Fact]
+        public async Task GetIncomeByCategoryAndDayAsync_GroupsByCategoryAndDayExcludingExpenses()
+        {
+            using var context = CreateContext();
+            var asset = AddCurrencyAsset(context);
+            var sueldo = AddClass(context, "Sueldo");
+            var aporte = AddClass(context, "Aporte Familiar");
             var today = DateTime.Today;
             var currentMonthStart = new DateTime(today.Year, today.Month, 1);
 
-            AddIncome(context, asset, sueldo, currentMonthStart.AddDays(0), 1000m);
-            AddIncome(context, asset, sueldo, currentMonthStart.AddDays(0), 200m); // mismo día, se suma
-            AddExpense(context, asset, sueldo, currentMonthStart.AddDays(0), 50m); // no debe sumar acá
+            AddIncome(context, asset, sueldo, currentMonthStart, 1000m);
+            AddIncome(context, asset, sueldo, currentMonthStart, 200m); // misma categoría y día, se suma
+            AddIncome(context, asset, aporte, currentMonthStart.AddDays(9), 300m);
+            AddExpense(context, asset, sueldo, currentMonthStart, 50m); // no debe aparecer
 
             await context.SaveChangesAsync();
 
             var repo = new TransactionRepository(context);
-            var days = (await repo.GetDailyIncomeAsync(UserId, asset, 1)).ToList();
+            var rows = (await repo.GetIncomeByCategoryAndDayAsync(UserId, asset, 1)).ToList();
 
-            days.Should().ContainSingle(d => d.Date == currentMonthStart && d.Amount == 1200m);
+            rows.Should().HaveCount(2);
+            rows.Should().ContainSingle(r => r.CategoryName == "Sueldo" && r.Date == currentMonthStart && r.Amount == 1200m);
+            rows.Should().ContainSingle(r => r.CategoryName == "Aporte Familiar" && r.Date == currentMonthStart.AddDays(9) && r.Amount == 300m);
         }
     }
 }

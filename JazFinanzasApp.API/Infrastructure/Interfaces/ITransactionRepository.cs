@@ -45,10 +45,14 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<TagSpendingResult>> GetSpendingByTagAsync(int userId, Asset asset, int months);
         Task<IEnumerable<DailySpendingResult>> GetDailySpendingAsync(int userId, Asset asset, int year);
 
-        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en vez de
-        // composición de un mes — sueldo/aporte familiar explican el 90% del ingreso (1.2 del plan),
-        // así que una foto de un mes no dice nada; en el tiempo sí (aumentos, aguinaldo, extra).
+        // Ingresos (corrección 2026-09-04 sobre la Fase 13). GetIncomeByCategoryMonthlySeriesAsync
+        // es la evolución en el tiempo (secundaria); GetIncomeCompositionForMonthAsync es la
+        // composición de UN mes elegido (la que el usuario pidió como principal — "quiero elegir
+        // un mes y ver la composición", no una evolución). GetIncomeByCategoryAndDayAsync es la
+        // fila cruda (categoría, día, monto) con la que el frontend arma las 3 variantes de "días
+        // de cobro" en comparación, sin pedir un endpoint por variante.
         Task<IEnumerable<IncomeCategorySeriesResult>> GetIncomeByCategoryMonthlySeriesAsync(int userId, Asset asset, int months);
-        Task<IEnumerable<DailySpendingResult>> GetDailyIncomeAsync(int userId, Asset asset, int months);
+        Task<IEnumerable<IncomeCategoryAmountResult>> GetIncomeCompositionForMonthAsync(int userId, Asset asset, DateTime month);
+        Task<IEnumerable<IncomeCategoryDayResult>> GetIncomeByCategoryAndDayAsync(int userId, Asset asset, int months);
     }
 }

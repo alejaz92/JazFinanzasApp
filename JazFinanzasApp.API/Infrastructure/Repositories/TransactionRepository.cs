@@ -855,8 +855,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToList();
         }
 
-        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en el tiempo,
-        // en vez de la composición de un mes — misma guarda T1/T2 que el resto, pero MOV_INCOME.
+        // Ingresos (corrección 2026-09-04 sobre la Fase 13): evolución por categoría en el tiempo —
+        // secundaria, la principal es GetIncomeCompositionForMonthAsync más abajo. Misma guarda
+        // T1/T2 que el resto, pero MOV_INCOME.
         public async Task<IEnumerable<IncomeCategorySeriesResult>> GetIncomeByCategoryMonthlySeriesAsync(int userId, Asset asset, int months)
         {
             var today = DateTime.Today;
@@ -895,9 +896,41 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result;
         }
 
-        // Días de cobro: monto de ingreso por día calendario, en la ventana de meses pedida — el
-        // agrupado por día-del-mes (con su frecuencia) se arma en el service, es aritmética pura.
-        public async Task<IEnumerable<DailySpendingResult>> GetDailyIncomeAsync(int userId, Asset asset, int months)
+        // Composición de ingresos de UN mes elegido — lo que el usuario pidió como reporte
+        // principal ("elegir un mes y ver la composición"), sin rubro ni tendencia.
+        public async Task<IEnumerable<IncomeCategoryAmountResult>> GetIncomeCompositionForMonthAsync(int userId, Asset asset, DateTime month)
+        {
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var monthEnd = monthStart.AddMonths(1);
+
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_INCOME &&
+                            t.Date >= monthStart && t.Date < monthEnd &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new { ClassId = t.TransactionClassId!.Value, ClassName = t.TransactionClass.Description, t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .ToListAsync();
+
+            return raw
+                .GroupBy(x => new { x.ClassId, x.ClassName })
+                .Select(g => new IncomeCategoryAmountResult
+                {
+                    CategoryId = g.Key.ClassId,
+                    CategoryName = g.Key.ClassName,
+                    Amount = Math.Round(g.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date)), 2)
+                })
+                .OrderByDescending(x => x.Amount)
+                .ToList();
+        }
+
+        // Fila cruda (categoría, día, monto) sin agregar — el frontend arma con esto las 3
+        // variantes de "días de cobro" en comparación (tabla/timeline/calendario por categoría),
+        // sin necesitar un endpoint por variante.
+        public async Task<IEnumerable<IncomeCategoryDayResult>> GetIncomeByCategoryAndDayAsync(int userId, Asset asset, int months)
         {
             var today = DateTime.Today;
             var currentMonthStart = new DateTime(today.Year, today.Month, 1);
@@ -913,14 +946,16 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             t.MovementType == MOV_INCOME &&
                             t.Date >= start && t.Date < end &&
                             t.TransactionClass.CountsAsIncomeExpense)
-                .Select(t => new { t.AssetId, t.Amount, t.QuotePrice, t.Date })
+                .Select(t => new { ClassId = t.TransactionClassId!.Value, ClassName = t.TransactionClass.Description, t.AssetId, t.Amount, t.QuotePrice, t.Date })
                 .ToListAsync();
 
             return raw
-                .GroupBy(x => x.Date.Date)
-                .Select(g => new DailySpendingResult
+                .GroupBy(x => new { x.ClassId, x.ClassName, x.Date.Date })
+                .Select(g => new IncomeCategoryDayResult
                 {
-                    Date = g.Key,
+                    CategoryId = g.Key.ClassId,
+                    CategoryName = g.Key.ClassName,
+                    Date = g.Key.Date,
                     Amount = Math.Round(g.Sum(x => convert(x.AssetId, x.Amount, x.QuotePrice, x.Date)), 2)
                 })
                 .OrderBy(x => x.Date)

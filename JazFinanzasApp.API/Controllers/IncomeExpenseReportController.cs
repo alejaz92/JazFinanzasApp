@@ -54,6 +54,13 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        [HttpGet("IncomeComposition/{assetId}")]
+        public async Task<IActionResult> GetIncomeComposition(int assetId, [FromQuery] DateTime month)
+        {
+            var result = await _incomeExpenseReportService.GetIncomeCompositionAsync(GetUserId(), month, assetId);
+            return Ok(result);
+        }
+
         [HttpGet("IncomeByCategory/{assetId}")]
         public async Task<IActionResult> GetIncomeByCategory(int assetId, [FromQuery] int months = 24)
         {
@@ -61,10 +68,10 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
-        [HttpGet("PayDays/{assetId}")]
-        public async Task<IActionResult> GetPayDays(int assetId, [FromQuery] int months = 12)
+        [HttpGet("IncomeByCategoryAndDay/{assetId}")]
+        public async Task<IActionResult> GetIncomeByCategoryAndDay(int assetId, [FromQuery] int months = 12)
         {
-            var result = await _incomeExpenseReportService.GetPayDaysAsync(GetUserId(), assetId, months);
+            var result = await _incomeExpenseReportService.GetIncomeByCategoryAndDayAsync(GetUserId(), assetId, months);
             return Ok(result);
         }
     }
