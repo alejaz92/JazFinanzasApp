@@ -63,5 +63,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 await _context.SaveChangesAsync();
             }
         }
+
+        public async Task<IEnumerable<CardTransactionDiscount>> GetByUserIdWithCardTransactionAsync(int userId)
+        {
+            return await _context.CardTransactionDiscounts
+                .Include(d => d.CardTransaction).ThenInclude(ct => ct.Card)
+                .Include(d => d.CardTransaction).ThenInclude(ct => ct.Asset)
+                .Where(d => d.UserId == userId)
+                .OrderBy(d => d.CreditDate)
+                .ToListAsync();
+        }
     }
 }

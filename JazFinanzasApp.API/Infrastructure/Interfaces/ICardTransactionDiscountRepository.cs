@@ -13,5 +13,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task AddInstallmentAsync(CardTransactionDiscountInstallment installment);
         Task<IEnumerable<CardTransactionDiscountInstallment>> GetInstallmentsByDiscountIdAsync(int discountId);
         Task DeleteInstallmentAsync(int id);
+
+        // Fase 14 (Tarjetas — Promociones y reintegros): todos los descuentos del usuario, con el
+        // CardTransaction y su tarjeta ya incluidos.
+        Task<IEnumerable<CardTransactionDiscount>> GetByUserIdWithCardTransactionAsync(int userId);
     }
 }

@@ -12,5 +12,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<CardTransaction>> GetTripOwnExpenseCardTransactionsAsync(int tripId);
         Task<IEnumerable<CardTransaction>> GetTripSuggestibleCardTransactionsAsync(int userId, DateTime startDate, DateTime endDate);
         Task<IEnumerable<CardTransaction>> SearchTripAssociableCardTransactionsAsync(int userId, string? search);
+
+        // Fase 14 (Tarjetas): todos los consumos del usuario, con Card/Asset/TransactionClass ya
+        // incluidos — evita resolver cada navegación a mano como hace T8 en NetWorthReportService.
+        Task<IEnumerable<CardTransaction>> GetByUserIdWithDetailsAsync(int userId);
     }
 }
