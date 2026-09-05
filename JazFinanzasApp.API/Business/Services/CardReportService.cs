@@ -133,11 +133,12 @@ namespace JazFinanzasApp.API.Business.Services
 
         // Corrección 2026-09-05: el usuario pidió poder navegar el "resumen del mes" a meses
         // distintos del actual — la lógica ya era genérica sobre `month` (GetCardTransactionsToPay
-        // ya lo era), solo hacía falta exponerla suelta.
-        public async Task<List<CardTransactionPaymentListDTO>> GetMonthSummaryAsync(int userId, DateTime month)
+        // ya lo era), solo hacía falta exponerla suelta. cardId = 0 (default) trae todas las
+        // tarjetas, igual que antes; Por tarjeta pasa la suya (corrección 2026-09-05, segunda ronda).
+        public async Task<List<CardTransactionPaymentListDTO>> GetMonthSummaryAsync(int userId, DateTime month, int cardId = 0)
         {
             var normalizedMonth = new DateTime(month.Year, month.Month, 1);
-            return await BuildMonthSummaryAsync(userId, normalizedMonth);
+            return await BuildMonthSummaryAsync(userId, normalizedMonth, cardId);
         }
 
         public async Task<CardDetailReportDTO> GetByCardAsync(int userId, int cardId, int assetId)
@@ -290,12 +291,13 @@ namespace JazFinanzasApp.API.Business.Services
         // Reusa exactamente la lógica de ReportService.GetCardStatsAsync (pantalla vieja, cardId = 0
         // para "todas las tarjetas"): mismo criterio de instalmentDisplay y de conversión a pesos.
         // Genérica sobre `month` desde el vamos — GetGeneralAsync la usa con el mes en curso y
-        // GetMonthSummaryAsync con cualquier otro.
-        private async Task<List<CardTransactionPaymentListDTO>> BuildMonthSummaryAsync(int userId, DateTime month)
+        // GetMonthSummaryAsync con cualquier otro. `cardId` = 0 trae todas las tarjetas
+        // (GetCardTransactionsToPay ya interpreta 0 así); Por tarjeta pasa una puntual.
+        private async Task<List<CardTransactionPaymentListDTO>> BuildMonthSummaryAsync(int userId, DateTime month, int cardId = 0)
         {
             var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
             var exchangeRate = await _assetQuoteRepository.GetQuotePrice(peso.Id, month, "TARJETA");
-            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(0, month, userId);
+            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(cardId, month, userId);
 
             return cardTransactions.Select(m =>
             {

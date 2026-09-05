@@ -13,8 +13,9 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId);
         Task<CardPromotionsReportDTO> GetPromotionsAsync(int userId, int assetId);
 
-        // General, corrección 2026-09-05: el resumen del mes ahora se puede pedir para cualquier
-        // mes, no solo el actual (que sigue viniendo embebido en GetGeneralAsync).
-        Task<List<CardTransactionPaymentListDTO>> GetMonthSummaryAsync(int userId, DateTime month);
+        // Corrección 2026-09-05: el resumen del mes ahora se puede pedir para cualquier mes, no solo
+        // el actual (que sigue viniendo embebido en GetGeneralAsync), y opcionalmente para una sola
+        // tarjeta (cardId = 0, default, trae todas — lo usa Por tarjeta).
+        Task<List<CardTransactionPaymentListDTO>> GetMonthSummaryAsync(int userId, DateTime month, int cardId = 0);
     }
 }

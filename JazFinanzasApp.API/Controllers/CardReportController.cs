@@ -48,9 +48,9 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet("MonthSummary")]
-        public async Task<IActionResult> GetMonthSummary([FromQuery] DateTime month)
+        public async Task<IActionResult> GetMonthSummary([FromQuery] DateTime month, [FromQuery] int cardId = 0)
         {
-            var result = await _cardReportService.GetMonthSummaryAsync(GetUserId(), month);
+            var result = await _cardReportService.GetMonthSummaryAsync(GetUserId(), month, cardId);
             return Ok(result);
         }
     }
