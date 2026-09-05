@@ -513,6 +513,8 @@ namespace JazFinanzasApp.API.Business.Services
                         Detail = ct.Detail ?? string.Empty,
                         CardName = ct.Card?.Name ?? string.Empty,
                         AssetName = ct.Asset?.Name ?? string.Empty,
+                        TransactionClassId = ct.TransactionClassId,
+                        TransactionClassName = ct.TransactionClass?.Description ?? string.Empty,
                         Amount = ct.InstallmentAmount
                     });
                 }

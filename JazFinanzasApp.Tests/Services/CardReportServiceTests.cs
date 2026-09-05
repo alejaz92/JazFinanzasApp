@@ -281,6 +281,21 @@ namespace JazFinanzasApp.Tests.Services
             entry.Detail.Should().Be("Heladera");
         }
 
+        // Corrección 2026-09-05, cuarta ronda: el gráfico de "cuotas por vencer" pasa a agrupar por
+        // categoría en vez de por compra — necesita esta info en cada FutureCommitmentPurchaseAmountDTO.
+        [Fact]
+        public void BuildFutureCommitment_PurchaseAmount_CarriesCategoryInfo()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var ct = MakeCardTransaction(1, 10, "NO", currentMonth, 1, transactionClassId: 4, categoryName: "Electro");
+
+            var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { ct }, new Dictionary<int, DateTime>(), currentMonth, 3);
+
+            var purchase = result.MonthlySeries[0].Purchases.Single();
+            purchase.TransactionClassId.Should().Be(4);
+            purchase.TransactionClassName.Should().Be("Electro");
+        }
+
         [Fact]
         public void BuildFutureCommitment_NoLiveInstallments_TimelineIsEmpty()
         {
