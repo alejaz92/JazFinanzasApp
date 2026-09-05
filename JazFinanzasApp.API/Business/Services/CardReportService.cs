@@ -201,7 +201,7 @@ namespace JazFinanzasApp.API.Business.Services
         // Corrección 2026-09-05: los montos vienen convertidos a `assetId`. Los meses son futuros y no
         // tienen cotización propia — GetQuotePrice cae en la más reciente disponible (T9), que
         // termina siendo la de hoy, así que se pide una sola vez para toda la proyección.
-        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId)
+        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true)
         {
             var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
                 ?? throw new NotFoundException("Asset not found");
@@ -212,7 +212,7 @@ namespace JazFinanzasApp.API.Business.Services
             var lastPaidByCard = await _cardPaymentRepository.GetLastPaidMonthByCardAsync(userId);
             var currentMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
-            var result = BuildFutureCommitment(transactions, lastPaidByCard, currentMonth, FutureCommitmentMonths);
+            var result = BuildFutureCommitment(transactions, lastPaidByCard, currentMonth, FutureCommitmentMonths, includeRecurring);
 
             var hasPesos = result.Timeline.Any(t => t.AssetName == PesoAssetName);
             var hasDollars = result.Timeline.Any(t => t.AssetName == DollarAssetName);
@@ -463,10 +463,12 @@ namespace JazFinanzasApp.API.Business.Services
         // pagados) dentro de [currentMonth, currentMonth + monthsForward), en vez de solo contarlos:
         // acá hace falta saber CUÁLES meses, para poder apilarlos en la columna que corresponda.
         //
-        // "YES" (recurrente sin fin) mantiene la misma simplificación de T8: no es un compromiso
-        // infinito hacia adelante, solo entra el mes en curso si todavía no se pagó. A diferencia de
-        // T8, acá no se cuentan meses ya vencidos anteriores al mes en curso — este reporte mira hacia
-        // adelante, no la deuda viva total (para eso está Patrimonio → General).
+        // Corrección 2026-09-05, quinta ronda: "YES" (recurrente sin fin, ej. una prepaga) ya NO usa
+        // la simplificación de T8 de contar solo el mes en curso. T8 mide una DEUDA de hoy y ahí tiene
+        // sentido no proyectar un compromiso infinito; este reporte es al revés, una proyección hacia
+        // adelante — un gasto recurrente real (Swiss Medical, Netflix) se va a seguir cobrando TODOS
+        // los meses de la ventana, no solo el próximo, y mostrarlo solo un mes subestimaba el
+        // compromiso real (bug encontrado por el usuario viendo el gráfico con datos reales).
         public static List<DateTime> GetLiveInstallmentMonths(CardTransaction cardTransaction, Dictionary<int, DateTime> lastPaidMonthByCard, DateTime currentMonth, int monthsForward)
         {
             var windowEnd = currentMonth.AddMonths(monthsForward);
@@ -476,9 +478,12 @@ namespace JazFinanzasApp.API.Business.Services
             {
                 var firstInstallmentMonth = new DateTime(cardTransaction.FirstInstallment.Year, cardTransaction.FirstInstallment.Month, 1);
                 var nextDue = !hasPayment ? firstInstallmentMonth : lastPaid.AddMonths(1);
-                return nextDue <= currentMonth && currentMonth < windowEnd
-                    ? new List<DateTime> { currentMonth }
-                    : new List<DateTime>();
+                var start = nextDue > currentMonth ? nextDue : currentMonth;
+
+                var recurrentMonths = new List<DateTime>();
+                for (var m = start; m < windowEnd; m = m.AddMonths(1))
+                    recurrentMonths.Add(m);
+                return recurrentMonths;
             }
 
             var months = new List<DateTime>();
@@ -493,14 +498,18 @@ namespace JazFinanzasApp.API.Business.Services
             return months;
         }
 
-        // Pura — testeable sin mocks.
-        public static CardFutureCommitmentDTO BuildFutureCommitment(List<CardTransaction> transactions, Dictionary<int, DateTime> lastPaidByCard, DateTime currentMonth, int monthsForward)
+        // Pura — testeable sin mocks. `includeRecurring` en false saca los gastos "YES" (Fase 15,
+        // quinta ronda) — pedido del usuario porque una vez que un recurrente se proyecta correcto en
+        // TODOS los meses (arriba), pasa a dominar el gráfico y tapa las compras en cuotas puntuales.
+        public static CardFutureCommitmentDTO BuildFutureCommitment(List<CardTransaction> transactions, Dictionary<int, DateTime> lastPaidByCard, DateTime currentMonth, int monthsForward, bool includeRecurring = true)
         {
             var monthBuckets = Enumerable.Range(0, monthsForward).Select(i => currentMonth.AddMonths(i)).ToList();
             var purchasesByMonth = monthBuckets.ToDictionary(m => m, _ => new List<FutureCommitmentPurchaseAmountDTO>());
             var timeline = new List<FutureCommitmentPurchaseDTO>();
 
-            foreach (var ct in transactions)
+            var relevantTransactions = includeRecurring ? transactions : transactions.Where(t => t.Repeat != "YES");
+
+            foreach (var ct in relevantTransactions)
             {
                 var liveMonths = GetLiveInstallmentMonths(ct, lastPaidByCard, currentMonth, monthsForward);
                 if (liveMonths.Count == 0) continue;

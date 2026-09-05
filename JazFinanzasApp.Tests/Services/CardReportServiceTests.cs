@@ -235,27 +235,30 @@ namespace JazFinanzasApp.Tests.Services
             months.Should().BeEquivalentTo(new[] { new DateTime(2026, 9, 1), new DateTime(2026, 10, 1) });
         }
 
+        // Corrección 2026-09-05, quinta ronda: un recurrente sin fin ya no corta en el mes en curso —
+        // se proyecta en TODOS los meses de la ventana (bug real: un gasto real como una prepaga
+        // aparecía comprometido un solo mes en vez de en los 18).
         [Fact]
-        public void GetLiveInstallmentMonths_Recurrent_NeverPaid_ReturnsOnlyCurrentMonth()
+        public void GetLiveInstallmentMonths_Recurrent_NeverPaid_ProjectsEveryMonthInTheWindow()
         {
             var currentMonth = new DateTime(2026, 9, 1);
             var ct = MakeCardTransaction(1, 10, "YES", new DateTime(2026, 5, 1), 0);
 
-            var months = CardReportService.GetLiveInstallmentMonths(ct, new Dictionary<int, DateTime>(), currentMonth, 18);
+            var months = CardReportService.GetLiveInstallmentMonths(ct, new Dictionary<int, DateTime>(), currentMonth, 3);
 
-            months.Should().BeEquivalentTo(new[] { currentMonth });
+            months.Should().BeEquivalentTo(new[] { new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), new DateTime(2026, 11, 1) });
         }
 
         [Fact]
-        public void GetLiveInstallmentMonths_Recurrent_PaidThroughCurrentMonth_ReturnsEmpty()
+        public void GetLiveInstallmentMonths_Recurrent_PaidThroughCurrentMonth_ProjectsFromNextMonthOnward()
         {
             var currentMonth = new DateTime(2026, 9, 1);
             var ct = MakeCardTransaction(1, 10, "YES", new DateTime(2026, 5, 1), 0);
-            var lastPaid = new Dictionary<int, DateTime> { { 10, currentMonth } };
+            var lastPaid = new Dictionary<int, DateTime> { { 10, currentMonth } }; // septiembre ya pagado
 
-            var months = CardReportService.GetLiveInstallmentMonths(ct, lastPaid, currentMonth, 18);
+            var months = CardReportService.GetLiveInstallmentMonths(ct, lastPaid, currentMonth, 3);
 
-            months.Should().BeEmpty();
+            months.Should().BeEquivalentTo(new[] { new DateTime(2026, 10, 1), new DateTime(2026, 11, 1) }); // sept no, ya pagado
         }
 
         // ── BuildFutureCommitment ────────────────────────────────────────────────────────────────
@@ -307,6 +310,32 @@ namespace JazFinanzasApp.Tests.Services
 
             result.Timeline.Should().BeEmpty();
             result.MonthlySeries.SelectMany(m => m.Purchases).Should().BeEmpty();
+        }
+
+        // Corrección 2026-09-05, quinta ronda: filtro para sacar los recurrentes de la proyección —
+        // una vez que se proyectan en todos los meses, pueden tapar las compras en cuotas puntuales.
+        [Fact]
+        public void BuildFutureCommitment_IncludeRecurringFalse_ExcludesRecurrentPurchases()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var recurrent = MakeCardTransaction(1, 10, "YES", new DateTime(2026, 5, 1), 0, detail: "Swiss Medical");
+            var fixedInstallment = MakeCardTransaction(2, 10, "NO", currentMonth, 2, detail: "Heladera");
+
+            var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { recurrent, fixedInstallment }, new Dictionary<int, DateTime>(), currentMonth, 3, includeRecurring: false);
+
+            result.Timeline.Should().ContainSingle(t => t.Detail == "Heladera");
+            result.MonthlySeries.SelectMany(m => m.Purchases).Should().OnlyContain(p => p.Detail == "Heladera");
+        }
+
+        [Fact]
+        public void BuildFutureCommitment_IncludeRecurringTrue_KeepsRecurrentPurchases()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var recurrent = MakeCardTransaction(1, 10, "YES", new DateTime(2026, 5, 1), 0, detail: "Swiss Medical");
+
+            var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { recurrent }, new Dictionary<int, DateTime>(), currentMonth, 3, includeRecurring: true);
+
+            result.Timeline.Should().ContainSingle(t => t.Detail == "Swiss Medical");
         }
 
         // ── BuildPromotionsReport ────────────────────────────────────────────────────────────────
