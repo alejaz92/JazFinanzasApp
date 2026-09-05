@@ -6,6 +6,16 @@ namespace JazFinanzasApp.API.Business.DTO.CardReport
         public string CardName { get; set; } = string.Empty;
         public DateTime? NextClosingDate { get; set; }
         public DateTime? NextDueDate { get; set; }
+
+        // Corrección 2026-09-05: CurrentMonthPesos/Dollars, ByCategory y MonthlyEvolution vienen
+        // convertidos a ReferenceAssetSymbol — mismos 5 campos y mismo criterio de color que
+        // CardGeneralReportDTO (Patrimonio → General).
+        public string ReferenceAssetSymbol { get; set; } = string.Empty;
+        public string PesoAssetSymbol { get; set; } = string.Empty;
+        public string PesoAssetColor { get; set; } = string.Empty;
+        public string DollarAssetSymbol { get; set; } = string.Empty;
+        public string DollarAssetColor { get; set; } = string.Empty;
+
         public decimal CurrentMonthPesos { get; set; }
         public decimal CurrentMonthDollars { get; set; }
         public List<CardCategoryAmountDTO> ByCategory { get; set; } = new();

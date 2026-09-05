@@ -1,13 +1,56 @@
 using FluentAssertions;
 using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Domain;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
+using Moq;
 
 namespace JazFinanzasApp.Tests.Services
 {
-    // Fase 14 (Tarjetas): solo los métodos puros del servicio — mismo criterio que
+    // Fase 14 (Tarjetas): en su mayoría los métodos puros del servicio — mismo criterio que
     // NetWorthReportServiceTests para T8 (CountLiveInstallmentMonths), sin mocks de repositorio.
+    // Corrección 2026-09-05 (conversión de moneda en GetGeneralAsync) sí necesita mocks, mismo
+    // patrón que NetWorthReportServiceTests para GetLiveCardDebtInDollarsAsync.
     public class CardReportServiceTests
     {
+        private const int UserId = 1;
+
+        private readonly Mock<ICardRepository> _cardRepoMock = new();
+        private readonly Mock<ICardTransactionRepository> _cardTransactionRepoMock = new();
+        private readonly Mock<ICardPaymentRepository> _cardPaymentRepoMock = new();
+        private readonly Mock<ICardTransactionDiscountRepository> _cardTransactionDiscountRepoMock = new();
+        private readonly Mock<IAssetRepository> _assetRepoMock = new();
+        private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock = new();
+        private readonly CardReportService _sut;
+
+        public CardReportServiceTests()
+        {
+            _sut = new CardReportService(
+                _cardRepoMock.Object,
+                _cardTransactionRepoMock.Object,
+                _cardPaymentRepoMock.Object,
+                _cardTransactionDiscountRepoMock.Object,
+                _assetRepoMock.Object,
+                _assetQuoteRepoMock.Object);
+        }
+
+        // Assets y CardTransactions comunes a los 4 endpoints con conversión de moneda.
+        private void SetupCurrencyMocks(Asset peso, Asset dollar, Asset referenceAsset, List<CardTransaction> transactions)
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(referenceAsset.Id)).ReturnsAsync(referenceAsset);
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Peso Argentino")).ReturnsAsync(peso);
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Dolar Estadounidense")).ReturnsAsync(dollar);
+            _cardTransactionRepoMock.Setup(r => r.GetByUserIdWithDetailsAsync(UserId)).ReturnsAsync(transactions);
+        }
+
+        // Deja armado lo mínimo para que GetGeneralAsync corra completo: los assets, las
+        // CardTransactions y un resumen del mes vacío (BuildMonthSummaryAsync no es lo que se
+        // está probando acá).
+        private void SetupGeneralAsyncMocks(Asset peso, Asset dollar, Asset referenceAsset, List<CardTransaction> transactions, DateTime today)
+        {
+            SetupCurrencyMocks(peso, dollar, referenceAsset, transactions);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsToPay(0, today, UserId)).ReturnsAsync(new List<CardTransaction>());
+        }
+
         private static CardTransaction MakeCardTransaction(
             int id, int cardId, string repeat, DateTime firstInstallment, int installments,
             decimal totalAmount = 3000m, decimal installmentAmount = 1000m,
@@ -326,6 +369,155 @@ namespace JazFinanzasApp.Tests.Services
 
             report.PercentOfConsumptionPesos.Should().Be(10m); // 100 / 1000 * 100
             report.PercentOfConsumptionDollars.Should().BeNull();
+        }
+
+        // ── GetGeneralAsync: conversión de MonthlySeries a la moneda de referencia elegida ──────
+        // (corrección 2026-09-05: el selector de moneda de la barra de Reportes no hacía nada acá)
+
+        [Fact]
+        public async Task GetGeneralAsync_ConvertsPesosAmountToReferenceCurrency_WhenReferenceIsDollar()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", today, 1, totalAmount: 1000m, assetName: "Peso Argentino", cardName: "Visa");
+
+            SetupGeneralAsyncMocks(peso, dollar, referenceAsset: dollar, new List<CardTransaction> { ct }, today);
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(1000m); // 1000 $ = 1 USD ese mes
+
+            var result = await _sut.GetGeneralAsync(UserId, dollar.Id);
+
+            result.ReferenceAssetSymbol.Should().Be("US$");
+            var lastPoint = result.MonthlySeries.Last();
+            lastPoint.Cards.Single().PesosAmount.Should().Be(1m); // 1000 pesos / 1000 = 1 dolar
+        }
+
+        [Fact]
+        public async Task GetGeneralAsync_ConvertsDollarsAmountToReferenceCurrency_WhenReferenceIsPeso()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", today, 1, totalAmount: 15m, assetName: "Dolar Estadounidense", cardName: "Visa");
+
+            SetupGeneralAsyncMocks(peso, dollar, referenceAsset: peso, new List<CardTransaction> { ct }, today);
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(1200m); // 1 USD = 1200 $ ese mes
+
+            var result = await _sut.GetGeneralAsync(UserId, peso.Id);
+
+            var lastPoint = result.MonthlySeries.Last();
+            lastPoint.Cards.Single().DollarsAmount.Should().Be(18000m); // 15 USD x 1200
+        }
+
+        [Fact]
+        public async Task GetGeneralAsync_ReferenceEqualsNativeCurrency_NoConversionApplied()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", today, 1, totalAmount: 1000m, assetName: "Peso Argentino", cardName: "Visa");
+
+            SetupGeneralAsyncMocks(peso, dollar, referenceAsset: peso, new List<CardTransaction> { ct }, today);
+
+            var result = await _sut.GetGeneralAsync(UserId, peso.Id);
+
+            // Sin cambios: BuildMonthSummaryAsync (resumen del mes, no la serie) sí pide una
+            // cotización propia para su tabla de cash-flow — no es la conversión bajo prueba acá.
+            result.MonthlySeries.Last().Cards.Single().PesosAmount.Should().Be(1000m);
+        }
+
+        [Fact]
+        public async Task GetGeneralAsync_UsesEachMonthsOwnHistoricalQuote_NotTodays()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var twoMonthsAgo = today.AddMonths(-2);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var oldCt = MakeCardTransaction(1, 10, "NO", twoMonthsAgo, 1, totalAmount: 500m, assetName: "Peso Argentino", cardName: "Visa");
+
+            SetupGeneralAsyncMocks(peso, dollar, referenceAsset: dollar, new List<CardTransaction> { oldCt }, today);
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, twoMonthsAgo, "TARJETA")).ReturnsAsync(500m); // cotización de hace 2 meses
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(2000m); // cotización de hoy, muy distinta
+
+            var result = await _sut.GetGeneralAsync(UserId, dollar.Id);
+
+            var pointTwoMonthsAgo = result.MonthlySeries.Single(p => p.Month == twoMonthsAgo);
+            pointTwoMonthsAgo.Cards.Single().PesosAmount.Should().Be(1m); // 500 / 500, con la cotización de ESE mes
+        }
+
+        // ── GetByCardAsync: conversión en consumo del mes, ByCategory y evolución ───────────────
+
+        [Fact]
+        public async Task GetByCardAsync_ConvertsCurrentMonthByCategoryAndEvolution_ToReferenceCurrency()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", today, 1, totalAmount: 1000m, assetName: "Peso Argentino", cardName: "Visa", categoryName: "Super");
+
+            _cardRepoMock.Setup(r => r.GetByIdAsync(10)).ReturnsAsync(new Card { Id = 10, Name = "Visa", UserId = UserId });
+            SetupCurrencyMocks(peso, dollar, referenceAsset: dollar, new List<CardTransaction> { ct });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(1000m);
+
+            var result = await _sut.GetByCardAsync(UserId, cardId: 10, assetId: dollar.Id);
+
+            result.CurrentMonthPesos.Should().Be(1m); // 1000 / 1000
+            result.ByCategory.Single().PesosAmount.Should().Be(1m);
+            result.MonthlyEvolution.Last().PesosAmount.Should().Be(1m);
+        }
+
+        [Fact]
+        public async Task GetByCardAsync_WrongUser_ThrowsUnauthorized()
+        {
+            _cardRepoMock.Setup(r => r.GetByIdAsync(10)).ReturnsAsync(new Card { Id = 10, Name = "Visa", UserId = 999 });
+
+            var act = async () => await _sut.GetByCardAsync(UserId, cardId: 10, assetId: 1);
+
+            await act.Should().ThrowAsync<JazFinanzasApp.API.Business.Exceptions.UnauthorizedDomainException>();
+        }
+
+        // ── GetFutureCommitmentAsync: conversión con la cotización de hoy (meses futuros) ───────
+
+        [Fact]
+        public async Task GetFutureCommitmentAsync_ConvertsPurchaseAmounts_ToReferenceCurrency()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", today, 2, installmentAmount: 1000m, assetName: "Peso Argentino", detail: "Heladera", cardName: "Visa");
+
+            SetupCurrencyMocks(peso, dollar, referenceAsset: dollar, new List<CardTransaction> { ct });
+            _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(1000m);
+
+            var result = await _sut.GetFutureCommitmentAsync(UserId, dollar.Id);
+
+            result.MonthlySeries[0].Purchases.Single().Amount.Should().Be(1m); // 1000 / 1000
+            result.Timeline.Single().InstallmentAmount.Should().Be(1m);
+        }
+
+        // ── GetPromotionsAsync: TotalSaved (hoy), MonthlySeries (por mes), Pending (su CreditDate) ─
+
+        [Fact]
+        public async Task GetPromotionsAsync_ConvertsTotalMonthlySeriesAndPending_EachWithItsOwnDate()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var creditDate = today.AddMonths(-3);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ct = MakeCardTransaction(1, 10, "NO", creditDate, 1, assetName: "Peso Argentino", cardName: "Visa");
+            var discount = MakeDiscount(1, creditDate, amount: 500m, amountApplied: 0m, amountMaterialized: 0m, ct);
+
+            SetupCurrencyMocks(peso, dollar, referenceAsset: dollar, new List<CardTransaction>());
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByUserIdWithCardTransactionAsync(UserId)).ReturnsAsync(new List<CardTransactionDiscount> { discount });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, today, "TARJETA")).ReturnsAsync(1000m); // cotización de hoy (TotalSaved)
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(peso.Id, creditDate, "TARJETA")).ReturnsAsync(500m); // cotización de hace 3 meses (Pending y MonthlySeries)
+
+            var result = await _sut.GetPromotionsAsync(UserId, dollar.Id);
+
+            result.TotalSavedPesos.Should().Be(0.5m); // 500 / 1000 (cotización de HOY)
+            result.MonthlySeries.Single(m => m.Month == creditDate).PesosAmount.Should().Be(1m); // 500 / 500 (cotización de ESE mes)
+            result.Pending.Single().PendingToCredit.Should().Be(1m); // 500 / 500 (cotización de su propio CreditDate)
         }
     }
 }

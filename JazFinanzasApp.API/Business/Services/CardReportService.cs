@@ -45,16 +45,90 @@ namespace JazFinanzasApp.API.Business.Services
         // "General": consumo devengado (CLAUDE.md Backend, "Tarjetas: el consumo y sus cuotas" — se
         // mide por CardTransaction.Date/TotalAmount, no por cuándo se paga la cuota), apilado por mes
         // y por tarjeta, más la tabla del resumen del mes actual que ya traía la pantalla vieja.
-        public async Task<CardGeneralReportDTO> GetGeneralAsync(int userId)
+        //
+        // Corrección 2026-09-05: MonthlySeries se devuelve convertida a `assetId` — la serie sigue
+        // separando "cuánto salió de pesos" de "cuánto salió de dólares" (BuildMonthlyConsumptionSeries
+        // no cambia, sigue siendo pura y en moneda nativa), pero cada número ya viene expresado en la
+        // moneda elegida, con la cotización HISTÓRICA de cada mes (no la de hoy — un año de inflación
+        // de por medio arruinaría los meses viejos, T6/T9 del plan).
+        public async Task<CardGeneralReportDTO> GetGeneralAsync(int userId, int assetId)
         {
+            var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
+                ?? throw new NotFoundException("Asset not found");
+
             var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
             var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
+            var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
+
+            var monthlySeries = BuildMonthlyConsumptionSeries(transactions, today, MonthlySeriesLength);
+            await ConvertSeriesToReferenceCurrencyAsync(monthlySeries, peso, dollar, referenceAsset);
 
             return new CardGeneralReportDTO
             {
-                MonthlySeries = BuildMonthlyConsumptionSeries(transactions, today, MonthlySeriesLength),
+                ReferenceAssetSymbol = referenceAsset.Symbol,
+                PesoAssetSymbol = peso.Symbol,
+                PesoAssetColor = peso.Color,
+                DollarAssetSymbol = dollar.Symbol,
+                DollarAssetColor = dollar.Color,
+                MonthlySeries = monthlySeries,
                 CurrentMonthSummary = await BuildMonthSummaryAsync(userId, today)
             };
+        }
+
+        // Convierte in-place cada punto de la serie a `referenceAsset`, con la cotización del mes de
+        // ESE punto (no la de hoy): dos lookups por mes (uno para pesos, otro para dólares), aplicados
+        // a todas las tarjetas de ese mes — no uno por tarjeta, la tasa es la misma para todas. Si un
+        // mes no tuvo gasto en una de las dos monedas, ni se pide la cotización (no hace falta, y un
+        // mes sin consumo en esa moneda podría no tener cotización "TARJETA" cargada ese día).
+        private async Task ConvertSeriesToReferenceCurrencyAsync(List<CardMonthlySeriesPointDTO> series, Asset peso, Asset dollar, Asset referenceAsset)
+        {
+            foreach (var point in series)
+            {
+                var hasPesos = point.Cards.Any(c => c.PesosAmount != 0);
+                var hasDollars = point.Cards.Any(c => c.DollarsAmount != 0);
+
+                var pesoRate = hasPesos ? await GetConversionRateAsync(peso, referenceAsset, point.Month) : 1m;
+                var dollarRate = hasDollars ? await GetConversionRateAsync(dollar, referenceAsset, point.Month) : 1m;
+
+                foreach (var card in point.Cards)
+                {
+                    card.PesosAmount = Math.Round(card.PesosAmount * pesoRate, 2);
+                    card.DollarsAmount = Math.Round(card.DollarsAmount * dollarRate, 2);
+                }
+            }
+        }
+
+        // Misma idea que ConvertSeriesToReferenceCurrencyAsync pero para una serie "plana" (un solo
+        // Pesos/Dólares por punto, sin apertura por tarjeta) — la usa Por tarjeta → Evolución mensual.
+        private async Task ConvertSimpleSeriesToReferenceCurrencyAsync(List<CardSimpleMonthlyPointDTO> series, Asset peso, Asset dollar, Asset referenceAsset)
+        {
+            foreach (var point in series)
+            {
+                var pesoRate = point.PesosAmount != 0 ? await GetConversionRateAsync(peso, referenceAsset, point.Month) : 1m;
+                var dollarRate = point.DollarsAmount != 0 ? await GetConversionRateAsync(dollar, referenceAsset, point.Month) : 1m;
+                point.PesosAmount = Math.Round(point.PesosAmount * pesoRate, 2);
+                point.DollarsAmount = Math.Round(point.DollarsAmount * dollarRate, 2);
+            }
+        }
+
+        // Multiplicador para pasar un monto en `nativeAsset` a `referenceAsset`, en la fecha dada.
+        // GetQuotePrice(assetId, date, "TARJETA") da "unidades de assetId por 1 USD" (mismo criterio
+        // que GetLiveCardDebtInDollarsAsync, Fase 10) — se arma la cadena nativa→USD→referencia para
+        // que funcione con cualquier par, no solo peso/dólar.
+        private async Task<decimal> GetConversionRateAsync(Asset nativeAsset, Asset referenceAsset, DateTime date)
+        {
+            if (nativeAsset.Id == referenceAsset.Id) return 1m;
+
+            var nativeInUsd = nativeAsset.Name == DollarAssetName
+                ? 1m
+                : 1m / await _assetQuoteRepository.GetQuotePrice(nativeAsset.Id, date, "TARJETA");
+
+            var referenceFromUsd = referenceAsset.Name == DollarAssetName
+                ? 1m
+                : await _assetQuoteRepository.GetQuotePrice(referenceAsset.Id, date, "TARJETA");
+
+            return nativeInUsd * referenceFromUsd;
         }
 
         // Corrección 2026-09-05: el usuario pidió poder navegar el "resumen del mes" a meses
@@ -66,18 +140,41 @@ namespace JazFinanzasApp.API.Business.Services
             return await BuildMonthSummaryAsync(userId, normalizedMonth);
         }
 
-        public async Task<CardDetailReportDTO> GetByCardAsync(int userId, int cardId)
+        public async Task<CardDetailReportDTO> GetByCardAsync(int userId, int cardId, int assetId)
         {
             var card = await _cardRepository.GetByIdAsync(cardId)
                 ?? throw new NotFoundException("Tarjeta no encontrada");
             if (card.UserId != userId)
                 throw new UnauthorizedDomainException();
 
+            var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
+                ?? throw new NotFoundException("Asset not found");
+            var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
+            var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
+
             var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
             var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
             var startMonth = today.AddMonths(-(MonthlySeriesLength - 1));
 
             var thisCard = transactions.Where(t => t.CardId == cardId).ToList();
+            var currentMonthPesosNative = thisCard.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualAmount(t, today));
+            var currentMonthDollarsNative = thisCard.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualAmount(t, today));
+
+            // Una sola cotización de "hoy", reusada para el consumo del mes y para ByCategory (los
+            // dos son totales de una fecha/agregado, no una serie mensual) — mismo criterio que
+            // NetWorthReportService al pasar un total ya sumado a otra moneda de referencia (T7).
+            var todayPesoRate = await GetConversionRateAsync(peso, referenceAsset, today);
+            var todayDollarRate = await GetConversionRateAsync(dollar, referenceAsset, today);
+
+            var byCategory = BuildCategoryBreakdown(transactions, cardId, startMonth, today);
+            foreach (var category in byCategory)
+            {
+                category.PesosAmount = Math.Round(category.PesosAmount * todayPesoRate, 2);
+                category.DollarsAmount = Math.Round(category.DollarsAmount * todayDollarRate, 2);
+            }
+
+            var evolution = BuildCardEvolution(transactions, cardId, today, MonthlySeriesLength);
+            await ConvertSimpleSeriesToReferenceCurrencyAsync(evolution, peso, dollar, referenceAsset);
 
             return new CardDetailReportDTO
             {
@@ -85,26 +182,70 @@ namespace JazFinanzasApp.API.Business.Services
                 CardName = card.Name,
                 NextClosingDate = card.NextClosingDate,
                 NextDueDate = card.NextDueDate,
-                CurrentMonthPesos = Math.Round(thisCard.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualAmount(t, today)), 2),
-                CurrentMonthDollars = Math.Round(thisCard.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualAmount(t, today)), 2),
-                ByCategory = BuildCategoryBreakdown(transactions, cardId, startMonth, today),
-                MonthlyEvolution = BuildCardEvolution(transactions, cardId, today, MonthlySeriesLength)
+                ReferenceAssetSymbol = referenceAsset.Symbol,
+                PesoAssetSymbol = peso.Symbol,
+                PesoAssetColor = peso.Color,
+                DollarAssetSymbol = dollar.Symbol,
+                DollarAssetColor = dollar.Color,
+                CurrentMonthPesos = Math.Round(currentMonthPesosNative * todayPesoRate, 2),
+                CurrentMonthDollars = Math.Round(currentMonthDollarsNative * todayDollarRate, 2),
+                ByCategory = byCategory,
+                MonthlyEvolution = evolution
             };
         }
 
         // T8 extendido (NetWorthReportService.CountLiveInstallmentMonths, Fase 10): la misma regla de
         // "qué cuota sigue viva" pero proyectada hacia adelante mes a mes, no solo contada.
-        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId)
+        //
+        // Corrección 2026-09-05: los montos vienen convertidos a `assetId`. Los meses son futuros y no
+        // tienen cotización propia — GetQuotePrice cae en la más reciente disponible (T9), que
+        // termina siendo la de hoy, así que se pide una sola vez para toda la proyección.
+        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId)
         {
+            var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
+                ?? throw new NotFoundException("Asset not found");
+            var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
+            var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
+
             var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
             var lastPaidByCard = await _cardPaymentRepository.GetLastPaidMonthByCardAsync(userId);
             var currentMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
-            return BuildFutureCommitment(transactions, lastPaidByCard, currentMonth, FutureCommitmentMonths);
+            var result = BuildFutureCommitment(transactions, lastPaidByCard, currentMonth, FutureCommitmentMonths);
+
+            var hasPesos = result.Timeline.Any(t => t.AssetName == PesoAssetName);
+            var hasDollars = result.Timeline.Any(t => t.AssetName == DollarAssetName);
+            var pesoRate = hasPesos ? await GetConversionRateAsync(peso, referenceAsset, currentMonth) : 1m;
+            var dollarRate = hasDollars ? await GetConversionRateAsync(dollar, referenceAsset, currentMonth) : 1m;
+            decimal RateFor(string assetName) => assetName == DollarAssetName ? dollarRate : assetName == PesoAssetName ? pesoRate : 1m;
+
+            foreach (var month in result.MonthlySeries)
+                foreach (var purchase in month.Purchases)
+                    purchase.Amount = Math.Round(purchase.Amount * RateFor(purchase.AssetName), 2);
+
+            foreach (var entry in result.Timeline)
+                entry.InstallmentAmount = Math.Round(entry.InstallmentAmount * RateFor(entry.AssetName), 2);
+
+            result.ReferenceAssetSymbol = referenceAsset.Symbol;
+            result.PesoAssetSymbol = peso.Symbol;
+            result.PesoAssetColor = peso.Color;
+            result.DollarAssetSymbol = dollar.Symbol;
+            result.DollarAssetColor = dollar.Color;
+
+            return result;
         }
 
-        public async Task<CardPromotionsReportDTO> GetPromotionsAsync(int userId)
+        // Corrección 2026-09-05: los montos vienen convertidos a `assetId`, con un criterio de fecha
+        // distinto según qué representa cada uno — TotalSaved es un agregado histórico (cotización de
+        // hoy, igual que ByCategory en Por tarjeta), MonthlySeries es una serie temporal (cotización de
+        // cada mes) y Pending son eventos fechados puntuales (cotización de su propio CreditDate).
+        public async Task<CardPromotionsReportDTO> GetPromotionsAsync(int userId, int assetId)
         {
+            var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
+                ?? throw new NotFoundException("Asset not found");
+            var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
+            var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
+
             var discounts = (await _cardTransactionDiscountRepository.GetByUserIdWithCardTransactionAsync(userId)).ToList();
             var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
 
@@ -114,7 +255,36 @@ namespace JazFinanzasApp.API.Business.Services
                 .Where(t => { var m = new DateTime(t.Date.Year, t.Date.Month, 1); return m >= startMonth && m <= today; })
                 .ToList();
 
-            return BuildPromotionsReport(discounts, consumptionInWindow, today, MonthlySeriesLength);
+            var report = BuildPromotionsReport(discounts, consumptionInWindow, today, MonthlySeriesLength);
+
+            var todayPesoRate = await GetConversionRateAsync(peso, referenceAsset, today);
+            var todayDollarRate = await GetConversionRateAsync(dollar, referenceAsset, today);
+            report.TotalSavedPesos = Math.Round(report.TotalSavedPesos * todayPesoRate, 2);
+            report.TotalSavedDollars = Math.Round(report.TotalSavedDollars * todayDollarRate, 2);
+
+            foreach (var month in report.MonthlySeries)
+            {
+                var pesoRate = month.PesosAmount != 0 ? await GetConversionRateAsync(peso, referenceAsset, month.Month) : 1m;
+                var dollarRate = month.DollarsAmount != 0 ? await GetConversionRateAsync(dollar, referenceAsset, month.Month) : 1m;
+                month.PesosAmount = Math.Round(month.PesosAmount * pesoRate, 2);
+                month.DollarsAmount = Math.Round(month.DollarsAmount * dollarRate, 2);
+            }
+
+            foreach (var pending in report.Pending)
+            {
+                var nativeAsset = pending.AssetName == DollarAssetName ? dollar : peso;
+                var rate = await GetConversionRateAsync(nativeAsset, referenceAsset, pending.CreditDate);
+                pending.PendingToCredit = Math.Round(pending.PendingToCredit * rate, 2);
+                pending.PendingToApply = Math.Round(pending.PendingToApply * rate, 2);
+            }
+
+            report.ReferenceAssetSymbol = referenceAsset.Symbol;
+            report.PesoAssetSymbol = peso.Symbol;
+            report.PesoAssetColor = peso.Color;
+            report.DollarAssetSymbol = dollar.Symbol;
+            report.DollarAssetColor = dollar.Color;
+
+            return report;
         }
 
         // Reusa exactamente la lógica de ReportService.GetCardStatsAsync (pantalla vieja, cardId = 0
@@ -405,6 +575,7 @@ namespace JazFinanzasApp.API.Business.Services
                     CardTransactionId = d.CardTransactionId,
                     Detail = d.CardTransaction?.Detail ?? string.Empty,
                     CardName = d.CardTransaction?.Card?.Name ?? string.Empty,
+                    AssetName = d.CardTransaction?.Asset?.Name ?? PesoAssetName,
                     PendingToCredit = d.Amount - d.AmountMaterialized,
                     PendingToApply = d.AmountMaterialized - d.AmountApplied,
                     CreditDate = d.CreditDate

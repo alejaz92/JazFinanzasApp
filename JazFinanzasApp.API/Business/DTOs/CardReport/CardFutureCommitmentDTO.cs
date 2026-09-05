@@ -2,6 +2,15 @@ namespace JazFinanzasApp.API.Business.DTO.CardReport
 {
     public class CardFutureCommitmentDTO
     {
+        // Corrección 2026-09-05: Amount/InstallmentAmount vienen convertidos a ReferenceAssetSymbol,
+        // con la cotización de hoy (una fecha futura no tiene cotización propia — cae en la más
+        // reciente disponible, que termina siendo la de hoy). Mismos 5 campos que CardGeneralReportDTO.
+        public string ReferenceAssetSymbol { get; set; } = string.Empty;
+        public string PesoAssetSymbol { get; set; } = string.Empty;
+        public string PesoAssetColor { get; set; } = string.Empty;
+        public string DollarAssetSymbol { get; set; } = string.Empty;
+        public string DollarAssetColor { get; set; } = string.Empty;
+
         public List<FutureCommitmentMonthDTO> MonthlySeries { get; set; } = new();
         public List<FutureCommitmentPurchaseDTO> Timeline { get; set; } = new();
     }

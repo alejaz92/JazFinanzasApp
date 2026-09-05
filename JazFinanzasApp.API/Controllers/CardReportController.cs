@@ -19,31 +19,31 @@ namespace JazFinanzasApp.API.Controllers
 
         private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
 
-        [HttpGet("General")]
-        public async Task<IActionResult> GetGeneral()
+        [HttpGet("General/{assetId}")]
+        public async Task<IActionResult> GetGeneral(int assetId)
         {
-            var result = await _cardReportService.GetGeneralAsync(GetUserId());
+            var result = await _cardReportService.GetGeneralAsync(GetUserId(), assetId);
             return Ok(result);
         }
 
-        [HttpGet("ByCard/{cardId}")]
-        public async Task<IActionResult> GetByCard(int cardId)
+        [HttpGet("ByCard/{cardId}/{assetId}")]
+        public async Task<IActionResult> GetByCard(int cardId, int assetId)
         {
-            var result = await _cardReportService.GetByCardAsync(GetUserId(), cardId);
+            var result = await _cardReportService.GetByCardAsync(GetUserId(), cardId, assetId);
             return Ok(result);
         }
 
-        [HttpGet("FutureCommitment")]
-        public async Task<IActionResult> GetFutureCommitment()
+        [HttpGet("FutureCommitment/{assetId}")]
+        public async Task<IActionResult> GetFutureCommitment(int assetId)
         {
-            var result = await _cardReportService.GetFutureCommitmentAsync(GetUserId());
+            var result = await _cardReportService.GetFutureCommitmentAsync(GetUserId(), assetId);
             return Ok(result);
         }
 
-        [HttpGet("Promotions")]
-        public async Task<IActionResult> GetPromotions()
+        [HttpGet("Promotions/{assetId}")]
+        public async Task<IActionResult> GetPromotions(int assetId)
         {
-            var result = await _cardReportService.GetPromotionsAsync(GetUserId());
+            var result = await _cardReportService.GetPromotionsAsync(GetUserId(), assetId);
             return Ok(result);
         }
 
