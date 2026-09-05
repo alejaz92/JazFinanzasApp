@@ -53,8 +53,17 @@ namespace JazFinanzasApp.API.Business.Services
             return new CardGeneralReportDTO
             {
                 MonthlySeries = BuildMonthlyConsumptionSeries(transactions, today, MonthlySeriesLength),
-                CurrentMonthSummary = await BuildCurrentMonthSummaryAsync(userId, today)
+                CurrentMonthSummary = await BuildMonthSummaryAsync(userId, today)
             };
+        }
+
+        // Corrección 2026-09-05: el usuario pidió poder navegar el "resumen del mes" a meses
+        // distintos del actual — la lógica ya era genérica sobre `month` (GetCardTransactionsToPay
+        // ya lo era), solo hacía falta exponerla suelta.
+        public async Task<List<CardTransactionPaymentListDTO>> GetMonthSummaryAsync(int userId, DateTime month)
+        {
+            var normalizedMonth = new DateTime(month.Year, month.Month, 1);
+            return await BuildMonthSummaryAsync(userId, normalizedMonth);
         }
 
         public async Task<CardDetailReportDTO> GetByCardAsync(int userId, int cardId)
@@ -110,11 +119,13 @@ namespace JazFinanzasApp.API.Business.Services
 
         // Reusa exactamente la lógica de ReportService.GetCardStatsAsync (pantalla vieja, cardId = 0
         // para "todas las tarjetas"): mismo criterio de instalmentDisplay y de conversión a pesos.
-        private async Task<List<CardTransactionPaymentListDTO>> BuildCurrentMonthSummaryAsync(int userId, DateTime today)
+        // Genérica sobre `month` desde el vamos — GetGeneralAsync la usa con el mes en curso y
+        // GetMonthSummaryAsync con cualquier otro.
+        private async Task<List<CardTransactionPaymentListDTO>> BuildMonthSummaryAsync(int userId, DateTime month)
         {
             var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
-            var exchangeRate = await _assetQuoteRepository.GetQuotePrice(peso.Id, today, "TARJETA");
-            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(0, today, userId);
+            var exchangeRate = await _assetQuoteRepository.GetQuotePrice(peso.Id, month, "TARJETA");
+            var cardTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(0, month, userId);
 
             return cardTransactions.Select(m =>
             {
@@ -125,7 +136,7 @@ namespace JazFinanzasApp.API.Business.Services
                 }
                 else
                 {
-                    var currentInstallment = ((today.Year - m.FirstInstallment.Year) * 12) + today.Month - m.FirstInstallment.Month + 1;
+                    var currentInstallment = ((month.Year - m.FirstInstallment.Year) * 12) + month.Month - m.FirstInstallment.Month + 1;
                     installmentDisplay = $"{currentInstallment}/{m.Installments}";
                 }
                 var valueInPesos = m.Asset.Name == DollarAssetName ? m.InstallmentAmount * exchangeRate : m.InstallmentAmount;

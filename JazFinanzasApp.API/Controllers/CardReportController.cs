@@ -46,5 +46,12 @@ namespace JazFinanzasApp.API.Controllers
             var result = await _cardReportService.GetPromotionsAsync(GetUserId());
             return Ok(result);
         }
+
+        [HttpGet("MonthSummary")]
+        public async Task<IActionResult> GetMonthSummary([FromQuery] DateTime month)
+        {
+            var result = await _cardReportService.GetMonthSummaryAsync(GetUserId(), month);
+            return Ok(result);
+        }
     }
 }
