@@ -34,9 +34,9 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet("FutureCommitment/{assetId}")]
-        public async Task<IActionResult> GetFutureCommitment(int assetId, [FromQuery] bool includeRecurring = true)
+        public async Task<IActionResult> GetFutureCommitment(int assetId, [FromQuery] bool includeRecurring = true, [FromQuery] int cardId = 0)
         {
-            var result = await _cardReportService.GetFutureCommitmentAsync(GetUserId(), assetId, includeRecurring);
+            var result = await _cardReportService.GetFutureCommitmentAsync(GetUserId(), assetId, includeRecurring, cardId);
             return Ok(result);
         }
 

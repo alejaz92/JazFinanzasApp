@@ -201,14 +201,15 @@ namespace JazFinanzasApp.API.Business.Services
         // Corrección 2026-09-05: los montos vienen convertidos a `assetId`. Los meses son futuros y no
         // tienen cotización propia — GetQuotePrice cae en la más reciente disponible (T9), que
         // termina siendo la de hoy, así que se pide una sola vez para toda la proyección.
-        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true)
+        public async Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true, int cardId = 0)
         {
             var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
                 ?? throw new NotFoundException("Asset not found");
             var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
             var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
 
-            var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
+            var allTransactions = await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId);
+            var transactions = (cardId == 0 ? allTransactions : allTransactions.Where(t => t.CardId == cardId)).ToList();
             var lastPaidByCard = await _cardPaymentRepository.GetLastPaidMonthByCardAsync(userId);
             var currentMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 

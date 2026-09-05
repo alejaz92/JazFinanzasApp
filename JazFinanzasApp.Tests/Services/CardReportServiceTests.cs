@@ -540,6 +540,26 @@ namespace JazFinanzasApp.Tests.Services
             result.Timeline.Single().InstallmentAmount.Should().Be(1m);
         }
 
+        // Corrección 2026-09-05, sexta ronda: filtro por tarjeta (0 = todas, mismo criterio que
+        // MonthSummary/GetCardTransactionsToPay) — pedido para poder ver el compromiso futuro de una
+        // sola tarjeta, igual que ya se puede en General y en Por tarjeta.
+        [Fact]
+        public async Task GetFutureCommitmentAsync_FiltersByCardId_WhenGiven()
+        {
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var peso = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "$", Color = "#111" };
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#222" };
+            var ctCard10 = MakeCardTransaction(1, 10, "NO", today, 2, detail: "De la 10", cardName: "Visa");
+            var ctCard20 = MakeCardTransaction(2, 20, "NO", today, 2, detail: "De la 20", cardName: "Master");
+
+            SetupCurrencyMocks(peso, dollar, referenceAsset: peso, new List<CardTransaction> { ctCard10, ctCard20 });
+            _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
+
+            var result = await _sut.GetFutureCommitmentAsync(UserId, peso.Id, cardId: 10);
+
+            result.Timeline.Should().ContainSingle(t => t.Detail == "De la 10");
+        }
+
         // ── GetPromotionsAsync: TotalSaved (hoy), MonthlySeries (por mes), Pending (su CreditDate) ─
 
         [Fact]

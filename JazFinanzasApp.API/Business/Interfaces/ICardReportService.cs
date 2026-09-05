@@ -11,8 +11,9 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<CardGeneralReportDTO> GetGeneralAsync(int userId, int assetId);
         Task<CardDetailReportDTO> GetByCardAsync(int userId, int cardId, int assetId);
         // includeRecurring en false saca los gastos recurrentes sin fin ("YES") de la proyección —
-        // pedido del usuario, quinta ronda (2026-09-05).
-        Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true);
+        // pedido del usuario, quinta ronda (2026-09-05). cardId = 0 (default) trae todas las
+        // tarjetas — sexta ronda, mismo criterio 0=todas que MonthSummary/GetCardTransactionsToPay.
+        Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true, int cardId = 0);
         Task<CardPromotionsReportDTO> GetPromotionsAsync(int userId, int assetId);
 
         // Corrección 2026-09-05: el resumen del mes ahora se puede pedir para cualquier mes, no solo
