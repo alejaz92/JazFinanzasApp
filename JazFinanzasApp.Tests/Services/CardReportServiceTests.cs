@@ -75,6 +75,57 @@ namespace JazFinanzasApp.Tests.Services
             series.SelectMany(p => p.Cards).Should().BeEmpty();
         }
 
+        // ── Devengado de recurrentes (Fase 15, encontrado al revisar "General" en el navegador): una
+        // suscripción vieja tiene que seguir devengando todos los meses que sigue activa, no solo el
+        // mes en que se cargó la fila ──────────────────────────────────────────────────────────────
+
+        [Fact]
+        public void BuildMonthlyConsumptionSeries_Recurrent_AccruesEveryMonthSinceItStarted_NotOnlyItsOwnDate()
+        {
+            var latestMonth = new DateTime(2026, 9, 1);
+            // Cargada hace casi dos años (fecha de la fila), pero arrancó en mayo 2024 y sigue activa.
+            var netflix = MakeCardTransaction(1, 10, "YES", new DateTime(2024, 5, 1), 0, installmentAmount: 15m, assetName: "Dolar Estadounidense", date: new DateTime(2024, 11, 28));
+
+            var series = CardReportService.BuildMonthlyConsumptionSeries(new List<CardTransaction> { netflix }, latestMonth, 3);
+
+            series.Should().OnlyContain(p => p.Cards.Single().DollarsAmount == 15m);
+        }
+
+        [Fact]
+        public void BuildMonthlyConsumptionSeries_Recurrent_NotYetStarted_ContributesNothing()
+        {
+            var latestMonth = new DateTime(2026, 9, 1);
+            var futureSubscription = MakeCardTransaction(1, 10, "YES", new DateTime(2026, 10, 1), 0, installmentAmount: 15m, assetName: "Dolar Estadounidense");
+
+            var series = CardReportService.BuildMonthlyConsumptionSeries(new List<CardTransaction> { futureSubscription }, latestMonth, 3);
+
+            series.SelectMany(p => p.Cards).Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildCategoryBreakdown_Recurrent_SumsInstallmentAmountOncePerActiveMonth()
+        {
+            var startMonth = new DateTime(2026, 7, 1);
+            var latestMonth = new DateTime(2026, 9, 1);
+            var netflix = MakeCardTransaction(1, 10, "YES", new DateTime(2024, 5, 1), 0, installmentAmount: 15m, assetName: "Dolar Estadounidense", categoryName: "Viajes");
+
+            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { netflix }, cardId: 10, startMonth, latestMonth);
+
+            result.Should().ContainSingle();
+            result.Single().DollarsAmount.Should().Be(45m); // 15 x 3 meses (jul, ago, sep)
+        }
+
+        [Fact]
+        public void BuildCardEvolution_Recurrent_AccruesEveryMonthSinceItStarted()
+        {
+            var latestMonth = new DateTime(2026, 9, 1);
+            var netflix = MakeCardTransaction(1, 10, "YES", new DateTime(2024, 5, 1), 0, installmentAmount: 15m, assetName: "Dolar Estadounidense");
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { netflix }, cardId: 10, latestMonth, 3);
+
+            evolution.Should().OnlyContain(p => p.DollarsAmount == 15m);
+        }
+
         // ── BuildCategoryBreakdown ───────────────────────────────────────────────────────────────
 
         [Fact]
@@ -86,7 +137,7 @@ namespace JazFinanzasApp.Tests.Services
             var ropa = MakeCardTransaction(3, 10, "NO", new DateTime(2026, 8, 5), 1, totalAmount: 300m, categoryName: "Ropa", transactionClassId: 2);
             var otherCard = MakeCardTransaction(4, 99, "NO", new DateTime(2026, 8, 5), 1, totalAmount: 999m, categoryName: "Supermercado", transactionClassId: 1);
 
-            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { superA, superB, ropa, otherCard }, cardId: 10, startMonth);
+            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { superA, superB, ropa, otherCard }, cardId: 10, startMonth, latestMonth: new DateTime(2026, 9, 1));
 
             result.Should().HaveCount(2);
             result.Single(c => c.TransactionClassId == 1).PesosAmount.Should().Be(1500m);
@@ -100,7 +151,7 @@ namespace JazFinanzasApp.Tests.Services
             var startMonth = new DateTime(2026, 7, 1);
             var before = MakeCardTransaction(1, 10, "NO", new DateTime(2026, 6, 30), 1, totalAmount: 1000m);
 
-            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { before }, cardId: 10, startMonth);
+            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { before }, cardId: 10, startMonth, latestMonth: new DateTime(2026, 9, 1));
 
             result.Should().BeEmpty();
         }

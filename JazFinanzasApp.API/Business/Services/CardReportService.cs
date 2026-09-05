@@ -68,9 +68,7 @@ namespace JazFinanzasApp.API.Business.Services
             var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
             var startMonth = today.AddMonths(-(MonthlySeriesLength - 1));
 
-            var currentMonthTransactions = transactions
-                .Where(t => t.CardId == cardId && t.Date.Year == today.Year && t.Date.Month == today.Month)
-                .ToList();
+            var thisCard = transactions.Where(t => t.CardId == cardId).ToList();
 
             return new CardDetailReportDTO
             {
@@ -78,9 +76,9 @@ namespace JazFinanzasApp.API.Business.Services
                 CardName = card.Name,
                 NextClosingDate = card.NextClosingDate,
                 NextDueDate = card.NextDueDate,
-                CurrentMonthPesos = currentMonthTransactions.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => t.TotalAmount),
-                CurrentMonthDollars = currentMonthTransactions.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => t.TotalAmount),
-                ByCategory = BuildCategoryBreakdown(transactions, cardId, startMonth),
+                CurrentMonthPesos = Math.Round(thisCard.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualAmount(t, today)), 2),
+                CurrentMonthDollars = Math.Round(thisCard.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualAmount(t, today)), 2),
+                ByCategory = BuildCategoryBreakdown(transactions, cardId, startMonth, today),
                 MonthlyEvolution = BuildCardEvolution(transactions, cardId, today, MonthlySeriesLength)
             };
         }
@@ -153,18 +151,65 @@ namespace JazFinanzasApp.API.Business.Services
             .ToList();
         }
 
+        // Devengado de UN mes para una compra puntual (Fase 15, corregido tras la revisión visual del
+        // reporte "General"): una compra de una vez o en cuotas fijas ("NO"/"CLOSED") se devenga una
+        // sola vez, completa, en su fecha de compra (CLAUDE.md Backend: "fecha y monto reales del
+        // gasto"). Una recurrente sin fin ("YES", ej. una suscripción) no tiene un TotalAmount que
+        // devengar una vez — es un cargo que se repite todos los meses desde que arrancó, así que
+        // devenga InstallmentAmount en CADA mes desde FirstInstallment en adelante, no solo en el mes
+        // en que se cargó la fila. Sin este caso especial, una suscripción vieja desaparecía del
+        // consumo devengado de todos los meses salvo el de su alta.
+        private static decimal GetAccrualAmount(CardTransaction ct, DateTime month)
+        {
+            if (ct.Repeat == "YES")
+            {
+                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
+                return month >= firstMonth ? ct.InstallmentAmount : 0m;
+            }
+
+            var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
+            return ctMonth == month ? ct.TotalAmount : 0m;
+        }
+
+        // Devengado total de una compra sobre una ventana [startMonth, endMonth] — usado donde hace
+        // falta un total del período en vez de una serie mes a mes (composición por categoría).
+        private static decimal GetAccrualTotalInWindow(CardTransaction ct, DateTime startMonth, DateTime endMonth)
+        {
+            if (ct.Repeat == "YES")
+            {
+                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
+                var effectiveStart = firstMonth > startMonth ? firstMonth : startMonth;
+                if (effectiveStart > endMonth) return 0m;
+                var months = (endMonth.Year - effectiveStart.Year) * 12 + endMonth.Month - effectiveStart.Month + 1;
+                return ct.InstallmentAmount * months;
+            }
+
+            var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
+            return ctMonth >= startMonth && ctMonth <= endMonth ? ct.TotalAmount : 0m;
+        }
+
+        private static bool HasAnyAccrualInWindow(CardTransaction ct, DateTime startMonth, DateTime endMonth)
+        {
+            if (ct.Repeat == "YES")
+            {
+                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
+                return firstMonth <= endMonth;
+            }
+
+            var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
+            return ctMonth >= startMonth && ctMonth <= endMonth;
+        }
+
         // Pura — testeable sin mocks. Pesos y dólares nunca se mezclan (sección 6, Flujo 4: "en pesos
         // y en dólares"), mismo criterio que ya usaba GetCardStatsAsync.
         public static List<CardMonthlySeriesPointDTO> BuildMonthlyConsumptionSeries(List<CardTransaction> transactions, DateTime latestMonth, int monthsBack)
         {
             var startMonth = latestMonth.AddMonths(-(monthsBack - 1));
-            var inWindow = transactions
-                .Where(t => { var m = new DateTime(t.Date.Year, t.Date.Month, 1); return m >= startMonth && m <= latestMonth; })
-                .ToList();
 
-            // Solo las tarjetas con algún consumo en la ventana — una tarjeta sin actividad no agrega
-            // una serie de puros ceros.
-            var cardsInWindow = inWindow
+            // Solo las tarjetas con algún consumo en la ventana (de una vez, o recurrente activo) —
+            // una tarjeta sin actividad no agrega una serie de puros ceros.
+            var cardsInWindow = transactions
+                .Where(t => HasAnyAccrualInWindow(t, startMonth, latestMonth))
                 .Select(t => (t.CardId, CardName: t.Card?.Name ?? string.Empty))
                 .Distinct()
                 .ToList();
@@ -173,14 +218,13 @@ namespace JazFinanzasApp.API.Business.Services
             for (var i = 0; i < monthsBack; i++)
             {
                 var month = startMonth.AddMonths(i);
-                var monthTransactions = inWindow.Where(t => t.Date.Year == month.Year && t.Date.Month == month.Month).ToList();
 
                 var cards = cardsInWindow.Select(c => new CardMonthAmountDTO
                 {
                     CardId = c.CardId,
                     CardName = c.CardName,
-                    PesosAmount = Math.Round(monthTransactions.Where(t => t.CardId == c.CardId && t.Asset?.Name == PesoAssetName).Sum(t => t.TotalAmount), 2),
-                    DollarsAmount = Math.Round(monthTransactions.Where(t => t.CardId == c.CardId && t.Asset?.Name == DollarAssetName).Sum(t => t.TotalAmount), 2)
+                    PesosAmount = Math.Round(transactions.Where(t => t.CardId == c.CardId && t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualAmount(t, month)), 2),
+                    DollarsAmount = Math.Round(transactions.Where(t => t.CardId == c.CardId && t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualAmount(t, month)), 2)
                 }).ToList();
 
                 points.Add(new CardMonthlySeriesPointDTO { Month = month, Cards = cards });
@@ -189,20 +233,21 @@ namespace JazFinanzasApp.API.Business.Services
             return points;
         }
 
-        // Pura — testeable sin mocks. Composición por categoría de una tarjeta sobre la ventana de
-        // los últimos `monthsBack` meses (no serie mensual, total del período).
-        public static List<CardCategoryAmountDTO> BuildCategoryBreakdown(List<CardTransaction> transactions, int cardId, DateTime startMonth)
+        // Pura — testeable sin mocks. Composición por categoría de una tarjeta sobre la ventana
+        // [startMonth, latestMonth] (no serie mensual, total del período).
+        public static List<CardCategoryAmountDTO> BuildCategoryBreakdown(List<CardTransaction> transactions, int cardId, DateTime startMonth, DateTime latestMonth)
         {
             return transactions
-                .Where(t => t.CardId == cardId && new DateTime(t.Date.Year, t.Date.Month, 1) >= startMonth)
+                .Where(t => t.CardId == cardId)
                 .GroupBy(t => new { t.TransactionClassId, Name = t.TransactionClass?.Description ?? string.Empty })
                 .Select(g => new CardCategoryAmountDTO
                 {
                     TransactionClassId = g.Key.TransactionClassId,
                     TransactionClassName = g.Key.Name,
-                    PesosAmount = Math.Round(g.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => t.TotalAmount), 2),
-                    DollarsAmount = Math.Round(g.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => t.TotalAmount), 2)
+                    PesosAmount = Math.Round(g.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualTotalInWindow(t, startMonth, latestMonth)), 2),
+                    DollarsAmount = Math.Round(g.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualTotalInWindow(t, startMonth, latestMonth)), 2)
                 })
+                .Where(c => c.PesosAmount != 0 || c.DollarsAmount != 0)
                 .OrderByDescending(c => c.PesosAmount + c.DollarsAmount)
                 .ToList();
         }
@@ -212,20 +257,18 @@ namespace JazFinanzasApp.API.Business.Services
         public static List<CardSimpleMonthlyPointDTO> BuildCardEvolution(List<CardTransaction> transactions, int cardId, DateTime latestMonth, int monthsBack)
         {
             var startMonth = latestMonth.AddMonths(-(monthsBack - 1));
+            var thisCard = transactions.Where(t => t.CardId == cardId).ToList();
             var points = new List<CardSimpleMonthlyPointDTO>();
 
             for (var i = 0; i < monthsBack; i++)
             {
                 var month = startMonth.AddMonths(i);
-                var monthTransactions = transactions
-                    .Where(t => t.CardId == cardId && t.Date.Year == month.Year && t.Date.Month == month.Month)
-                    .ToList();
 
                 points.Add(new CardSimpleMonthlyPointDTO
                 {
                     Month = month,
-                    PesosAmount = Math.Round(monthTransactions.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => t.TotalAmount), 2),
-                    DollarsAmount = Math.Round(monthTransactions.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => t.TotalAmount), 2)
+                    PesosAmount = Math.Round(thisCard.Where(t => t.Asset?.Name == PesoAssetName).Sum(t => GetAccrualAmount(t, month)), 2),
+                    DollarsAmount = Math.Round(thisCard.Where(t => t.Asset?.Name == DollarAssetName).Sum(t => GetAccrualAmount(t, month)), 2)
                 });
             }
 
