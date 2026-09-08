@@ -46,12 +46,6 @@ namespace JazFinanzasApp.API.Business.DTO.CardReport
         // para elegir la cotización correcta al convertir a ReferenceAssetSymbol.
         public string AssetName { get; set; } = string.Empty;
 
-        // Símbolo de esa misma moneda nativa — a diferencia de AssetName, este campo no lo toca la
-        // conversión de GetPromotionsAsync (los montos sí se convierten in-place, el símbolo se deja
-        // igual). Lo usa GetPendingReimbursementsAsync (sin convertir) para que el Dashboard muestre
-        // el monto en la moneda real de la deuda, no en la de referencia elegida.
-        public string AssetSymbol { get; set; } = string.Empty;
-
         public decimal PendingToCredit { get; set; }
         public decimal PendingToApply { get; set; }
         public DateTime CreditDate { get; set; }

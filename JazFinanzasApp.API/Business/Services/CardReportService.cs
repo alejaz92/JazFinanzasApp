@@ -248,7 +248,15 @@ namespace JazFinanzasApp.API.Business.Services
             var peso = await _assetRepository.GetAssetByNameAsync(PesoAssetName);
             var dollar = await _assetRepository.GetAssetByNameAsync(DollarAssetName);
 
-            var (discounts, consumptionInWindow, today) = await LoadPromotionsInputAsync(userId);
+            var discounts = (await _cardTransactionDiscountRepository.GetByUserIdWithCardTransactionAsync(userId)).ToList();
+            var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
+
+            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var startMonth = today.AddMonths(-(MonthlySeriesLength - 1));
+            var consumptionInWindow = transactions
+                .Where(t => { var m = new DateTime(t.Date.Year, t.Date.Month, 1); return m >= startMonth && m <= today; })
+                .ToList();
+
             var report = BuildPromotionsReport(discounts, consumptionInWindow, today, MonthlySeriesLength);
 
             var todayPesoRate = await GetConversionRateAsync(peso, referenceAsset, today);
@@ -279,32 +287,6 @@ namespace JazFinanzasApp.API.Business.Services
             report.DollarAssetColor = dollar.Color;
 
             return report;
-        }
-
-        // Reintegros pendientes en su moneda nativa, sin convertir a ninguna moneda de referencia —
-        // lo que usa el Dashboard (Fase 16) para la bandeja "Requiere tu atención": un reintegro no
-        // tiene "moneda de referencia elegida", tiene la moneda de la compra que lo generó, y
-        // mostrarlo convertido con el símbolo de otra moneda encima es directamente incorrecto (no
-        // solo una aproximación). Reusa el mismo fetch y el mismo `BuildPromotionsReport` que
-        // GetPromotionsAsync, pero sin el bloque de conversión de moneda.
-        public async Task<List<PendingReimbursementDTO>> GetPendingReimbursementsAsync(int userId)
-        {
-            var (discounts, consumptionInWindow, today) = await LoadPromotionsInputAsync(userId);
-            return BuildPromotionsReport(discounts, consumptionInWindow, today, MonthlySeriesLength).Pending;
-        }
-
-        private async Task<(List<CardTransactionDiscount> Discounts, List<CardTransaction> ConsumptionInWindow, DateTime Today)> LoadPromotionsInputAsync(int userId)
-        {
-            var discounts = (await _cardTransactionDiscountRepository.GetByUserIdWithCardTransactionAsync(userId)).ToList();
-            var transactions = (await _cardTransactionRepository.GetByUserIdWithDetailsAsync(userId)).ToList();
-
-            var today = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            var startMonth = today.AddMonths(-(MonthlySeriesLength - 1));
-            var consumptionInWindow = transactions
-                .Where(t => { var m = new DateTime(t.Date.Year, t.Date.Month, 1); return m >= startMonth && m <= today; })
-                .ToList();
-
-            return (discounts, consumptionInWindow, today);
         }
 
         // Reusa exactamente la lógica de ReportService.GetCardStatsAsync (pantalla vieja, cardId = 0
@@ -608,7 +590,6 @@ namespace JazFinanzasApp.API.Business.Services
                     Detail = d.CardTransaction?.Detail ?? string.Empty,
                     CardName = d.CardTransaction?.Card?.Name ?? string.Empty,
                     AssetName = d.CardTransaction?.Asset?.Name ?? PesoAssetName,
-                    AssetSymbol = d.CardTransaction?.Asset?.Symbol ?? string.Empty,
                     PendingToCredit = d.Amount - d.AmountMaterialized,
                     PendingToApply = d.AmountMaterialized - d.AmountApplied,
                     CreditDate = d.CreditDate

@@ -16,11 +16,6 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<CardFutureCommitmentDTO> GetFutureCommitmentAsync(int userId, int assetId, bool includeRecurring = true, int cardId = 0);
         Task<CardPromotionsReportDTO> GetPromotionsAsync(int userId, int assetId);
 
-        // Corrección 2026-09-08: los reintegros pendientes en su moneda nativa, sin convertir — los
-        // usa el Dashboard (Fase 16) para no mostrar un reintegro en la moneda de referencia elegida
-        // (que no es la moneda de la deuda real).
-        Task<List<PendingReimbursementDTO>> GetPendingReimbursementsAsync(int userId);
-
         // Corrección 2026-09-05: el resumen del mes ahora se puede pedir para cualquier mes, no solo
         // el actual (que sigue viniendo embebido en GetGeneralAsync), y opcionalmente para una sola
         // tarjeta (cardId = 0, default, trae todas — lo usa Por tarjeta).
