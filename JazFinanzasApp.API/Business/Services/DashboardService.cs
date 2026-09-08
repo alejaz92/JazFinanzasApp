@@ -141,8 +141,12 @@ namespace JazFinanzasApp.API.Business.Services
                 });
             }
 
-            var promotions = await _cardReportService.GetPromotionsAsync(userId, asset.Id);
-            foreach (var reimbursement in promotions.Pending.Where(p => p.PendingToApply > 0))
+            // Sin convertir a `asset` (Corrección 2026-09-08): un reintegro pendiente está en la
+            // moneda de la compra que lo generó, no en la moneda de referencia elegida para el resto
+            // del dashboard — mostrarlo convertido con el símbolo de otra moneda encima confunde cuál
+            // es la moneda real de la deuda.
+            var pendingReimbursements = await _cardReportService.GetPendingReimbursementsAsync(userId);
+            foreach (var reimbursement in pendingReimbursements.Where(p => p.PendingToApply > 0))
             {
                 pending.Add(new DashboardPendingItemDTO
                 {
@@ -150,7 +154,7 @@ namespace JazFinanzasApp.API.Business.Services
                     Title = reimbursement.Detail,
                     Detail = reimbursement.CardName,
                     Amount = reimbursement.PendingToApply,
-                    AssetSymbol = promotions.ReferenceAssetSymbol,
+                    AssetSymbol = reimbursement.AssetSymbol,
                     Date = reimbursement.CreditDate,
                     LinkId = reimbursement.CardTransactionId
                 });

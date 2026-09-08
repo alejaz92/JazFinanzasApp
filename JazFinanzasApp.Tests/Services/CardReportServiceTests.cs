@@ -54,7 +54,7 @@ namespace JazFinanzasApp.Tests.Services
         private static CardTransaction MakeCardTransaction(
             int id, int cardId, string repeat, DateTime firstInstallment, int installments,
             decimal totalAmount = 3000m, decimal installmentAmount = 1000m,
-            string assetName = "Peso Argentino", string cardName = "Visa Santander",
+            string assetName = "Peso Argentino", string assetSymbol = "$", string cardName = "Visa Santander",
             string detail = "Compra", DateTime? date = null, int transactionClassId = 1, string categoryName = "Supermercado")
             => new CardTransaction
             {
@@ -67,7 +67,7 @@ namespace JazFinanzasApp.Tests.Services
                 InstallmentAmount = installmentAmount,
                 TotalAmount = totalAmount,
                 AssetId = 1,
-                Asset = new Asset { Id = 1, Name = assetName },
+                Asset = new Asset { Id = 1, Name = assetName, Symbol = assetSymbol },
                 Detail = detail,
                 Date = date ?? firstInstallment,
                 TransactionClassId = transactionClassId,
@@ -369,7 +369,7 @@ namespace JazFinanzasApp.Tests.Services
         public void BuildPromotionsReport_PendingIncludesNotFullyApplied()
         {
             var latestMonth = new DateTime(2026, 9, 1);
-            var ct = MakeCardTransaction(1, 10, "NO", latestMonth, 1, detail: "Compra con reintegro", cardName: "Visa");
+            var ct = MakeCardTransaction(1, 10, "NO", latestMonth, 1, detail: "Compra con reintegro", assetSymbol: "US$", cardName: "Visa");
             var fullyApplied = MakeDiscount(1, latestMonth, 100m, 100m, 100m, ct);
             var pendingToApply = MakeDiscount(2, latestMonth, 200m, 50m, 200m, ct);
             var pendingToCredit = MakeDiscount(3, latestMonth, 300m, 0m, 100m, ct);
@@ -383,6 +383,7 @@ namespace JazFinanzasApp.Tests.Services
             var p2 = report.Pending.Single(p => p.DiscountId == 2);
             p2.PendingToApply.Should().Be(150m);
             p2.PendingToCredit.Should().Be(0m);
+            p2.AssetSymbol.Should().Be("US$"); // moneda nativa de la compra, no la de referencia
             var p3 = report.Pending.Single(p => p.DiscountId == 3);
             p3.PendingToCredit.Should().Be(200m);
             p3.PendingToApply.Should().Be(100m);
@@ -582,6 +583,27 @@ namespace JazFinanzasApp.Tests.Services
             result.TotalSavedPesos.Should().Be(0.5m); // 500 / 1000 (cotización de HOY)
             result.MonthlySeries.Single(m => m.Month == creditDate).PesosAmount.Should().Be(1m); // 500 / 500 (cotización de ESE mes)
             result.Pending.Single().PendingToCredit.Should().Be(1m); // 500 / 500 (cotización de su propio CreditDate)
+        }
+
+        // Corrección 2026-09-08: GetPendingReimbursementsAsync es lo que usa el Dashboard — a
+        // diferencia de GetPromotionsAsync, no tiene que convertir nada (no recibe ni pide un
+        // assetId), así que nunca debería llamar a la cotización.
+        [Fact]
+        public async Task GetPendingReimbursementsAsync_ReturnsNativeAmountsWithoutConverting()
+        {
+            var creditDate = new DateTime(2026, 6, 15);
+            var ct = MakeCardTransaction(1, 10, "NO", creditDate, 1, assetName: "Dolar Estadounidense", assetSymbol: "US$", cardName: "Visa", detail: "Compra con reintegro");
+            var discount = MakeDiscount(1, creditDate, amount: 200m, amountApplied: 50m, amountMaterialized: 200m, ct);
+
+            _cardTransactionDiscountRepoMock.Setup(r => r.GetByUserIdWithCardTransactionAsync(UserId)).ReturnsAsync(new List<CardTransactionDiscount> { discount });
+            _cardTransactionRepoMock.Setup(r => r.GetByUserIdWithDetailsAsync(UserId)).ReturnsAsync(new List<CardTransaction>());
+
+            var result = await _sut.GetPendingReimbursementsAsync(UserId);
+
+            result.Should().ContainSingle();
+            result[0].PendingToApply.Should().Be(150m);
+            result[0].AssetSymbol.Should().Be("US$");
+            _assetQuoteRepoMock.Verify(r => r.GetQuotePrice(It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<string>()), Times.Never);
         }
     }
 }

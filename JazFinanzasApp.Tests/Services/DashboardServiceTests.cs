@@ -285,8 +285,8 @@ namespace JazFinanzasApp.Tests.Services
 
             _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0))
                 .ReturnsAsync(new List<CardTransactionPaymentListDTO>());
-            _cardReportServiceMock.Setup(s => s.GetPromotionsAsync(UserId, PesoAsset.Id))
-                .ReturnsAsync(new CardPromotionsReportDTO());
+            _cardReportServiceMock.Setup(s => s.GetPendingReimbursementsAsync(UserId))
+                .ReturnsAsync(new List<PendingReimbursementDTO>());
 
             _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
             _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
@@ -329,14 +329,10 @@ namespace JazFinanzasApp.Tests.Services
                 new() { Id = 3, Name = "Visa vence pronto", NextClosingDate = realToday.AddDays(-1), NextDueDate = realToday.AddDays(2) }
             });
 
-            _cardReportServiceMock.Setup(s => s.GetPromotionsAsync(UserId, PesoAsset.Id)).ReturnsAsync(new CardPromotionsReportDTO
+            _cardReportServiceMock.Setup(s => s.GetPendingReimbursementsAsync(UserId)).ReturnsAsync(new List<PendingReimbursementDTO>
             {
-                ReferenceAssetSymbol = "$",
-                Pending = new List<PendingReimbursementDTO>
-                {
-                    new() { CardTransactionId = 10, Detail = "Reintegro Netflix", CardName = "Visa", PendingToApply = 150m },
-                    new() { CardTransactionId = 11, Detail = "Reintegro sin acreditar todavía", CardName = "Visa", PendingToApply = 0m }
-                }
+                new() { CardTransactionId = 10, Detail = "Reintegro Netflix", CardName = "Visa", AssetName = "Dolar Estadounidense", AssetSymbol = "US$", PendingToApply = 150m },
+                new() { CardTransactionId = 11, Detail = "Reintegro sin acreditar todavía", CardName = "Visa", AssetName = "Peso Argentino", AssetSymbol = "$", PendingToApply = 0m }
             });
 
             var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
@@ -344,7 +340,10 @@ namespace JazFinanzasApp.Tests.Services
             result.Pending.Should().HaveCount(3);
             result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vencida" && p.Detail == "Vencida" && p.Severity == "danger");
             result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vence pronto" && p.Detail == "Vence pronto" && p.Severity == "warning");
-            result.Pending.Should().Contain(p => p.Kind == "PendingReimbursement" && p.Amount == 150m && p.Severity == "info");
+            // Corrección 2026-09-08: el monto queda en la moneda nativa del reintegro (US$), no en
+            // PesoAsset (la moneda de referencia elegida para el resto del dashboard) — nunca se llama
+            // a GetPromotionsAsync (que sí convertiría) para armar este ítem de la bandeja.
+            result.Pending.Should().Contain(p => p.Kind == "PendingReimbursement" && p.Amount == 150m && p.AssetSymbol == "US$" && p.Severity == "info");
         }
     }
 }
