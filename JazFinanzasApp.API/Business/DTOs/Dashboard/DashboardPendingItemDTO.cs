@@ -14,6 +14,12 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
         public string? AssetSymbol { get; set; }
         public DateTime? Date { get; set; }
 
+        // "info" (default) / "warning" / "danger" — para que el frontend distinga visualmente una
+        // tarjeta vencida de una que solo vence pronto (la pantalla vieja de Inicio ya lo hacía con
+        // alert-warning/alert-danger). Solo CardDue tiene dos niveles reales; el resto entra o no
+        // entra a la bandeja, no hay grados de urgencia que mostrar.
+        public string Severity { get; set; } = "info";
+
         // Id de la tarjeta / reintegro (CardTransactionId) / evento / viaje, según Kind — para armar
         // el link "Ver X" sin otra consulta.
         public int? LinkId { get; set; }

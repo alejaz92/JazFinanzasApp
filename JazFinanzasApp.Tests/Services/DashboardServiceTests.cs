@@ -325,7 +325,8 @@ namespace JazFinanzasApp.Tests.Services
             _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>
             {
                 new() { Id = 1, Name = "Visa vencida", NextClosingDate = realToday.AddDays(-10), NextDueDate = realToday.AddDays(-1) },
-                new() { Id = 2, Name = "Master al día", NextClosingDate = realToday.AddDays(20), NextDueDate = realToday.AddDays(27) }
+                new() { Id = 2, Name = "Master al día", NextClosingDate = realToday.AddDays(20), NextDueDate = realToday.AddDays(27) },
+                new() { Id = 3, Name = "Visa vence pronto", NextClosingDate = realToday.AddDays(-1), NextDueDate = realToday.AddDays(2) }
             });
 
             _cardReportServiceMock.Setup(s => s.GetPromotionsAsync(UserId, PesoAsset.Id)).ReturnsAsync(new CardPromotionsReportDTO
@@ -340,9 +341,10 @@ namespace JazFinanzasApp.Tests.Services
 
             var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
 
-            result.Pending.Should().HaveCount(2);
-            result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vencida" && p.Detail == "Vencida");
-            result.Pending.Should().Contain(p => p.Kind == "PendingReimbursement" && p.Amount == 150m);
+            result.Pending.Should().HaveCount(3);
+            result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vencida" && p.Detail == "Vencida" && p.Severity == "danger");
+            result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vence pronto" && p.Detail == "Vence pronto" && p.Severity == "warning");
+            result.Pending.Should().Contain(p => p.Kind == "PendingReimbursement" && p.Amount == 150m && p.Severity == "info");
         }
     }
 }

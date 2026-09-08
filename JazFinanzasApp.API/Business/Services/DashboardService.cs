@@ -136,7 +136,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Title = card.Name,
                     Detail = status == "vencido" ? "Vencida" : "Vence pronto",
                     Date = card.NextDueDate,
-                    LinkId = card.Id
+                    LinkId = card.Id,
+                    Severity = status == "vencido" ? "danger" : "warning"
                 });
             }
 
