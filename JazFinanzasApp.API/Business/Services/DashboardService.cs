@@ -141,13 +141,22 @@ namespace JazFinanzasApp.API.Business.Services
                 });
             }
 
+            // Corrección 2026-09-08: cuánto ("te deben"/"debés" según el signo de MyBalance), no solo
+            // el nombre del evento — mismo dato que ya mostraba el HomeComponent viejo. Un evento con
+            // más de una moneda con saldo (raro — no se vio ningún caso en 1.6/demo) muestra la
+            // primera; DashboardPendingItemDTO tiene un solo Amount/AssetSymbol, no una lista.
             var activeSummaries = await _sharedEventService.GetActiveSummaryAsync(userId);
             foreach (var summary in activeSummaries.Where(s => s.Balances.Any(b => Math.Abs(b.MyBalance) > 0.01m)))
             {
+                var balance = summary.Balances.First(b => Math.Abs(b.MyBalance) > 0.01m);
+
                 pending.Add(new DashboardPendingItemDTO
                 {
                     Kind = "OpenSharedEvent",
                     Title = summary.Name,
+                    Detail = balance.MyBalance > 0 ? "Te deben" : "Debés",
+                    Amount = Math.Abs(balance.MyBalance),
+                    AssetSymbol = balance.AssetSymbol,
                     LinkId = summary.EventId
                 });
             }

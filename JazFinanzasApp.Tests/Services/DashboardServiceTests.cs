@@ -332,5 +332,50 @@ namespace JazFinanzasApp.Tests.Services
             result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vencida" && p.Detail == "Vencida" && p.Severity == "danger");
             result.Pending.Should().Contain(p => p.Kind == "CardDue" && p.Title == "Visa vence pronto" && p.Detail == "Vence pronto" && p.Severity == "warning");
         }
+
+        // Corrección 2026-09-08 (segunda vuelta): el usuario pidió ver cuánto en la bandeja, no solo
+        // el nombre del evento — mismo dato que ya mostraba el HomeComponent viejo ("Asado: -2500 ARS").
+        [Fact]
+        public async Task GetDashboardAsync_OpenSharedEvent_ShowsAmountAndDirectionFromMyBalance()
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(PesoAsset.Id)).ReturnsAsync(PesoAsset);
+            _netWorthReportServiceMock.Setup(s => s.GetByAccountAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<AccountBalanceDTO>());
+            _netWorthReportServiceMock.Setup(s => s.GetGeneralAsync(UserId)).ReturnsAsync(new NetWorthGeneralDTO());
+            _netWorthReportServiceMock.Setup(s => s.GetMonthlySeriesAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<NetWorthMonthlyPointDTO>());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetWaterfallAsync(UserId, It.IsAny<DateTime>(), PesoAsset.Id)).ReturnsAsync(new IncExpWaterfallDTO());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetCalendarAsync(UserId, PesoAsset.Id, It.IsAny<int>())).ReturnsAsync(new SpendingCalendarDTO());
+            _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0)).ReturnsAsync(new List<CardTransactionPaymentListDTO>());
+            _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
+            _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
+            _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
+
+            _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>
+            {
+                new()
+                {
+                    EventId = 10,
+                    Name = "Asado",
+                    Balances = new List<SharedEventActiveSummaryBalanceDTO>
+                    {
+                        new() { AssetId = 1, AssetSymbol = "ARS", MyBalance = 2500m } // me deben
+                    }
+                },
+                new()
+                {
+                    EventId = 11,
+                    Name = "Viaje",
+                    Balances = new List<SharedEventActiveSummaryBalanceDTO>
+                    {
+                        new() { AssetId = 1, AssetSymbol = "ARS", MyBalance = -800m } // debo
+                    }
+                }
+            });
+
+            var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
+
+            result.Pending.Should().HaveCount(2);
+            result.Pending.Should().Contain(p => p.Kind == "OpenSharedEvent" && p.Title == "Asado" && p.Detail == "Te deben" && p.Amount == 2500m && p.AssetSymbol == "ARS");
+            result.Pending.Should().Contain(p => p.Kind == "OpenSharedEvent" && p.Title == "Viaje" && p.Detail == "Debés" && p.Amount == 800m && p.AssetSymbol == "ARS");
+        }
     }
 }
