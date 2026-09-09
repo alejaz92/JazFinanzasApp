@@ -220,8 +220,17 @@ namespace JazFinanzasApp.API.Business.Services
 
             var priceEvolution = (await _assetQuoteRepository.GetAssetEvolutionStats(cryptoAssetId, MonthlySeriesLength, assetId)).ToList();
             var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(cryptoAssetId, userId);
-            var transactions = await _transactionRepository.GetInvestmentsTransactionsStats(userId, cryptoAssetId, assetId);
-            var averageBuyPrice = await _transactionRepository.GetAverageBuyValue(userId, cryptoAssetId, assetId);
+            var transactions = (await _transactionRepository.GetInvestmentsTransactionsStats(userId, cryptoAssetId, assetId)).ToList();
+
+            // GetAverageBuyValue (nombre heredado de la pantalla vieja) en realidad suma el VALOR neto
+            // invertido, no un precio por unidad — compararlo contra PriceEvolution (precio por unidad)
+            // daba una línea de referencia sin sentido (ej. "$46" contra una cotización de "$79.000").
+            // El precio promedio de compra real es el valor comprado sobre la cantidad comprada, solo
+            // compras ("I"), con la cantidad SIN redondear (Transactions redondea a 2 decimales para
+            // mostrar, y una cripto con tenencia chica puede redondear a 0).
+            var buys = transactions.Where(t => t.MovementType == "I").ToList();
+            var buysQuantity = buys.Sum(t => t.Quantity);
+            var averageBuyPrice = buysQuantity > 0 ? buys.Sum(t => t.Total) / buysQuantity : 0m;
 
             var positivePrices = priceEvolution.Where(p => p.Value > 0).ToList();
 

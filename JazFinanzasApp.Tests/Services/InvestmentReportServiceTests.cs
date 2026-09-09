@@ -83,6 +83,37 @@ namespace JazFinanzasApp.Tests.Services
             result.Valuation.Should().Be(1500m - 1000m - 500m + 100m); // 100m
         }
 
+        // Fase 20, revisión visual con `demo`: el precio promedio de compra se graficaba como una
+        // línea horizontal a "$46" contra una cotización de "$79.000" — GetAverageBuyValue (nombre
+        // heredado de la pantalla vieja) suma el VALOR neto invertido, no un precio por unidad.
+        [Fact]
+        public async Task GetCryptoDetailAsync_ComputesAverageBuyPriceAsWeightedAverageOfBuys_NotRawInvestedValue()
+        {
+            var crypto = new Asset { Id = 4, Symbol = "BTC", Name = "Bitcoin" };
+            var referenceAsset = new Asset { Id = 2, Symbol = "USD" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(4)).ReturnsAsync(crypto);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(referenceAsset);
+
+            _assetQuoteRepoMock
+                .Setup(r => r.GetAssetEvolutionStats(4, It.IsAny<int>(), 2))
+                .ReturnsAsync(new List<CryptoStatsByDateResult> { new() { Date = new DateTime(2026, 9, 9), Value = 79009.54m } });
+            _transactionRepoMock.Setup(r => r.GetBalanceByAssetAndUserAsync(4, UserId)).ReturnsAsync(new List<BalanceResult>());
+
+            // Una compra chica (mismo escenario que `demo`): 46.49 USD invertidos en ~0.00049 BTC —
+            // Quantity real, sin redondear (a 2 decimales redondearía a 0 y rompería la división).
+            var buyQuantity = 0.00048936m;
+            var transactions = new List<InvestmentTransactionsResult>
+            {
+                new() { Date = new DateTime(2024, 12, 2), Account = "Exchange", MovementType = "I", CommerceType = "Fiat/Crypto Commerce", Quantity = buyQuantity, QuotePrice = 95000.14m, Total = 46.49m }
+            };
+            _transactionRepoMock.Setup(r => r.GetInvestmentsTransactionsStats(UserId, 4, 2)).ReturnsAsync(transactions);
+
+            var result = await _sut.GetCryptoDetailAsync(UserId, 4, 2);
+
+            result.AverageBuyPrice.Should().Be(Math.Round(46.49m / buyQuantity, 2));
+            result.AverageBuyPrice.Should().BeGreaterThan(50000m); // no el bug viejo: ~46 (el total invertido, no un precio)
+        }
+
         [Fact]
         public async Task GetPortfoliosOverviewAsync_ComputesSharePercentOfTotalActualValue()
         {
