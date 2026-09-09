@@ -361,8 +361,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(s => assetIds.Contains(s.AssetId))
                 .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
                 .ToListAsync();
-            decimal GetSplitFactor(int assetId, DateTime date) =>
-                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            // Corrección 2026-09-08: el factor se topea en `asOf` (la fecha que se está valuando), no
+            // solo "todos los splits posteriores a la compra". Un split que todavía no ocurrió a esa
+            // altura no puede aplicarse: la cotización de ese mes está en unidades PRE-split, así que
+            // multiplicar la tenencia por el ratio infla el mes entero por el ratio del split. Con
+            // datos reales eran +3.300 a +4.300 USD por mes (YPFD 10:1 y SPY 3:1).
+            decimal GetSplitFactor(int assetId, DateTime date, DateTime asOf) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date && s.Date <= asOf)
+                      .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
             var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
             var bucketByAsset = transactions.GroupBy(t => t.AssetId)
@@ -379,7 +386,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
                 foreach (var assetId in assetIds)
                 {
-                    var nativeAmount = byAsset[assetId].Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date));
+                    var nativeAmount = byAsset[assetId].Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date, cutoff));
                     if (nativeAmount == 0) continue;
 
                     var usd = ToUsd(assetId, nativeAmount, quotesByAsset, cutoff);
@@ -423,8 +430,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(s => assetIds.Contains(s.AssetId))
                 .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
                 .ToListAsync();
-            decimal GetSplitFactor(int assetId, DateTime date) =>
-                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            // Topeado en `asOf`, mismo motivo que en GetNetWorthMonthlySeriesAsync (corrección
+            // 2026-09-08): la serie de evolución de abajo valúa meses pasados con la cotización de ese
+            // mes, así que un split posterior a ese mes no puede estar aplicado a la tenencia.
+            decimal GetSplitFactor(int assetId, DateTime date, DateTime asOf) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date && s.Date <= asOf)
+                      .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
             var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
             var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
@@ -451,7 +463,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                             var info = accGroup.First(x => x.AssetId == assetId);
                             var native = byAccountAsset[(accGroup.Key.AccountId, assetId)]
                                 .Where(x => x.Date <= today)
-                                .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date));
+                                .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date, today));
                             return new AccountHoldingResult
                             {
                                 AssetId = assetId,
@@ -490,7 +502,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     {
                         var native = byAccountAsset[(account.AccountId, assetId)]
                             .Where(x => x.Date <= cutoff)
-                            .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date));
+                            .Sum(x => x.Amount * GetSplitFactor(assetId, x.Date, cutoff));
                         return ToReference(assetId, native, cutoff);
                     });
                     account.Evolution.Add(new MonthlyBalanceResult { Month = monthLabel, Balance = Math.Round(total, 2) });
@@ -1741,8 +1753,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
                 .ToListAsync();
 
-            decimal GetSplitFactor(int assetId, DateTime date) =>
-                splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+            // Topeado en `asOf`, mismo motivo que en GetNetWorthMonthlySeriesAsync (corrección
+            // 2026-09-08): cada mes se valúa con la cotización de ese mes, en unidades PRE-split.
+            decimal GetSplitFactor(int assetId, DateTime date, DateTime asOf) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date && s.Date <= asOf)
+                      .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
             // Checkpoints ordenados por activo para poder calcular la tenencia acumulada a una fecha dada
             // (mismo criterio que GetCryptoStatsByDateAsync).
@@ -1755,7 +1770,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 if (!transactionsByAsset.TryGetValue(assetId, out var checkpoints)) return 0m;
                 return checkpoints
                     .Where(c => c.Date <= date)
-                    .Sum(c => c.Amount * GetSplitFactor(assetId, c.Date));
+                    .Sum(c => c.Amount * GetSplitFactor(assetId, c.Date, date));
             }
 
             // Historial completo de cotizaciones de los activos de la cartera, sin acotar por fecha (mismo

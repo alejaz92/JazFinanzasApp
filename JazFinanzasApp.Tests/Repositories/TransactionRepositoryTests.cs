@@ -1170,5 +1170,95 @@ namespace JazFinanzasApp.Tests.Repositories
 
             result.Should().BeEmpty();
         }
+
+        // ── Split en series históricas (corrección 2026-09-08) ───────────────────────────────────
+        // Bug real encontrado revisando el gráfico "Patrimonio — últimos 12 meses" contra la base de
+        // producción: el factor de split se aplicaba a la tenencia de meses PASADOS aunque el split
+        // todavía no hubiera ocurrido a esa altura, mientras el mes se valuaba con la cotización
+        // PRE-split — inflando cada mes anterior al split por el ratio (YPFD 10:1 y SPY 3:1 daban
+        // +3.300 a +4.300 USD por mes). Ninguno de estos dos métodos tenía test; por eso pasó.
+
+        private static (DateTime PurchaseDate, DateTime SplitDate, DateTime PreSplitCutoff) SplitTimeline()
+        {
+            var currentMonthStart = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            return (
+                PurchaseDate: currentMonthStart.AddMonths(-3),        // compra 3 meses atrás
+                SplitDate: currentMonthStart,                          // split el 1° del mes en curso
+                PreSplitCutoff: currentMonthStart.AddMonths(-1)        // etiqueta del mes anterior al split
+            );
+        }
+
+        [Fact]
+        public async Task GetNetWorthMonthlySeriesAsync_SplitPosteriorAlMes_NoInflaLaTenenciaDeEseMes()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var stock = AddInvestmentAsset(context, "YPF", "YPFD", "BOLSA", "Accion Argentina");
+            var (purchaseDate, splitDate, preSplitCutoff) = SplitTimeline();
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m);
+            context.AssetSplitEvents.Add(new AssetSplitEvent { AssetId = stock.Id, Date = splitDate, SplitRatio = 10m });
+            // cotización pre-split: $100 por acción; post-split: $10 (equivalente)
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = splitDate, Type = "NA", Value = 1m / 10m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var points = (await repo.GetNetWorthMonthlySeriesAsync(UserId, dollar, months: 4)).ToList();
+
+            // Mes anterior al split: 10 acciones a $100 = $1.000 (antes daba $10.000: 100 acciones a $100)
+            points.Single(p => p.Month == preSplitCutoff).Stocks.Should().Be(1000m);
+            // Mes en curso, ya con el split aplicado: 100 acciones a $10 = el mismo valor
+            points.Last().Stocks.Should().Be(1000m);
+        }
+
+        [Fact]
+        public async Task GetAccountBalancesAsync_SplitPosteriorAlMes_NoInflaLaEvolucionDeEseMes()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var stock = AddInvestmentAsset(context, "YPF", "YPFD", "BOLSA", "Accion Argentina");
+            var (purchaseDate, splitDate, preSplitCutoff) = SplitTimeline();
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m);
+            context.AssetSplitEvents.Add(new AssetSplitEvent { AssetId = stock.Id, Date = splitDate, SplitRatio = 10m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = splitDate, Type = "NA", Value = 1m / 10m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var accounts = (await repo.GetAccountBalancesAsync(UserId, dollar, evolutionMonths: 4)).ToList();
+
+            accounts.Should().ContainSingle();
+            accounts[0].Evolution.Single(e => e.Month == preSplitCutoff).Balance.Should().Be(1000m);
+            accounts[0].Balance.Should().Be(1000m); // hoy: 100 acciones a $10
+        }
+
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_SplitPosteriorAlMes_NoInflaLaEvolucionDeEseMes()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var stock = AddInvestmentAsset(context, "YPF", "YPFD", "BOLSA", "Accion Argentina");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Largo Plazo", UserId = UserId });
+            var (purchaseDate, splitDate, _) = SplitTimeline();
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m);
+            context.AssetSplitEvents.Add(new AssetSplitEvent { AssetId = stock.Id, Date = splitDate, SplitRatio = 10m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = splitDate, Type = "NA", Value = 1m / 10m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = purchaseDate, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var points = (await repo.GetPortfolioValueByDateAsync(UserId, 1, dollar.Id, months: 3)).ToList();
+
+            // El mes anterior al split vale 10 * $100 = $1.000, no 100 * $100
+            points.First().Value.Should().Be(1000m);
+            points.Last().Value.Should().Be(1000m);
+        }
     }
 }
