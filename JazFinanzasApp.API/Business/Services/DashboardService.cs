@@ -2,6 +2,7 @@ using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
+using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.DTO.Trip;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
@@ -31,6 +32,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ICardReportService _cardReportService;
         private readonly ICardService _cardService;
         private readonly ISharedEventService _sharedEventService;
+        private readonly ISharedExpenseService _sharedExpenseService;
         private readonly ITripService _tripService;
         private readonly IAssetRepository _assetRepository;
 
@@ -40,6 +42,7 @@ namespace JazFinanzasApp.API.Business.Services
             ICardReportService cardReportService,
             ICardService cardService,
             ISharedEventService sharedEventService,
+            ISharedExpenseService sharedExpenseService,
             ITripService tripService,
             IAssetRepository assetRepository)
         {
@@ -48,6 +51,7 @@ namespace JazFinanzasApp.API.Business.Services
             _cardReportService = cardReportService;
             _cardService = cardService;
             _sharedEventService = sharedEventService;
+            _sharedExpenseService = sharedExpenseService;
             _tripService = tripService;
             _assetRepository = assetRepository;
         }
@@ -158,6 +162,26 @@ namespace JazFinanzasApp.API.Business.Services
                     Amount = Math.Abs(balance.MyBalance),
                     AssetSymbol = balance.AssetSymbol,
                     LinkId = summary.EventId
+                });
+            }
+
+            // Gastos sueltos (SharedExpense V1, sin Evento): la misma deuda que ya suma
+            // GetConsolidatedDebtsAsync para "Saldo compartido" arriba, pero acá hace falta el
+            // desglose por persona — es "cualquier otra deuda relacionada conmigo" (pedido del
+            // usuario), no solo la de los Eventos formales. Siempre en la dirección "te debe" (el
+            // usuario pagó, el otro tiene pendiente su parte) — GetSummaryAsync no devuelve el caso
+            // contrario. Sin moneda explícita: ni el DTO ni la pantalla "Gastos sueltos pendientes"
+            // (que "Ver deuda" abre) la muestran, mismo criterio.
+            var personDebts = await _sharedExpenseService.GetSummaryAsync(userId);
+            foreach (var debt in personDebts.Where(d => d.TotalPending > 0.01m))
+            {
+                pending.Add(new DashboardPendingItemDTO
+                {
+                    Kind = "PersonDebt",
+                    Title = debt.PersonName,
+                    Detail = "Te debe",
+                    Amount = debt.TotalPending,
+                    LinkId = debt.PersonId
                 });
             }
 

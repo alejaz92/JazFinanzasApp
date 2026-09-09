@@ -5,6 +5,7 @@ using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
 using JazFinanzasApp.API.Business.DTO.NetWorth;
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
+using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.DTO.Trip;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
@@ -30,6 +31,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ICardReportService> _cardReportServiceMock = new();
         private readonly Mock<ICardService> _cardServiceMock = new();
         private readonly Mock<ISharedEventService> _sharedEventServiceMock = new();
+        private readonly Mock<ISharedExpenseService> _sharedExpenseServiceMock = new();
         private readonly Mock<ITripService> _tripServiceMock = new();
         private readonly Mock<IAssetRepository> _assetRepoMock = new();
         private readonly DashboardService _sut;
@@ -44,6 +46,7 @@ namespace JazFinanzasApp.Tests.Services
                 _cardReportServiceMock.Object,
                 _cardServiceMock.Object,
                 _sharedEventServiceMock.Object,
+                _sharedExpenseServiceMock.Object,
                 _tripServiceMock.Object,
                 _assetRepoMock.Object);
         }
@@ -288,6 +291,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
             _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
             _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>());
+            _sharedExpenseServiceMock.Setup(s => s.GetSummaryAsync(UserId)).ReturnsAsync(new List<PersonDebtSummaryDTO>());
             _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
 
             var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
@@ -313,6 +317,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0)).ReturnsAsync(new List<CardTransactionPaymentListDTO>());
             _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
             _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>());
+            _sharedExpenseServiceMock.Setup(s => s.GetSummaryAsync(UserId)).ReturnsAsync(new List<PersonDebtSummaryDTO>());
             _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
 
             // GetDashboardAsync usa DateTime.Today internamente (no el `Today` fijo de arriba, que
@@ -347,6 +352,7 @@ namespace JazFinanzasApp.Tests.Services
             _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0)).ReturnsAsync(new List<CardTransactionPaymentListDTO>());
             _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
             _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
+            _sharedExpenseServiceMock.Setup(s => s.GetSummaryAsync(UserId)).ReturnsAsync(new List<PersonDebtSummaryDTO>());
             _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
 
             _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>
@@ -376,6 +382,37 @@ namespace JazFinanzasApp.Tests.Services
             result.Pending.Should().HaveCount(2);
             result.Pending.Should().Contain(p => p.Kind == "OpenSharedEvent" && p.Title == "Asado" && p.Detail == "Te deben" && p.Amount == 2500m && p.AssetSymbol == "ARS");
             result.Pending.Should().Contain(p => p.Kind == "OpenSharedEvent" && p.Title == "Viaje" && p.Detail == "Debés" && p.Amount == 800m && p.AssetSymbol == "ARS");
+        }
+
+        // Corrección 2026-09-08 (tercera vuelta): las deudas de gastos sueltos (SharedExpense V1, sin
+        // Evento) no entraban a la bandeja — solo las de Eventos formales — pese a que
+        // GetConsolidatedDebtsAsync (el indicador "Saldo compartido") ya las suma junto con las de
+        // Eventos. Un ítem por persona, siempre "Te debe" (GetSummaryAsync solo devuelve esa dirección).
+        [Fact]
+        public async Task GetDashboardAsync_IncludesLooseSharedExpenseDebtsInPending()
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(PesoAsset.Id)).ReturnsAsync(PesoAsset);
+            _netWorthReportServiceMock.Setup(s => s.GetByAccountAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<AccountBalanceDTO>());
+            _netWorthReportServiceMock.Setup(s => s.GetGeneralAsync(UserId)).ReturnsAsync(new NetWorthGeneralDTO());
+            _netWorthReportServiceMock.Setup(s => s.GetMonthlySeriesAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<NetWorthMonthlyPointDTO>());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetWaterfallAsync(UserId, It.IsAny<DateTime>(), PesoAsset.Id)).ReturnsAsync(new IncExpWaterfallDTO());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetCalendarAsync(UserId, PesoAsset.Id, It.IsAny<int>())).ReturnsAsync(new SpendingCalendarDTO());
+            _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0)).ReturnsAsync(new List<CardTransactionPaymentListDTO>());
+            _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
+            _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
+            _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>());
+            _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
+
+            _sharedExpenseServiceMock.Setup(s => s.GetSummaryAsync(UserId)).ReturnsAsync(new List<PersonDebtSummaryDTO>
+            {
+                new() { PersonId = 5, PersonName = "Andy Botello", TotalPending = 38000m },
+                new() { PersonId = 6, PersonName = "Renzo", TotalPending = 0m } // saldado, no entra
+            });
+
+            var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
+
+            result.Pending.Should().ContainSingle();
+            result.Pending.Should().Contain(p => p.Kind == "PersonDebt" && p.Title == "Andy Botello" && p.Detail == "Te debe" && p.Amount == 38000m && p.LinkId == 5);
         }
     }
 }

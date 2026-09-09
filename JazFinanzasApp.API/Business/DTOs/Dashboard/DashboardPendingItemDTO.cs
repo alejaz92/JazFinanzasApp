@@ -1,9 +1,9 @@
 namespace JazFinanzasApp.API.Business.DTO.Dashboard
 {
     // Sección 5.3: una fila por pendiente, ordenada por urgencia (mismo orden en que las arma
-    // DashboardService.BuildPendingAsync: tarjetas, eventos, viajes). `Kind` es el contrato con el
-    // frontend para elegir el ícono y la acción ("Pagar" / "Ver evento" / "Cargar gasto") — CardDue /
-    // OpenSharedEvent / TripWithoutRecentExpense.
+    // DashboardService.BuildPendingAsync: tarjetas, eventos, deudas sueltas, viajes). `Kind` es el
+    // contrato con el frontend para elegir el ícono y la acción ("Pagar" / "Ver evento" / "Ver deuda" /
+    // "Cargar gasto") — CardDue / OpenSharedEvent / PersonDebt / TripWithoutRecentExpense.
     //
     // Corrección 2026-09-08: se sacaron los reintegros pendientes de acá. El usuario, viendo la
     // bandeja con su propia cuenta, señaló que un reintegro ya acreditado (PendingToApply > 0, lo
@@ -13,6 +13,12 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
     // todavía no acreditado, PendingToCredit > 0) no se agregó: el usuario pidió acotar la bandeja a
     // tarjetas por vencer y deudas/saldos que lo involucran directamente, sin mencionar reintegros en
     // ninguna de las dos formas.
+    //
+    // Corrección 2026-09-08 (segunda vuelta): sumado `PersonDebt` — las deudas de gastos sueltos
+    // (SharedExpense V1, sin Evento) no estaban acá, solo las de Eventos formales, pese a que
+    // GetConsolidatedDebtsAsync (el indicador "Saldo compartido") ya suma ambas fuentes. Es "cualquier
+    // otra deuda relacionada conmigo" — lo que el usuario pidió al acotar la bandeja en la ronda
+    // anterior — y faltaba.
     public class DashboardPendingItemDTO
     {
         public string Kind { get; set; } = string.Empty;
@@ -28,7 +34,8 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
         // entra a la bandeja, no hay grados de urgencia que mostrar.
         public string Severity { get; set; } = "info";
 
-        // Id de la tarjeta / evento / viaje, según Kind — para armar el link "Ver X" sin otra consulta.
+        // Id de la tarjeta / evento / persona / viaje, según Kind — para armar el link "Ver X" sin
+        // otra consulta.
         public int? LinkId { get; set; }
     }
 }
