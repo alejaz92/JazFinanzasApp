@@ -1260,5 +1260,73 @@ namespace JazFinanzasApp.Tests.Repositories
             points.First().Value.Should().Be(1000m);
             points.Last().Value.Should().Be(1000m);
         }
+
+        // Fase 19 (Inversiones): GetInvestmentHoldingsAsync alimenta el Panorama y a Bolsa/Cryptos —
+        // General. Excluye el efectivo (a diferencia de GetPortfolioStatsAsync/GetPortfolioHoldingsAsync,
+        // que sí lo incluyen porque una cartera es transversal) y clasifica cada tenencia en el mismo
+        // Bucket que ya usa la línea de Patrimonio (ClassifyNetWorthBucket, Fases 10/16).
+        [Fact]
+        public async Task GetInvestmentHoldingsAsync_ExcludesCashAndClassifiesByBucket()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var cash = AddInvestmentAsset(context, "Peso Argentino", "ARS", "FIAT", "Moneda");
+            var stock = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "Accion USA");
+            var stableCrypto = AddInvestmentAsset(context, "Tether", "USDT", "CRYPTO", "Criptomoneda");
+            var volatileCrypto = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, cash, date, amount: 1000m, quotePrice: 1m);
+            AddTransaction(context, stock, date, amount: 10m, quotePrice: 1m / 100m);
+            AddTransaction(context, stableCrypto, date, amount: 50m, quotePrice: 1m);
+            AddTransaction(context, volatileCrypto, date, amount: 1m, quotePrice: 1m / 50000m);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = cash, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = date, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stableCrypto, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = volatileCrypto, Date = date, Type = "NA", Value = 1m / 50000m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var holdings = (await repo.GetInvestmentHoldingsAsync(UserId, reference.Id)).ToList();
+
+            holdings.Should().NotContain(h => h.Symbol == "ARS");
+            holdings.Single(h => h.Symbol == "AAPL").Bucket.Should().Be("Stocks");
+            holdings.Single(h => h.Symbol == "USDT").Bucket.Should().Be("CryptoStable");
+            holdings.Single(h => h.Symbol == "BTC").Bucket.Should().Be("CryptoVolatile");
+        }
+
+        // Aportes vs rendimiento (Fase 19): aportes (compras) y retiros (ventas) por mes, sin contar
+        // lo anterior a `since` (1.5 del plan: los movimientos previos a marzo de 2024 son ajustes de
+        // saldo, no aportes reales).
+        [Fact]
+        public async Task GetInvestmentContributionsByMonthAsync_SplitsContributionsAndWithdrawalsExcludingOlderMovements()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var stock = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA");
+
+            var oldDate = new DateTime(2023, 1, 1); // anterior a `since`, no debe contarse
+            var buyDate = new DateTime(2024, 3, 15);
+            var sellDate = new DateTime(2024, 4, 10);
+
+            AddTransaction(context, stock, oldDate, amount: 100m, quotePrice: 1m / 100m);
+            AddTransaction(context, stock, buyDate, amount: 10m, quotePrice: 1m / 100m);   // aporte: $1.000
+            AddTransaction(context, stock, sellDate, amount: -4m, quotePrice: 1m / 100m);  // retiro: $400
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = oldDate, Type = "NA", Value = 1m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var months = (await repo.GetInvestmentContributionsByMonthAsync(UserId, reference.Id, since: new DateTime(2024, 3, 1))).ToList();
+
+            months.Sum(m => m.Contributed).Should().Be(1000m);
+            months.Sum(m => m.Withdrawn).Should().Be(400m);
+            months.Single(m => m.Month == new DateTime(2024, 3, 1)).Contributed.Should().Be(1000m);
+            months.Single(m => m.Month == new DateTime(2024, 4, 1)).Withdrawn.Should().Be(400m);
+        }
     }
 }

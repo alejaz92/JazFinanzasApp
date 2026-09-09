@@ -1516,8 +1516,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             public string AssetName { get; set; } = "";
             public string Symbol { get; set; } = "";
             public string AssetTypeName { get; set; } = "";
+            public string Environment { get; set; } = "";
             public int AccountId { get; set; }
             public string AccountName { get; set; } = "";
+            public DateTime Date { get; set; }
             public decimal QuantityContribution { get; set; }
             public decimal OriginalValueContribution { get; set; }
             public decimal ActualValueContribution { get; set; }
@@ -1527,8 +1529,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // efectivo e inversión de cualquier tipo — ver docs/plans/activos/portfolios-estadisticas.md).
         // portfolioId == null: sin filtrar por cartera (usado por el resumen de todas las carteras, Fase 1);
         // con valor, acota la consulta a una sola cartera (Fase 2, detalle/holdings).
+        // since (Fase 19, Inversiones): sin valor, todo el historial; con valor, solo transacciones desde
+        // esa fecha — lo usa GetInvestmentContributionsByMonthAsync para no contar los 62 ajustes de saldo
+        // 2020-2023 como aportes reales (1.5 del plan).
         private async Task<List<InvestmentValueContribution>> GetInvestmentValueContributionsAsync(
-            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable, int? portfolioId = null)
+            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable, int? portfolioId = null, DateTime? since = null)
         {
             var stableSymbols = new[] { "DAI", "USDT", "USDC" };
 
@@ -1538,6 +1543,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => environment == null || t.Asset.AssetType.Environment == environment)
                 .Where(t => assetTypeId == 0 || t.Asset.AssetTypeId == assetTypeId)
                 .Where(t => considerStable || !stableSymbols.Contains(t.Asset.Symbol))
+                .Where(t => since == null || t.Date >= since)
                 .Select(t => new
                 {
                     t.PortfolioId,
@@ -1545,6 +1551,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AssetName = t.Asset.Name,
                     t.Asset.Symbol,
                     AssetTypeName = t.Asset.AssetType.Name,
+                    Environment = t.Asset.AssetType.Environment,
                     t.AccountId,
                     AccountName = t.Account.Name,
                     t.Amount,
@@ -1640,8 +1647,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         AssetName = t.AssetName,
                         Symbol = t.Symbol,
                         AssetTypeName = t.AssetTypeName,
+                        Environment = t.Environment,
                         AccountId = t.AccountId,
                         AccountName = t.AccountName,
+                        Date = t.Date,
                         QuantityContribution = quantity,
                         OriginalValueContribution = originalValue,
                         ActualValueContribution = actualValue
@@ -1828,6 +1837,76 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 });
 
                 result.Add(new PortfolioValueByDateResult { Date = month, Value = Math.Round(monthValue, 2) });
+            }
+
+            return result;
+        }
+
+        // Panorama de inversiones (Fase 19, Bloque E): tenencia de TODO lo invertido (bolsa, cripto,
+        // bonos), sin filtrar por cartera ni por Environment puntual, pero excluyendo el efectivo
+        // (FIAT) — a diferencia de GetPortfolioStatsAsync/GetPortfolioHoldingsAsync, que sí lo incluyen
+        // porque una cartera es transversal a cuenta e inversión. Reusa el mismo Bucket que clasifica
+        // el patrimonio (ClassifyNetWorthBucket) para que el mapa de bloques y la línea de Patrimonio
+        // (Fase 10/16) hablen de las mismas categorías.
+        public async Task<IEnumerable<InvestmentHoldingResult>> GetInvestmentHoldingsAsync(int userId, int referenceAssetId)
+        {
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true);
+
+            return contributions
+                .Where(c => c.Environment != "FIAT")
+                .GroupBy(c => c.AssetId)
+                .Select(g => new
+                {
+                    AssetId = g.Key,
+                    AssetName = g.First().AssetName,
+                    Symbol = g.First().Symbol,
+                    AssetTypeName = g.First().AssetTypeName,
+                    Bucket = ClassifyNetWorthBucket(g.First().AssetTypeName, g.First().Environment, g.First().Symbol),
+                    RawQuantity = g.Sum(c => c.QuantityContribution),
+                    RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    RawActualValue = g.Sum(c => c.ActualValueContribution)
+                })
+                .Where(x => x.RawQuantity > 0) // tenencia viva, mismo criterio que GetStockStatsAsync/GetPortfolioHoldingsAsync
+                .Select(x => new InvestmentHoldingResult
+                {
+                    AssetId = x.AssetId,
+                    AssetName = x.AssetName,
+                    Symbol = x.Symbol,
+                    AssetTypeName = x.AssetTypeName,
+                    Bucket = x.Bucket,
+                    Quantity = Math.Round(x.RawQuantity, 2),
+                    OriginalValue = Math.Round(x.RawOriginalValue, 2),
+                    ActualValue = Math.Round(x.RawActualValue, 2)
+                })
+                .OrderByDescending(r => r.ActualValue)
+                .ToList();
+        }
+
+        // Aportes vs rendimiento (Fase 19): aportes (compras, Amount > 0) y retiros (ventas, Amount < 0)
+        // de todo lo invertido (sin efectivo), mes a mes desde `since` — el plan pide arrancar en marzo de
+        // 2024, porque los 62 movimientos anteriores son ajustes de saldo y no aportes reales (1.5). El
+        // valor de cada aporte/retiro es el de SU PROPIA fecha (OriginalValueContribution, misma cotización
+        // que usa el resto de las stats de inversión) — no el de hoy.
+        public async Task<IEnumerable<InvestmentContributionMonthResult>> GetInvestmentContributionsByMonthAsync(int userId, int referenceAssetId, DateTime since)
+        {
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, since: since);
+            var nonCash = contributions.Where(c => c.Environment != "FIAT").ToList();
+
+            if (nonCash.Count == 0) return Enumerable.Empty<InvestmentContributionMonthResult>();
+
+            var sinceMonth = new DateTime(since.Year, since.Month, 1);
+            var currentMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+            var result = new List<InvestmentContributionMonthResult>();
+            for (var month = sinceMonth; month <= currentMonth; month = month.AddMonths(1))
+            {
+                var inMonth = nonCash.Where(c => c.Date.Year == month.Year && c.Date.Month == month.Month).ToList();
+                result.Add(new InvestmentContributionMonthResult
+                {
+                    Month = month,
+                    Contributed = Math.Round(inMonth.Where(c => c.QuantityContribution > 0).Sum(c => c.OriginalValueContribution), 2),
+                    Withdrawn = Math.Round(inMonth.Where(c => c.QuantityContribution < 0).Sum(c => -c.OriginalValueContribution), 2)
+                });
             }
 
             return result;
