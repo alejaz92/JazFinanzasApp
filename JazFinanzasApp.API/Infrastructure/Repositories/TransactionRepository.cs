@@ -1570,19 +1570,21 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
                 .ToListAsync();
 
-            // Última cotización de cada activo, sin filtrar por Type (igual que el LEFT JOIN del SP
-            // original, que resuelve por MAX(Date) sin distinguir Type). Se guarda la LISTA de valores
-            // que comparten esa fecha (no se suman entre sí): con environment == null (stats de cartera)
-            // un activo como Peso Argentino puede tener más de un Type el mismo día (ej. NA y BOLSA — 836
-            // fechas distintas en datos reales, ver lección de fan-out en el plan), y cada uno debe aportar
-            // su propio cociente por separado — sumar primero los valores y dividir una sola vez da un
-            // resultado equivocado. Para Bolsa/Cripto (un solo Type por día en la práctica) esto no cambia
-            // el resultado respecto al comportamiento anterior.
-            // El MAX(Date) se resuelve con una subquery correlacionada en el propio SQL Server (igual
-            // que el SP original) en vez de traer todo el historial de cotizaciones a memoria.
-            var latestQuotesByAsset = (await _context.AssetQuotes
+            // Última cotización de cada activo. Corrección 2026-09-10: el peso argentino puede tener
+            // más de un Type el mismo día — no son duplicados, son tasas de cambio genuinamente
+            // distintas (BLUE/informal, BOLSA/MEP, TARJETA/con impuestos) — y sumarlas todas como si
+            // cada una fuera un aporte independiente valuaba la tenencia en pesos por duplicado/triplicado
+            // (encontrado en producción: Carteras — General daba $1.267 de más contra Patrimonio → General
+            // sobre $1.097.854,73 ARS en cartera, exactamente lo que explica valuar a las tres tasas en
+            // vez de una sola). Se excluyen TARJETA y BLUE, mismo criterio que ya usa
+            // GetTotalsBalanceByUserAsync (T7) para "cuánto vale hoy" — para el peso, la única que queda
+            // es BOLSA (igual que el caso especial de T7); para el resto de los activos, que solo tienen
+            // Type "NA", el filtro no cambia nada. El MAX(Date) se calcula sobre el mismo conjunto ya
+            // filtrado, para no caer a una fecha cuyo único Type sea uno de los excluidos.
+            var validAssetQuotes = _context.AssetQuotes.Where(q => q.Type != "TARJETA" && q.Type != "BLUE");
+            var latestQuotesByAsset = (await validAssetQuotes
                     .Where(q => assetIds.Contains(q.AssetId))
-                    .Where(q => q.Date == _context.AssetQuotes
+                    .Where(q => q.Date == validAssetQuotes
                         .Where(q2 => q2.AssetId == q.AssetId)
                         .Max(q2 => q2.Date))
                     .Select(q => new { q.AssetId, q.Value })
