@@ -1070,6 +1070,50 @@ namespace JazFinanzasApp.Tests.Repositories
             result[0].ActualValue.Should().Be(500m);
         }
 
+        // Corrección 2026-09-10, encontrada en producción revisando Carteras — Detalle: si una cuenta
+        // puntual hace un ciclo completo de compra y venta de un activo (cantidad neta 0) mientras el
+        // activo se sigue teniendo en OTRA cuenta de la misma cartera, el filtro viejo ("cantidad > 0")
+        // descartaba la fila entera de la cuenta cerrada — incluido su Valor Original, que no es cero
+        // aunque la cantidad sí lo sea (se compró y se vendió a cotizaciones distintas). El % de
+        // ganancia/pérdida del activo terminaba calculado sobre un Valor Original incompleto.
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_AccountThatFullyClosedAPosition_KeepsItsRealizedOriginalValue()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Default", UserId = UserId });
+
+            var buyDate = new DateTime(2024, 9, 5);
+            var sellDate = new DateTime(2025, 5, 13);
+            var latestDate = new DateTime(2026, 9, 10);
+
+            // Nexo: compra y venta completa del mismo BTC (cantidad neta 0), a cotizaciones distintas —
+            // un ciclo cerrado con ganancia realizada de $300.
+            AddTransaction(context, btc, buyDate, amount: 0.01m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 1); // Nexo
+            AddTransaction(context, btc, sellDate, amount: -0.01m, quotePrice: 1m / 80000m, portfolioId: 1, accountId: 1); // Nexo
+            // Binance: posición que se sigue teniendo hoy.
+            AddTransaction(context, btc, buyDate, amount: 0.02m, quotePrice: 1m / 50000m, portfolioId: 1, accountId: 2); // Binance
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = buyDate, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = latestDate, Type = "NA", Value = 1m / 60000m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var stats = (await repo.GetPortfolioStatsAsync(UserId, dollar.Id)).Single(s => s.PortfolioId == 1);
+            var holdings = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            holdings.Should().HaveCount(2); // Nexo (cerrada) sigue apareciendo, no se descarta en silencio
+            var nexo = holdings.Single(h => h.AccountName == "Cuenta 1");
+            nexo.Quantity.Should().Be(0m);
+            nexo.ActualValue.Should().Be(0m);
+            nexo.OriginalValue.Should().Be(-300m); // 500 (compra) - 800 (venta): la ganancia ya realizada
+
+            holdings.Sum(h => h.OriginalValue).Should().Be(stats.OriginalValue);
+            holdings.Sum(h => h.ActualValue).Should().Be(stats.ActualValue);
+        }
+
         // ── Regresión: hueco en la cotización de referencia antes de la transacción más antigua ──────
         // Bug real encontrado en datos de producción (Azure): el Dólar (activo de referencia) tiene una
         // única cotización en el año 2000 y la siguiente recién en abril de 2024 — un hueco de 24 años.

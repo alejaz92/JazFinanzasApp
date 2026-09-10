@@ -1704,7 +1704,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // Composición y holdings dentro de una cartera puntual (ver docs/plans/activos/portfolios-estadisticas.md,
         // Fase 2). Misma granularidad activo + cuenta que ya usan GetBalance/GetAverageQuotePrice — si un
         // activo está repartido en más de una cuenta dentro de la cartera, se devuelve una fila por cuenta.
-        // Filtra tenencia neta <= 0 (posiciones vendidas del todo), mismo criterio que GetStockStatsAsync.
+        // Corrección 2026-09-10 (encontrada revisando Carteras — Detalle con datos reales): el filtro de
+        // "tenencia neta <= 0" (posiciones vendidas del todo, mismo criterio que GetStockStatsAsync) se
+        // aplicaba a nivel (activo, cuenta), no a nivel activo. Cuando una cuenta puntual hace un ciclo
+        // completo de compra y venta de un activo que se sigue teniendo en OTRA cuenta de la misma
+        // cartera (ej. comprar BTC en Nexo y venderlo ahí mismo tiempo después, mientras se sigue
+        // comprando en Binance), esa cuenta neteaba cantidad 0 y se descartaba entera — junto con el
+        // Valor Original de ese ciclo, que no es cero aunque la cantidad sí lo sea (se compró y vendió a
+        // cotizaciones distintas). El resultado: la fila del activo que SÍ queda visible arrastraba un
+        // Valor Original incompleto, y su % de ganancia/pérdida daba distinto del que muestra el total de
+        // la cartera (GetPortfolioStatsAsync, que no filtra por cuenta) o el de Panorama/Bolsa/Cryptos
+        // (GetInvestmentHoldingsAsync, que agrupa por activo antes de filtrar). Ahora el filtro solo
+        // descarta una fila si está genuinamente vacía (cantidad Y valor original en cero) — una cuenta
+        // cerrada con una ganancia o pérdida ya realizada sigue apareciendo, con cantidad y valor actual
+        // en 0 pero su Valor Original real, para que la suma de las filas coincida con el total.
         public async Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId)
         {
             var contributions = await GetInvestmentValueContributionsAsync(
@@ -1722,7 +1735,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
                     RawActualValue = g.Sum(c => c.ActualValueContribution)
                 })
-                .Where(x => x.RawQuantity > 0)
+                .Where(x => x.RawQuantity != 0 || x.RawOriginalValue != 0)
                 .Select(x => new PortfolioHoldingResult
                 {
                     AssetType = x.AssetType,
