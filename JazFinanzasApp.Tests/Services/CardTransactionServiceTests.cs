@@ -513,6 +513,38 @@ namespace JazFinanzasApp.Tests.Services
             cardExpensesTransaction.CardTransactionId.Should().BeNull();
         }
 
+        // Corrección 2026-09-10, encontrada en producción revisando Carteras — Detalle: en modo "P+D"
+        // (parte del resumen se paga directo con dólares) una cuota en dólares quedaba con AssetId =
+        // dólar pero QuotePrice = la cotización del PESO (BLUE del día) — nunca se ajustaba para la
+        // moneda real de la Transaction. El dólar nunca cotiza contra sí mismo (mismo criterio que
+        // QuotePriceResolver.ResolveAsync: "USD devuelve 1"). La cotización del peso se mockea en 1500
+        // (no 1, como el resto de los tests) justamente para poder distinguir el bug del arreglo.
+        [Fact]
+        public async Task RegisterCardPaymentAsync_PayingDollarInstallmentDirectlyInDollars_UsesQuotePriceOne_NotThePesoRate()
+        {
+            SetupRegisterCardPaymentHappyPathDependencies();
+
+            var dolar = new Asset { Id = 2, Name = "Dolar Estadounidense" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(dolar);
+            _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 2)).ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 2 });
+            _assetQuoteRepoMock.Setup(r => r.GetQuotePrice(1, It.IsAny<DateTime>(), "BLUE")).ReturnsAsync(1500m);
+            _transactionRepoMock.Setup(r => r.GetBalance(2, 2, 1)).ReturnsAsync(1000m);
+
+            var dto = MakePaymentDto(installmentNumber: 1, installmentAmount: 20m);
+            dto.PaymentAsset = "P+D";
+            dto.DolarAmount = 20m;
+            dto.CardTransactions[0].AssetId = 2;
+
+            var (transactions, _) = CaptureOnPayment();
+
+            await _sut.RegisterCardPaymentAsync(UserId, dto);
+
+            var installmentTransaction = transactions.Single(t => t.CardTransactionId == 20);
+            installmentTransaction.AssetId.Should().Be(2);
+            installmentTransaction.Amount.Should().Be(-20m);
+            installmentTransaction.QuotePrice.Should().Be(1m);
+        }
+
         // ── Filas agregadas a mano al pagar (plan-viajes-historicos.md, Fase 6C) ──
 
         private CardTransactionPaymentDTO MakeManualEntryPaymentDto(

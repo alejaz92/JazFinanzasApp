@@ -575,6 +575,16 @@ namespace JazFinanzasApp.API.Business.Services
             decimal quotePrice,
             int portfolioId)
         {
+            // Corrección 2026-09-10: en modo "P+D" (parte del resumen se paga directo con dólares) una
+            // cuota en dólares queda con AssetId = dolar, pero `quotePrice` es la cotización del PESO
+            // (BLUE del día) — se seguía usando igual para las dos monedas. El dólar nunca cotiza contra
+            // sí mismo (mismo criterio que QuotePriceResolver: "USD devuelve 1"), así que esas cuotas
+            // quedaban con QuotePrice ~1500 en vez de 1: cualquier reporte que hace Monto/QuotePrice para
+            // pasar a dólares (Carteras, Panorama, Bolsa) las contaba en un ~0,07% de su valor real.
+            // Encontrado en producción revisando Carteras — Detalle: 99 cuotas de suscripciones en
+            // dólares (Claude Pro, ChatGPT, GitHub Copilot, etc.) con este problema.
+            var payingInDollars = cardTx.Asset == "Dolar Estadounidense" && paymentDTO.PaymentAsset == "P+D";
+
             var transaction = new Transaction
             {
                 Date = paymentDTO.PaymentMonth,
@@ -590,10 +600,8 @@ namespace JazFinanzasApp.API.Business.Services
                 Amount = paymentDTO.PaymentAsset == "P+D"
                     ? -cardTx.InstallmentAmount
                     : -cardTx.ValueInPesos,
-                AssetId = cardTx.Asset == "Dolar Estadounidense" && paymentDTO.PaymentAsset == "P+D"
-                    ? dolar.Id
-                    : peso.Id,
-                QuotePrice = quotePrice
+                AssetId = payingInDollars ? dolar.Id : peso.Id,
+                QuotePrice = payingInDollars ? 1m : quotePrice
             };
             transaction.Asset = transaction.AssetId == dolar.Id ? dolar : peso;
             return transaction;
