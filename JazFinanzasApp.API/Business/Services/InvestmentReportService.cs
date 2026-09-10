@@ -251,11 +251,13 @@ namespace JazFinanzasApp.API.Business.Services
                     Account = t.Account,
                     MovementType = t.MovementType,
                     CommerceType = t.CommerceType,
-                    Quantity = Math.Round(t.Quantity, 2),
+                    // Cantidad sin redondear (corrección 2026-09-10) — QuotePrice y Total sí, son montos
+                    // en la moneda de referencia, no cantidad de cripto.
+                    Quantity = t.Quantity,
                     QuotePrice = Math.Round(t.QuotePrice, 2),
                     Total = Math.Round(t.Total, 2)
                 }).ToList(),
-                BalanceByAccount = balance.Select(b => new AccountHoldingAmountDTO { Account = b.Account, Balance = Math.Round(b.Balance, 2) }).ToList()
+                BalanceByAccount = balance.Select(b => new AccountHoldingAmountDTO { Account = b.Account, Balance = b.Balance }).ToList()
             };
         }
 

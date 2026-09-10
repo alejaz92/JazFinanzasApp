@@ -1070,6 +1070,32 @@ namespace JazFinanzasApp.Tests.Repositories
             result[0].ActualValue.Should().Be(500m);
         }
 
+        // Corrección 2026-09-10: la cantidad no se redondea a 2 decimales — una cripto chica (ej.
+        // 0,00048936 BTC) redondeada a 2 decimales queda en 0,00, indistinguible de no tener nada.
+        // El frontend (currencyInvestmentFormat) ya sabe mostrar más decimales para valores chicos;
+        // acá solo había que dejar de cortarle el dato antes de que le llegue.
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_SmallCryptoQuantity_IsNotRoundedToZero()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var btc = AddInvestmentAsset(context, "Bitcoin", "BTC", "CRYPTO", "Criptomoneda");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Default", UserId = UserId });
+
+            var date = new DateTime(2024, 12, 2);
+            AddTransaction(context, btc, date, amount: 0.00048936m, quotePrice: 1m / 95000.14m, portfolioId: 1);
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = btc, Date = date, Type = "NA", Value = 1m / 79009.54m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Quantity.Should().Be(0.00048936m);
+        }
+
         // Corrección 2026-09-10, encontrada en producción revisando Carteras — Detalle: si una cuenta
         // puntual hace un ciclo completo de compra y venta de un activo (cantidad neta 0) mientras el
         // activo se sigue teniendo en OTRA cuenta de la misma cartera, el filtro viejo ("cantidad > 0")

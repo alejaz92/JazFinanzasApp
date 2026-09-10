@@ -1742,7 +1742,10 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AssetName = x.AssetName,
                     Symbol = x.Symbol,
                     AccountName = x.AccountName,
-                    Quantity = Math.Round(x.RawQuantity, 2),
+                    // Sin redondear (corrección 2026-09-10): una cripto chica (ej. 0,00048936 BTC)
+                    // redondeada a 2 decimales queda en 0 — el frontend ya sabe mostrar más decimales
+                    // para valores chicos (currencyInvestmentFormat), pero necesita el dato completo.
+                    Quantity = x.RawQuantity,
                     OriginalValue = Math.Round(x.RawOriginalValue, 2),
                     ActualValue = Math.Round(x.RawActualValue, 2)
                 })
@@ -1889,7 +1892,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     Symbol = x.Symbol,
                     AssetTypeName = x.AssetTypeName,
                     Bucket = x.Bucket,
-                    Quantity = Math.Round(x.RawQuantity, 2),
+                    // Sin redondear (corrección 2026-09-10, mismo motivo que GetPortfolioHoldingsAsync).
+                    Quantity = x.RawQuantity,
                     OriginalValue = Math.Round(x.RawOriginalValue, 2),
                     ActualValue = Math.Round(x.RawActualValue, 2)
                 })
