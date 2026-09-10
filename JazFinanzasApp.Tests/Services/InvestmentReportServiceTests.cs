@@ -125,7 +125,7 @@ namespace JazFinanzasApp.Tests.Services
                 new() { PortfolioId = 1, PortfolioName = "Default", IsDefault = true, OriginalValue = 1000m, ActualValue = 3000m },
                 new() { PortfolioId = 2, PortfolioName = "Cripto", IsDefault = false, OriginalValue = 500m, ActualValue = 1000m }
             };
-            _transactionRepoMock.Setup(r => r.GetPortfolioStatsAsync(UserId, 5)).ReturnsAsync(stats);
+            _transactionRepoMock.Setup(r => r.GetPortfolioStatsAsync(UserId, 5, true)).ReturnsAsync(stats);
 
             var result = await _sut.GetPortfoliosOverviewAsync(UserId, 5);
 

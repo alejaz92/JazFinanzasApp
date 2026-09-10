@@ -9,8 +9,11 @@ namespace JazFinanzasApp.API.Business.Interfaces
     {
         Task<InvestmentOverviewDTO> GetOverviewAsync(int userId, int assetId);
 
-        Task<PortfoliosOverviewDTO> GetPortfoliosOverviewAsync(int userId, int assetId);
-        Task<PortfolioDetailReportDTO> GetPortfolioDetailAsync(int userId, int portfolioId, int assetId);
+        // includeCash en false (switch de Carteras — General/Detalle, 2026-09-10) excluye el efectivo
+        // (Environment "FIAT") — una cartera lo incluye por diseño (1.3 del plan), pero el switch
+        // permite ver solo la parte realmente invertida, con el mismo criterio que ya usa Panorama.
+        Task<PortfoliosOverviewDTO> GetPortfoliosOverviewAsync(int userId, int assetId, bool includeCash = true);
+        Task<PortfolioDetailReportDTO> GetPortfolioDetailAsync(int userId, int portfolioId, int assetId, bool includeCash = true);
 
         Task<StocksReportDTO> GetStocksAsync(int userId, int assetId);
 

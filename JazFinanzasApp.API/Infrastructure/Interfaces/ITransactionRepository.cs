@@ -22,9 +22,12 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<decimal> GetAverageBuyValue(int userId, int assetId, int referenceAssetId);
         Task<decimal> GetBalance(int accountId, int assetId, int portfolioId);
         Task<decimal> GetAverageQuotePrice(int accountId, int assetId, int portfolioId);
-        Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId);
-        Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId);
-        Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months);
+        // includeCash (Fase 20, corrección 2026-09-10): en false, excluye el efectivo (Environment
+        // "FIAT") — una cartera mezcla cuenta e inversión por diseño (1.3 del plan), pero el switch
+        // deja ver solo la parte realmente invertida, con el mismo criterio que ya usa Panorama.
+        Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId, bool includeCash = true);
+        Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId, bool includeCash = true);
+        Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months, bool includeCash = true);
 
         // Inversiones (Fase 19, Bloque E).
         Task<IEnumerable<InvestmentHoldingResult>> GetInvestmentHoldingsAsync(int userId, int referenceAssetId);

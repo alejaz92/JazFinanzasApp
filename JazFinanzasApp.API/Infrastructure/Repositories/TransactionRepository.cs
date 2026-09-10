@@ -1667,7 +1667,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // Las stablecoins siempre se cuentan (ConsiderStable fijo en true, sin toggle expuesto — Decisión 5
         // del plan). Devuelve una fila por cada cartera del usuario, incluyendo las que no tienen ninguna
         // transacción (valor $0, no se excluyen).
-        public async Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId)
+        // includeCash en false (switch de Carteras — General/Detalle, 2026-09-10) excluye el efectivo
+        // (Environment "FIAT") — mismo criterio que ya usa GetInvestmentHoldingsAsync para Panorama.
+        public async Task<IEnumerable<PortfolioStatsResult>> GetPortfolioStatsAsync(int userId, int referenceAssetId, bool includeCash = true)
         {
             var portfolios = await _context.Portfolios
                 .Where(p => p.UserId == userId)
@@ -1675,6 +1677,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
 
             var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true);
+            if (!includeCash) contributions = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             var valueByPortfolio = contributions
                 .GroupBy(c => c.PortfolioId)
@@ -1718,10 +1721,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // descarta una fila si está genuinamente vacía (cantidad Y valor original en cero) — una cuenta
         // cerrada con una ganancia o pérdida ya realizada sigue apareciendo, con cantidad y valor actual
         // en 0 pero su Valor Original real, para que la suma de las filas coincida con el total.
-        public async Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId)
+        // includeCash en false (switch de Carteras — General/Detalle, 2026-09-10) excluye el efectivo.
+        public async Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId, bool includeCash = true)
         {
             var contributions = await GetInvestmentValueContributionsAsync(
                 userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, portfolioId: portfolioId);
+            if (!includeCash) contributions = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             return contributions
                 .GroupBy(c => new { c.AssetId, c.AccountId })
@@ -1763,10 +1768,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // fecha", con fan-out si hay más de una del mismo Type/fecha. Si a un activo con tenencia > 0 todavía
         // no le llegó ninguna cotización a esa altura del tiempo, ese mes no lo puede valorizar (se excluye su
         // aporte para ese mes puntual, no para los siguientes) — decisión explícita, no accidental.
-        public async Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months)
+        // includeCash en false (switch de Carteras — General/Detalle, 2026-09-10) excluye el efectivo,
+        // para que la línea de evolución coincida con el total mostrado cuando el switch está apagado.
+        public async Task<IEnumerable<PortfolioValueByDateResult>> GetPortfolioValueByDateAsync(int userId, int portfolioId, int referenceAssetId, int months, bool includeCash = true)
         {
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId && t.PortfolioId == portfolioId)
+                .Where(t => includeCash || t.Asset.AssetType.Environment != "FIAT")
                 .Select(t => new { t.AssetId, t.Amount, t.Date })
                 .ToListAsync();
 

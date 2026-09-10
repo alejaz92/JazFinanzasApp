@@ -826,6 +826,34 @@ namespace JazFinanzasApp.Tests.Repositories
             result[0].ActualValue.Should().Be(2000m);    // 500 (efectivo) + 1500 (10 * $150)
         }
 
+        // Switch de Carteras — General/Detalle (2026-09-10): includeCash=false excluye el efectivo
+        // (Environment "FIAT") — mismo escenario que la prueba de arriba, pero solo debe quedar AAPL.
+        [Fact]
+        public async Task GetPortfolioStatsAsync_WithIncludeCashFalse_ExcludesFiatHoldings()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var apple = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Corto Plazo", UserId = UserId });
+
+            var purchaseDate = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, purchaseDate, amount: 500m, quotePrice: 1m, portfolioId: 1); // efectivo
+            AddTransaction(context, apple, purchaseDate, amount: 10m, quotePrice: 1m / 100m, portfolioId: 1); // 10 acciones @ $100
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = purchaseDate, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = new DateTime(2026, 6, 1), Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = apple, Date = new DateTime(2026, 6, 1), Type = "NA", Value = 1m / 150m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioStatsAsync(UserId, dollar.Id, includeCash: false)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].OriginalValue.Should().Be(1000m); // solo AAPL, sin los 500 de efectivo
+            result[0].ActualValue.Should().Be(1500m);
+        }
+
         [Fact]
         public async Task GetPortfolioStatsAsync_PortfolioWithoutTransactions_ReturnsZeroWithoutBreaking()
         {
@@ -990,6 +1018,32 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Single(r => r.AssetType == "Moneda").ActualValue.Should().Be(500m);
             result.Single(r => r.AssetType == "Accion USA").ActualValue.Should().Be(1000m);
             result.Single(r => r.AssetType == "Criptomoneda").ActualValue.Should().Be(50000m);
+        }
+
+        // Switch de Carteras — General/Detalle (2026-09-10): mismo escenario que arriba, pero con
+        // includeCash=false el dólar en efectivo desaparece de la tabla de tenencias.
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_WithIncludeCashFalse_ExcludesFiatRow()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var apple = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "Accion USA");
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Jubilacion", UserId = UserId });
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, dollar, date, amount: 500m, quotePrice: 1m, portfolioId: 1);
+            AddTransaction(context, apple, date, amount: 10m, quotePrice: 1m / 100m, portfolioId: 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = apple, Date = date, Type = "NA", Value = 1m / 100m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id, includeCash: false)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].AssetType.Should().Be("Accion USA");
         }
 
         [Fact]

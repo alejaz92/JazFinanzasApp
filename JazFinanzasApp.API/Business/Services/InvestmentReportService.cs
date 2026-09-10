@@ -86,12 +86,12 @@ namespace JazFinanzasApp.API.Business.Services
 
         // Carteras — General: barras enfrentadas invertido vs valor actual (reusa GetPortfolioStatsAsync,
         // docs/plans/completados/portfolios-estadisticas.md) + distribución (SharePercent).
-        public async Task<PortfoliosOverviewDTO> GetPortfoliosOverviewAsync(int userId, int assetId)
+        public async Task<PortfoliosOverviewDTO> GetPortfoliosOverviewAsync(int userId, int assetId, bool includeCash = true)
         {
             var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
                 ?? throw new NotFoundException("Asset not found");
 
-            var stats = (await _transactionRepository.GetPortfolioStatsAsync(userId, assetId)).ToList();
+            var stats = (await _transactionRepository.GetPortfolioStatsAsync(userId, assetId, includeCash)).ToList();
             var totalActual = stats.Sum(s => s.ActualValue);
 
             return new PortfoliosOverviewDTO
@@ -114,7 +114,7 @@ namespace JazFinanzasApp.API.Business.Services
         // Es el reporte que hoy no existe y por eso las carteras están vacías (1.5 del plan) — los
         // datos ya estaban en ReportService desde portfolios-estadisticas.md, acá solo se exponen con
         // la moneda de referencia elegida en la barra de Reportes en vez de la resuelta por Asset_User.
-        public async Task<PortfolioDetailReportDTO> GetPortfolioDetailAsync(int userId, int portfolioId, int assetId)
+        public async Task<PortfolioDetailReportDTO> GetPortfolioDetailAsync(int userId, int portfolioId, int assetId, bool includeCash = true)
         {
             var portfolio = await _portfolioRepository.GetByIdAsync(portfolioId)
                 ?? throw new NotFoundException("Portfolio not found");
@@ -125,11 +125,11 @@ namespace JazFinanzasApp.API.Business.Services
 
             // Mismo criterio que ReportService.GetPortfolioDetailStatsAsync: reusa GetPortfolioStatsAsync
             // para el total en vez de recalcularlo, así no puede divergir de lo que muestra Carteras — General.
-            var stats = (await _transactionRepository.GetPortfolioStatsAsync(userId, assetId))
+            var stats = (await _transactionRepository.GetPortfolioStatsAsync(userId, assetId, includeCash))
                 .FirstOrDefault(s => s.PortfolioId == portfolioId);
 
-            var holdings = await _transactionRepository.GetPortfolioHoldingsAsync(userId, portfolioId, assetId);
-            var valueSeries = await _transactionRepository.GetPortfolioValueByDateAsync(userId, portfolioId, assetId, MonthlySeriesLength);
+            var holdings = await _transactionRepository.GetPortfolioHoldingsAsync(userId, portfolioId, assetId, includeCash);
+            var valueSeries = await _transactionRepository.GetPortfolioValueByDateAsync(userId, portfolioId, assetId, MonthlySeriesLength, includeCash);
 
             return new PortfolioDetailReportDTO
             {

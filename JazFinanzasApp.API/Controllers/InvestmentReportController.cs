@@ -27,16 +27,16 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpGet("Portfolios/{assetId}")]
-        public async Task<IActionResult> GetPortfoliosOverview(int assetId)
+        public async Task<IActionResult> GetPortfoliosOverview(int assetId, [FromQuery] bool includeCash = true)
         {
-            var result = await _investmentReportService.GetPortfoliosOverviewAsync(GetUserId(), assetId);
+            var result = await _investmentReportService.GetPortfoliosOverviewAsync(GetUserId(), assetId, includeCash);
             return Ok(result);
         }
 
         [HttpGet("Portfolios/{portfolioId}/Detail/{assetId}")]
-        public async Task<IActionResult> GetPortfolioDetail(int portfolioId, int assetId)
+        public async Task<IActionResult> GetPortfolioDetail(int portfolioId, int assetId, [FromQuery] bool includeCash = true)
         {
-            var result = await _investmentReportService.GetPortfolioDetailAsync(GetUserId(), portfolioId, assetId);
+            var result = await _investmentReportService.GetPortfolioDetailAsync(GetUserId(), portfolioId, assetId, includeCash);
             return Ok(result);
         }
 
