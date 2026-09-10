@@ -1811,8 +1811,14 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             // Historial completo de cotizaciones de los activos de la cartera, sin acotar por fecha (mismo
             // motivo que la corrección aplicada al helper de referencia: acotar por una fecha "mínima" puede
             // excluir la única cotización disponible para resolver un mes temprano si hay huecos en la carga).
+            // Se excluyen TARJETA y BLUE (corrección 2026-09-10, mismo bug de fan-out ya resuelto en
+            // GetInvestmentValueContributionsAsync): un activo como ARS puede tener varias cotizaciones el
+            // mismo día (BLUE/BOLSA/TARJETA) y sin este filtro se sumaban todas, triplicando su aporte acá
+            // aunque GetPortfolioHoldingsAsync/GetPortfolioStatsAsync ya lo tenían bien — la línea de
+            // evolución no coincidía con el valor actual mostrado arriba.
             var quotesByAsset = (await _context.AssetQuotes
                     .Where(q => assetIds.Contains(q.AssetId))
+                    .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
                     .Select(q => new { q.AssetId, q.Date, q.Value })
                     .ToListAsync())
                 .GroupBy(q => q.AssetId)

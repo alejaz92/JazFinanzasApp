@@ -1316,6 +1316,41 @@ namespace JazFinanzasApp.Tests.Repositories
             result[0].Value.Should().Be(500m / 1m * 1000m + 500m / 1m * 1050m);
         }
 
+        // Corrección 2026-09-10, encontrada en producción con datos reales (usuario ajazmatie): mismo bug
+        // de fan-out que GetPortfolioStatsAsync_PesoWithMultipleQuoteTypesSameDate (ver ese test), pero
+        // del lado del activo TENIDO (no de la referencia, que sí debe fanoutear — ver el test anterior).
+        // quotesByAsset no filtraba Type, así que el ARS en cartera se valuaba sumando BLUE+BOLSA+TARJETA
+        // en vez de usar solo BOLSA — la línea de evolución de Carteras — Detalle no coincidía con el
+        // "Valor Actual" de arriba (que sí usa GetPortfolioStatsAsync/GetPortfolioHoldingsAsync, ya corregidos).
+        [Fact]
+        public async Task GetPortfolioValueByDateAsync_HeldAssetWithMultipleQuoteTypesSameDate_UsesOnlyNonExcludedType_NotSumOfAll()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var pesoType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            var peso = new Asset { Name = "Peso Argentino", Symbol = "ARS", Color = "#000000", AssetType = pesoType };
+            context.AssetTypes.Add(pesoType);
+            context.Assets.Add(peso);
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Default", UserId = UserId });
+
+            var thisMonthStart = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            var date = thisMonthStart.AddDays(1);
+            AddTransaction(context, peso, date, amount: 1000000m, quotePrice: 1m / 1531.6m, portfolioId: 1);
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BLUE", Value = 1530m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BOLSA", Value = 1531.6m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "TARJETA", Value = 1995.5m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var result = (await repo.GetPortfolioValueByDateAsync(UserId, 1, dollar.Id, months: 1)).ToList();
+
+            result.Should().ContainSingle();
+            result[0].Value.Should().Be(Math.Round(1000000m / 1531.6m, 2)); // solo BOLSA, no las tres sumadas
+        }
+
         [Fact]
         public async Task GetPortfolioValueByDateAsync_WhenNoTransactions_ReturnsEmpty()
         {
