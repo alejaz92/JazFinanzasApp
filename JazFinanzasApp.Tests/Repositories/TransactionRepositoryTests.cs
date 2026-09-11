@@ -1194,6 +1194,44 @@ namespace JazFinanzasApp.Tests.Repositories
             holdings.Sum(h => h.ActualValue).Should().Be(stats.ActualValue);
         }
 
+        // Corrección 2026-09-10, encontrada en producción con datos reales (usuario ajazmatie): el
+        // frontend calculaba "Cotización Actual" dividiendo ActualValue/Quantity, pero ActualValue ya
+        // viene redondeado a 2 decimales por cuenta — para una cuenta con poco saldo (ej. 7 pesos) el
+        // ActualValue redondeado da $0,00 y la "cotización" resultante quedaba en $0, distinta a la de
+        // otra cuenta del MISMO activo el MISMO día. CurrentQuote/OriginQuote se calculan acá sobre los
+        // valores sin redondear, así da la misma cotización sin importar la cuenta.
+        [Fact]
+        public async Task GetPortfolioHoldingsAsync_SameAssetInTwoAccounts_CurrentQuoteIsIdenticalRegardlessOfRoundedActualValue()
+        {
+            using var context = CreateContext();
+            var dollar = AddReferenceAsset(context);
+            var pesoType = new AssetType { Name = "Moneda", Environment = "FIAT" };
+            var peso = new Asset { Name = "Peso Argentino", Symbol = "ARS", Color = "#000000", AssetType = pesoType };
+            context.AssetTypes.Add(pesoType);
+            context.Assets.Add(peso);
+            context.Portfolios.Add(new Portfolio { Id = 1, Name = "Default", UserId = UserId });
+
+            var date = new DateTime(2026, 9, 10);
+            AddTransaction(context, peso, date, amount: 1000000m, quotePrice: 1m / 1531.6m, portfolioId: 1, accountId: 1); // cuenta grande
+            AddTransaction(context, peso, date, amount: 7m, quotePrice: 1m / 1531.6m, portfolioId: 1, accountId: 2); // cuenta chica
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = dollar, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = peso, Date = date, Type = "BOLSA", Value = 1531.6m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var holdings = (await repo.GetPortfolioHoldingsAsync(UserId, 1, dollar.Id)).ToList();
+
+            holdings.Should().HaveCount(2);
+            var big = holdings.Single(h => h.Quantity == 1000000m);
+            var small = holdings.Single(h => h.Quantity == 7m);
+
+            small.ActualValue.Should().Be(0m); // 7/1531.6 ≈ 0,0046 redondea a $0,00
+            small.CurrentQuote.Should().Be(big.CurrentQuote);
+            small.CurrentQuote.Should().BeApproximately(1m / 1531.6m, 0.0000001m);
+        }
+
         // ── Regresión: hueco en la cotización de referencia antes de la transacción más antigua ──────
         // Bug real encontrado en datos de producción (Azure): el Dólar (activo de referencia) tiene una
         // única cotización en el año 2000 y la siguiente recién en abril de 2024 — un hueco de 24 años.

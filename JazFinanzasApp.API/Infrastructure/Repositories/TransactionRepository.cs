@@ -1752,7 +1752,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     // para valores chicos (currencyInvestmentFormat), pero necesita el dato completo.
                     Quantity = x.RawQuantity,
                     OriginalValue = Math.Round(x.RawOriginalValue, 2),
-                    ActualValue = Math.Round(x.RawActualValue, 2)
+                    ActualValue = Math.Round(x.RawActualValue, 2),
+                    // Sobre los valores SIN redondear (RawOriginalValue/RawActualValue), no sobre
+                    // OriginalValue/ActualValue ya redondeados a 2 decimales — ver comentario en
+                    // PortfolioHoldingResult.
+                    OriginQuote = x.RawQuantity != 0 ? x.RawOriginalValue / x.RawQuantity : (decimal?)null,
+                    CurrentQuote = x.RawQuantity != 0 ? x.RawActualValue / x.RawQuantity : (decimal?)null
                 })
                 .OrderByDescending(r => r.ActualValue)
                 .ToList();

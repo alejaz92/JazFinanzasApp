@@ -148,7 +148,9 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue)
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
+                    OriginQuote = h.OriginQuote,
+                    CurrentQuote = h.CurrentQuote
                 }).ToList(),
                 ValueSeries = valueSeries.Select(v => new InvestmentValuePointDTO { Month = v.Date, Value = v.Value }).ToList()
             };

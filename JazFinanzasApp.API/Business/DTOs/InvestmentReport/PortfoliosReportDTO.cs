@@ -44,5 +44,12 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
         public decimal? GainLossPercent { get; set; }
+        // Cotización de origen/actual (2026-09-10): ver PortfolioHoldingResult — calculadas en el
+        // repositorio sobre valores sin redondear, para que el mismo activo (ej. ARS) muestre la
+        // misma Cotización Actual sin importar en qué cuenta esté (antes, dividir OriginalValue/
+        // ActualValue ya redondeados a 2 decimales por cuenta daba un valor levemente distinto en
+        // cada fila para lo que en realidad es una única cotización de mercado).
+        public decimal? OriginQuote { get; set; }
+        public decimal? CurrentQuote { get; set; }
     }
 }
