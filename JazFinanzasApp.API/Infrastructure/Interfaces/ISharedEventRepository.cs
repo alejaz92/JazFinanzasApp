@@ -19,5 +19,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task DeleteEventWithParticipantsAsync(int sharedEventId);
         Task<List<SharedEvent>> GetOpenEventsDetailAsync(int userId);
         Task<List<SharedEvent>> GetDetailByTripIdAsync(int tripId);
+
+        // Abiertos y cerrados, con el mismo grafo completo de GetOpenEventsDetailAsync — para los
+        // reportes de Compartidos (Fase 21), que necesitan historial y ranking, no solo lo pendiente.
+        Task<List<SharedEvent>> GetAllDetailByUserIdAsync(int userId);
     }
 }

@@ -87,6 +87,8 @@ builder.Services.AddScoped<IIncomeExpenseReportService, IncomeExpenseReportServi
 builder.Services.AddScoped<ICardReportService, CardReportService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInvestmentReportService, InvestmentReportService>();
+builder.Services.AddScoped<ITripReportService, TripReportService>();
+builder.Services.AddScoped<ISharedEventReportService, SharedEventReportService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

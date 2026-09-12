@@ -723,7 +723,9 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        private static SharedEventPaymentDTO MapPaymentToDTO(SharedEventPayment p)
+        // Reusado por SharedEventReportService (Fase 21, Flujo 7 "Por persona") para no reimplementar
+        // el mismo mapeo — mapeo puro, sin estado, seguro de exponer.
+        public static SharedEventPaymentDTO MapPaymentToDTO(SharedEventPayment p)
         {
             return new SharedEventPaymentDTO
             {
@@ -750,7 +752,8 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        private static SharedEventMovementDTO MapMovementToDTO(SharedEventMovement m)
+        // Reusado por SharedEventReportService (Fase 21, Flujo 7 "Por persona").
+        public static SharedEventMovementDTO MapMovementToDTO(SharedEventMovement m)
         {
             return new SharedEventMovementDTO
             {

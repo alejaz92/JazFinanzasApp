@@ -56,6 +56,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<SharedEvent>> GetAllDetailByUserIdAsync(int userId)
+        {
+            return await WithFullDetail(_context.SharedEvents)
+                .Where(e => e.UserId == userId)
+                .ToListAsync();
+        }
+
         private static IQueryable<SharedEvent> WithFullDetail(IQueryable<SharedEvent> query)
         {
             return query
