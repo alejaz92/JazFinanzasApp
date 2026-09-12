@@ -15,10 +15,16 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<PortfoliosOverviewDTO> GetPortfoliosOverviewAsync(int userId, int assetId, bool includeCash = true);
         Task<PortfolioDetailReportDTO> GetPortfolioDetailAsync(int userId, int portfolioId, int assetId, bool includeCash = true);
 
-        Task<StocksReportDTO> GetStocksAsync(int userId, int assetId);
+        // Bolsa, revisada (Fase 20a): assetTypeId en 0 trae todo el entorno (D-11); includeClosed
+        // suma las posiciones ya vendidas del todo, apagado por default (D-14).
+        Task<StocksReportDTO> GetStocksAsync(int userId, int assetId, int assetTypeId = 0, bool includeClosed = false);
 
         Task<CryptoOverviewReportDTO> GetCryptoOverviewAsync(int userId, int assetId, bool includeStables = true);
-        Task<CryptoDetailReportDTO> GetCryptoDetailAsync(int userId, int cryptoAssetId, int assetId);
+
+        // Detalle de un activo (T17): un solo cálculo para Bolsa y para Cryptos — GetCryptoDetailAsync
+        // no tenía nada de cripto adentro. `assetId` es el activo a detallar, `referenceAssetId` la
+        // moneda de referencia de la barra de Reportes (mismo orden que ya tenía la firma vieja).
+        Task<AssetDetailReportDTO> GetAssetDetailAsync(int userId, int assetId, int referenceAssetId);
 
         Task<ContributionsVsPerformanceDTO> GetContributionsVsPerformanceAsync(int userId, int assetId);
     }

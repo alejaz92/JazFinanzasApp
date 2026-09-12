@@ -40,10 +40,12 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        // Bolsa, revisada (Fase 20a): assetTypeId en 0 (default) trae todo el entorno (D-11);
+        // includeClosed suma las posiciones ya vendidas del todo, apagado por default (D-14).
         [HttpGet("Stocks/{assetId}")]
-        public async Task<IActionResult> GetStocks(int assetId)
+        public async Task<IActionResult> GetStocks(int assetId, [FromQuery] int assetTypeId = 0, [FromQuery] bool includeClosed = false)
         {
-            var result = await _investmentReportService.GetStocksAsync(GetUserId(), assetId);
+            var result = await _investmentReportService.GetStocksAsync(GetUserId(), assetId, assetTypeId, includeClosed);
             return Ok(result);
         }
 
@@ -54,10 +56,22 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        // Se mantiene con su ruta y su contrato (T14) mientras Cryptos — Detalle (frontend) no
+        // consuma la ruta genérica de abajo — las dos llaman al mismo cálculo (T17).
         [HttpGet("Crypto/{cryptoAssetId}/Detail/{assetId}")]
         public async Task<IActionResult> GetCryptoDetail(int cryptoAssetId, int assetId)
         {
-            var result = await _investmentReportService.GetCryptoDetailAsync(GetUserId(), cryptoAssetId, assetId);
+            var result = await _investmentReportService.GetAssetDetailAsync(GetUserId(), cryptoAssetId, assetId);
+            return Ok(result);
+        }
+
+        // Detalle de un activo (T17, D-15): generaliza la ruta de arriba para que Bolsa — Detalle la
+        // use también, sin duplicar el cálculo. `assetId` es el activo a detallar, `referenceAssetId`
+        // la moneda de referencia de la barra de Reportes.
+        [HttpGet("Asset/{assetId}/Detail/{referenceAssetId}")]
+        public async Task<IActionResult> GetAssetDetail(int assetId, int referenceAssetId)
+        {
+            var result = await _investmentReportService.GetAssetDetailAsync(GetUserId(), assetId, referenceAssetId);
             return Ok(result);
         }
 

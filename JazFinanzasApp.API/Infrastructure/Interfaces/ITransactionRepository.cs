@@ -32,6 +32,10 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Inversiones (Fase 19, Bloque E).
         Task<IEnumerable<InvestmentHoldingResult>> GetInvestmentHoldingsAsync(int userId, int referenceAssetId);
         Task<IEnumerable<InvestmentContributionMonthResult>> GetInvestmentContributionsByMonthAsync(int userId, int referenceAssetId, DateTime since);
+
+        // Bolsa, revisada (Fase 20a, D-13/D-14 — docs/plans/activos/plan-rediseno-reportes-v2.md).
+        Task<IEnumerable<StocksMonthlyPointResult>> GetStocksValueMonthlySeriesByTypeAsync(int userId, Asset referenceAsset, int months);
+        Task<IEnumerable<ClosedPositionResult>> GetClosedInvestmentPositionsAsync(int userId, int referenceAssetId);
         Task<IEnumerable<Transaction>> GetTransactionsByTripIdAsync(int tripId);
         Task<IEnumerable<Transaction>> GetTripOwnExpenseTransactionsAsync(int tripId);
         Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate);

@@ -21,19 +21,22 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetTypeRepository _assetTypeRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IPortfolioRepository _portfolioRepository;
+        private readonly IAssetSplitEventRepository _assetSplitEventRepository;
 
         public InvestmentReportService(
             ITransactionRepository transactionRepository,
             IAssetRepository assetRepository,
             IAssetTypeRepository assetTypeRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IPortfolioRepository portfolioRepository)
+            IPortfolioRepository portfolioRepository,
+            IAssetSplitEventRepository assetSplitEventRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
             _assetTypeRepository = assetTypeRepository;
             _assetQuoteRepository = assetQuoteRepository;
             _portfolioRepository = portfolioRepository;
+            _assetSplitEventRepository = assetSplitEventRepository;
         }
 
         // Pura — testeable sin mocks. null cuando OriginalValue es 0 (posición sin costo conocido,
@@ -156,27 +159,64 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        // Bolsa: ganancia/pérdida por ticker + peso dentro de la propia categoría, sin acotar a un
-        // solo AssetType (a diferencia de la pantalla vieja) — junta Acción Argentina, CEDEAR, FCI y
-        // Acción USA, que es como el Flujo 5 describe "Bolsa" (un solo reporte, no uno por tipo).
-        public async Task<StocksReportDTO> GetStocksAsync(int userId, int assetId)
+        // Bolsa — General (revisión 2026-09-12, Fase 20a): ganancia/pérdida por ticker + peso dentro
+        // de la propia categoría + agregados y evolución por tipo de activo. D-10: cubre todo el
+        // entorno BOLSA (los buckets Stocks y Bonds), no solo renta variable como antes — Acción
+        // Argentina, CEDEAR, FCI, Acción USA, Bono y Obligación Negociable en un solo reporte.
+        // assetTypeId en 0 trae todo (D-11); includeClosed suma las posiciones ya vendidas del todo,
+        // apagado por default (D-14).
+        public async Task<StocksReportDTO> GetStocksAsync(int userId, int assetId, int assetTypeId = 0, bool includeClosed = false)
         {
             var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
                 ?? throw new NotFoundException("Asset not found");
 
-            var holdings = (await _transactionRepository.GetInvestmentHoldingsAsync(userId, assetId))
-                .Where(h => h.Bucket == "Stocks")
+            var allHoldings = (await _transactionRepository.GetInvestmentHoldingsAsync(userId, assetId))
+                .Where(h => h.Bucket == "Stocks" || h.Bucket == "Bonds")
                 .ToList();
+
+            // Los agregados por tipo salen del entorno completo, ANTES del filtro (D-11) — así el
+            // combo de la barra puede listar todos los tipos con sus totales, se elija el que se elija.
+            var types = BuildTypeAggregates(allHoldings);
+
+            var holdings = allHoldings;
+            if (assetTypeId != 0)
+            {
+                var assetType = await _assetTypeRepository.GetByIdAsync(assetTypeId)
+                    ?? throw new NotFoundException("Asset type not found");
+                holdings = holdings.Where(h => h.AssetTypeName == assetType.Name).ToList();
+            }
 
             var totalOriginal = holdings.Sum(h => h.OriginalValue);
             var totalActual = holdings.Sum(h => h.ActualValue);
+
+            var series = await _transactionRepository.GetStocksValueMonthlySeriesByTypeAsync(userId, referenceAsset, MonthlySeriesLength);
+
+            var closedPositions = includeClosed
+                ? (await _transactionRepository.GetClosedInvestmentPositionsAsync(userId, assetId))
+                    .Select(c => new ClosedPositionDTO
+                    {
+                        AssetId = c.AssetId,
+                        AssetName = c.AssetName,
+                        Symbol = c.Symbol,
+                        AssetTypeName = c.AssetTypeName,
+                        RealizedResult = c.RealizedResult,
+                        LastMovementDate = c.LastMovementDate
+                    }).ToList()
+                : new List<ClosedPositionDTO>();
 
             return new StocksReportDTO
             {
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 TotalOriginalValue = Math.Round(totalOriginal, 2),
                 TotalActualValue = Math.Round(totalActual, 2),
-                Tickers = BuildTickerList(holdings, totalActual)
+                Types = types,
+                Tickers = BuildTickerList(holdings, totalActual),
+                ValueSeries = series.Select(p => new StocksMonthlyPointDTO
+                {
+                    Month = p.Month,
+                    ByType = p.ByType.Select(t => new AssetTypeValueDTO { AssetTypeName = t.AssetTypeName, Value = t.Value }).ToList()
+                }).ToList(),
+                ClosedPositions = closedPositions
             };
         }
 
@@ -211,18 +251,36 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
-        // Cryptos — Detalle: línea de cotización (precio, no valor de tenencia) con compras/ventas
-        // marcadas encima y el precio promedio de compra como referencia horizontal.
-        public async Task<CryptoDetailReportDTO> GetCryptoDetailAsync(int userId, int cryptoAssetId, int assetId)
+        // Detalle de un activo (T17, revisión de Bolsa 2026-09-12): línea de cotización (precio, no
+        // valor de tenencia) con compras/ventas marcadas encima y el precio promedio de compra como
+        // referencia horizontal. Generalizado de "Cryptos — Detalle": el cálculo no tenía nada de
+        // cripto adentro, así que Bolsa — Detalle lo reusa entero (D-15/D-17). La ruta de cripto
+        // sigue apuntando acá sin cambiar de contrato (T14).
+        public async Task<AssetDetailReportDTO> GetAssetDetailAsync(int userId, int assetId, int referenceAssetId)
         {
-            var asset = await _assetRepository.GetByIdAsync(cryptoAssetId)
+            var asset = await _assetRepository.GetByIdAsync(assetId)
                 ?? throw new NotFoundException("Asset not found");
-            var referenceAsset = await _assetRepository.GetByIdAsync(assetId)
+            var referenceAsset = await _assetRepository.GetByIdAsync(referenceAssetId)
                 ?? throw new NotFoundException("Asset not found");
 
-            var priceEvolution = (await _assetQuoteRepository.GetAssetEvolutionStats(cryptoAssetId, MonthlySeriesLength, assetId)).ToList();
-            var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(cryptoAssetId, userId);
-            var transactions = (await _transactionRepository.GetInvestmentsTransactionsStats(userId, cryptoAssetId, assetId)).ToList();
+            var priceEvolution = (await _assetQuoteRepository.GetAssetEvolutionStats(assetId, MonthlySeriesLength, referenceAssetId)).ToList();
+            var balance = await _transactionRepository.GetBalanceByAssetAndUserAsync(assetId, userId);
+            var transactions = (await _transactionRepository.GetInvestmentsTransactionsStats(userId, assetId, referenceAssetId)).ToList();
+            var splitEvents = (await _assetSplitEventRepository.GetByAssetIdAsync(assetId)).ToList();
+
+            // T16 (D-16): la cotización histórica se ajusta dividiendo por el factor acumulado de los
+            // splits POSTERIORES a la fecha de cada punto, sin tope en ningún "asOf" — a diferencia de
+            // GetNetWorthMonthlySeriesAsync (que valúa mes a mes y no puede aplicar un split que
+            // todavía no pasó a esa altura), acá siempre se ajusta todo el historial a las unidades
+            // de HOY, que es lo mismo que ya hace GetInvestmentsTransactionsStats para el precio de
+            // cada marca de compra/venta — sin este ajuste las marcas (ya divididas por el factor) no
+            // calzan sobre una curva sin dividir.
+            decimal SplitFactor(DateTime date) =>
+                splitEvents.Where(s => s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var adjustedPriceEvolution = priceEvolution
+                .Select(p => new { p.Date, Value = p.Value / SplitFactor(p.Date) })
+                .ToList();
 
             // GetAverageBuyValue (nombre heredado de la pantalla vieja) en realidad suma el VALOR neto
             // invertido, no un precio por unidad — compararlo contra PriceEvolution (precio por unidad)
@@ -234,9 +292,32 @@ namespace JazFinanzasApp.API.Business.Services
             var buysQuantity = buys.Sum(t => t.Quantity);
             var averageBuyPrice = buysQuantity > 0 ? buys.Sum(t => t.Total) / buysQuantity : 0m;
 
-            var positivePrices = priceEvolution.Where(p => p.Value > 0).ToList();
+            var positivePrices = adjustedPriceEvolution.Where(p => p.Value > 0).ToList();
 
-            return new CryptoDetailReportDTO
+            // D-15: la posición del usuario en este activo, dentro de su propia categoría — Bolsa
+            // (Stocks + Bonds, D-10) o Cryptos (CryptoStable + CryptoVolatile), según a cuál pertenezca.
+            var allHoldings = (await _transactionRepository.GetInvestmentHoldingsAsync(userId, referenceAssetId)).ToList();
+            var holding = allHoldings.FirstOrDefault(h => h.AssetId == assetId);
+            AssetPositionDTO position = null;
+            if (holding != null)
+            {
+                static bool IsBolsaBucket(string bucket) => bucket == "Stocks" || bucket == "Bonds";
+                var family = IsBolsaBucket(holding.Bucket)
+                    ? allHoldings.Where(h => IsBolsaBucket(h.Bucket))
+                    : allHoldings.Where(h => h.Bucket == "CryptoStable" || h.Bucket == "CryptoVolatile");
+                var totalFamilyActual = family.Sum(h => h.ActualValue);
+
+                position = new AssetPositionDTO
+                {
+                    Quantity = holding.Quantity,
+                    OriginalValue = holding.OriginalValue,
+                    ActualValue = holding.ActualValue,
+                    GainLossPercent = GainLossPercent(holding.OriginalValue, holding.ActualValue),
+                    WeightPercent = totalFamilyActual != 0 ? Math.Round(holding.ActualValue / totalFamilyActual * 100, 2) : 0m
+                };
+            }
+
+            return new AssetDetailReportDTO
             {
                 AssetId = asset.Id,
                 AssetName = asset.Name,
@@ -244,9 +325,9 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 AverageBuyPrice = Math.Round(averageBuyPrice, 2),
                 MinPrice = positivePrices.Count > 0 ? Math.Round(positivePrices.Min(p => p.Value), 2) : 0m,
-                MaxPrice = priceEvolution.Count > 0 ? Math.Round(priceEvolution.Max(p => p.Value), 2) : 0m,
-                CurrentPrice = priceEvolution.Count > 0 ? Math.Round(priceEvolution[^1].Value, 2) : 0m,
-                PriceEvolution = priceEvolution.Select(p => new InvestmentValuePointDTO { Month = p.Date, Value = Math.Round(p.Value, 2) }).ToList(),
+                MaxPrice = adjustedPriceEvolution.Count > 0 ? Math.Round(adjustedPriceEvolution.Max(p => p.Value), 2) : 0m,
+                CurrentPrice = adjustedPriceEvolution.Count > 0 ? Math.Round(adjustedPriceEvolution[^1].Value, 2) : 0m,
+                PriceEvolution = adjustedPriceEvolution.Select(p => new InvestmentValuePointDTO { Month = p.Date, Value = Math.Round(p.Value, 2) }).ToList(),
                 Transactions = transactions.Select(t => new CryptoTransactionMarkerDTO
                 {
                     Date = t.Date,
@@ -259,7 +340,9 @@ namespace JazFinanzasApp.API.Business.Services
                     QuotePrice = Math.Round(t.QuotePrice, 2),
                     Total = Math.Round(t.Total, 2)
                 }).ToList(),
-                BalanceByAccount = balance.Select(b => new AccountHoldingAmountDTO { Account = b.Account, Balance = b.Balance }).ToList()
+                BalanceByAccount = balance.Select(b => new AccountHoldingAmountDTO { Account = b.Account, Balance = b.Balance }).ToList(),
+                SplitEvents = splitEvents.Select(s => new AssetSplitEventMarkerDTO { Date = s.Date, SplitRatio = s.SplitRatio }).ToList(),
+                Position = position
             };
         }
 
@@ -307,6 +390,8 @@ namespace JazFinanzasApp.API.Business.Services
             holdings
                 .Select(h => new StockTickerReportDTO
                 {
+                    AssetId = h.AssetId,
+                    AssetTypeName = h.AssetTypeName,
                     AssetName = h.AssetName,
                     Symbol = h.Symbol,
                     Quantity = h.Quantity,
@@ -315,6 +400,27 @@ namespace JazFinanzasApp.API.Business.Services
                     GainLossAmount = Math.Round(h.ActualValue - h.OriginalValue, 2),
                     GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
                     WeightPercent = totalActual != 0 ? Math.Round(h.ActualValue / totalActual * 100, 2) : 0m
+                })
+                .OrderByDescending(t => t.ActualValue)
+                .ToList();
+
+        // D-12: reemplaza al ranking de 30 barras por ticker — cuatro o cinco barras, una por tipo de
+        // activo. Pura — testeable sin mocks, mismo criterio que BuildTickerList.
+        public static List<StockTypeAggregateDTO> BuildTypeAggregates(IEnumerable<InvestmentHoldingResult> holdings) =>
+            holdings
+                .GroupBy(h => h.AssetTypeName)
+                .Select(g =>
+                {
+                    var originalValue = g.Sum(h => h.OriginalValue);
+                    var actualValue = g.Sum(h => h.ActualValue);
+                    return new StockTypeAggregateDTO
+                    {
+                        AssetTypeName = g.Key,
+                        TickerCount = g.Count(),
+                        OriginalValue = Math.Round(originalValue, 2),
+                        ActualValue = Math.Round(actualValue, 2),
+                        GainLossPercent = GainLossPercent(originalValue, actualValue)
+                    };
                 })
                 .OrderByDescending(t => t.ActualValue)
                 .ToList();

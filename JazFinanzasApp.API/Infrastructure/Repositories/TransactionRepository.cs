@@ -416,6 +416,65 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return points;
         }
 
+        // D-13 (revisión de Bolsa, 2026-09-12): igual que GetNetWorthMonthlySeriesAsync pero acumulando
+        // por AssetTypeName dentro del entorno BOLSA en vez de en los cinco buckets de Patrimonio —
+        // mismos cortes mensuales (GetMonthlyCutoffs), misma conversión a la moneda de referencia
+        // (ToUsd + GetRateOnOrBefore) y misma corrección de splits topeada en `asOf` (2026-09-08), sin
+        // duplicar ninguna de las tres.
+        public async Task<IEnumerable<StocksMonthlyPointResult>> GetStocksValueMonthlySeriesByTypeAsync(int userId, Asset referenceAsset, int months)
+        {
+            var transactions = await _context.Transactions
+                .Where(t => t.UserId == userId)
+                .Where(t => t.Asset.AssetType.Environment == "BOLSA")
+                .Select(t => new { t.AssetId, t.Amount, t.Date, AssetTypeName = t.Asset.AssetType.Name })
+                .ToListAsync();
+
+            if (transactions.Count == 0) return Enumerable.Empty<StocksMonthlyPointResult>();
+
+            var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
+            var splits = await _context.AssetSplitEvents
+                .Where(s => assetIds.Contains(s.AssetId))
+                .Select(s => new { s.AssetId, s.Date, s.SplitRatio })
+                .ToListAsync();
+
+            decimal GetSplitFactor(int assetId, DateTime date, DateTime asOf) =>
+                splits.Where(s => s.AssetId == assetId && s.Date > date && s.Date <= asOf)
+                      .Aggregate(1m, (acc, s) => acc * s.SplitRatio);
+
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.OrderBy(t => t.Date).ToList());
+            var typeByAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => g.First().AssetTypeName);
+
+            var quotesByAsset = await GetQuotesByAssetAsync(assetIds);
+            var referenceHistory = await GetOwnRateHistoryAsync(referenceAsset);
+
+            var points = new List<StocksMonthlyPointResult>();
+            foreach (var (cutoff, monthLabel) in GetMonthlyCutoffs(months))
+            {
+                var (refRate, _) = GetRateOnOrBefore(referenceAsset, referenceHistory, cutoff);
+                var byType = new Dictionary<string, decimal>();
+
+                foreach (var assetId in assetIds)
+                {
+                    var nativeAmount = byAsset[assetId].Where(t => t.Date <= cutoff).Sum(t => t.Amount * GetSplitFactor(assetId, t.Date, cutoff));
+                    if (nativeAmount == 0) continue;
+
+                    var usd = ToUsd(assetId, nativeAmount, quotesByAsset, cutoff);
+                    var inReference = refRate.HasValue ? usd * refRate.Value : 0m;
+
+                    var typeName = typeByAsset[assetId];
+                    byType[typeName] = byType.GetValueOrDefault(typeName) + inReference;
+                }
+
+                points.Add(new StocksMonthlyPointResult
+                {
+                    Month = monthLabel,
+                    ByType = byType.Select(kv => new AssetTypeValueResult { AssetTypeName = kv.Key, Value = Math.Round(kv.Value, 2) }).ToList()
+                });
+            }
+
+            return points;
+        }
+
         public async Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths)
         {
             var rows = await _context.Transactions
@@ -1948,6 +2007,43 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             }
 
             return result;
+        }
+
+        // D-14 (revisión de Bolsa, 2026-09-12): activos del entorno BOLSA con tenencia neta cero —
+        // el complemento exacto del filtro RawQuantity > 0 de GetInvestmentHoldingsAsync, no "sacar
+        // el filtro" (el resto de los reportes que usan GetInvestmentValueContributionsAsync siguen
+        // queriendo solo tenencia viva). OriginalValueContribution ya neteó compras (positivas, costo
+        // pagado con la cotización de cada movimiento — T6) contra ventas (negativas, ingreso
+        // recibido): para una posición totalmente cerrada, esa suma es costo total menos ingreso
+        // total, así que el resultado realizado es su signo invertido.
+        public async Task<IEnumerable<ClosedPositionResult>> GetClosedInvestmentPositionsAsync(int userId, int referenceAssetId)
+        {
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: "BOLSA", referenceAssetId, assetTypeId: 0, considerStable: true);
+
+            return contributions
+                .GroupBy(c => c.AssetId)
+                .Select(g => new
+                {
+                    AssetId = g.Key,
+                    AssetName = g.First().AssetName,
+                    Symbol = g.First().Symbol,
+                    AssetTypeName = g.First().AssetTypeName,
+                    RawQuantity = g.Sum(c => c.QuantityContribution),
+                    RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    LastMovementDate = g.Max(c => c.Date)
+                })
+                .Where(x => x.RawQuantity == 0)
+                .Select(x => new ClosedPositionResult
+                {
+                    AssetId = x.AssetId,
+                    AssetName = x.AssetName,
+                    Symbol = x.Symbol,
+                    AssetTypeName = x.AssetTypeName,
+                    RealizedResult = Math.Round(-x.RawOriginalValue, 2),
+                    LastMovementDate = x.LastMovementDate
+                })
+                .OrderByDescending(x => x.LastMovementDate)
+                .ToList();
         }
 
         // Reemplaza al stored procedure [dbo].[GetStockStats] (ver docs/plans/activos/reemplazar-stored-procedures.md, Fase 1).

@@ -1560,5 +1560,97 @@ namespace JazFinanzasApp.Tests.Repositories
             months.Single(m => m.Month == new DateTime(2024, 3, 1)).Contributed.Should().Be(1000m);
             months.Single(m => m.Month == new DateTime(2024, 4, 1)).Withdrawn.Should().Be(400m);
         }
+
+        // ── Bolsa, revisada (Fase 20a, docs/plans/activos/plan-rediseno-reportes-v2.md) ──────────
+        // D-13: mismo cálculo mes a mes que GetNetWorthMonthlySeriesAsync, pero acumulando por
+        // AssetTypeName dentro del entorno BOLSA en vez de en los cinco buckets de Patrimonio.
+        [Fact]
+        public async Task GetStocksValueMonthlySeriesByTypeAsync_GroupsValueByAssetType()
+        {
+            using var context = CreateContext();
+            // Ids explícitos, lejos del 2 — NetWorthDollarPivotAssetId está hardcodeado a ese id y
+            // trataría a cualquier activo que lo tome como si ya estuviera en dólares, sin dividir
+            // por su cotización.
+            var reference = AddReferenceAsset(context);
+            reference.Id = 10;
+            var cedear = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "CEDEAR");
+            cedear.Id = 11;
+            var accionAr = AddInvestmentAsset(context, "Galicia", "GGAL", "BOLSA", "Accion Argentina");
+            accionAr.Id = 12;
+
+            var date = new DateTime(2026, 1, 1);
+            AddTransaction(context, cedear, date, amount: 10m, quotePrice: 1m / 100m);   // $1.000
+            AddTransaction(context, accionAr, date, amount: 5m, quotePrice: 1m / 50m);   // $250
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = date, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = cedear, Date = date, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = accionAr, Date = date, Type = "NA", Value = 1m / 50m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var points = (await repo.GetStocksValueMonthlySeriesByTypeAsync(UserId, reference, months: 2)).ToList();
+
+            var lastPoint = points.Last();
+            lastPoint.ByType.Single(t => t.AssetTypeName == "CEDEAR").Value.Should().Be(1000m);
+            lastPoint.ByType.Single(t => t.AssetTypeName == "Accion Argentina").Value.Should().Be(250m);
+        }
+
+        // Mismo bug que GetNetWorthMonthlySeriesAsync_SplitPosteriorAlMes_NoInflaLaTenenciaDeEseMes
+        // (corrección 2026-09-08), sobre la variante por tipo: el factor de split no puede aplicarse
+        // a un mes anterior al split, aunque el activo ya lo haya sufrido a la fecha de hoy.
+        [Fact]
+        public async Task GetStocksValueMonthlySeriesByTypeAsync_SplitPosteriorAlMes_NoInflaLaTenenciaDeEseMes()
+        {
+            using var context = CreateContext();
+            var dollar = AddDollarPivotAsset(context);
+            var stock = AddInvestmentAsset(context, "YPF", "YPFD", "BOLSA", "Accion Argentina");
+            var (purchaseDate, splitDate, preSplitCutoff) = SplitTimeline();
+
+            AddTransaction(context, stock, purchaseDate, amount: 10m, quotePrice: 1m / 100m);
+            context.AssetSplitEvents.Add(new AssetSplitEvent { AssetId = stock.Id, Date = splitDate, SplitRatio = 10m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = purchaseDate, Type = "NA", Value = 1m / 100m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stock, Date = splitDate, Type = "NA", Value = 1m / 10m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var points = (await repo.GetStocksValueMonthlySeriesByTypeAsync(UserId, dollar, months: 4)).ToList();
+
+            points.Single(p => p.Month == preSplitCutoff).ByType.Single(t => t.AssetTypeName == "Accion Argentina").Value.Should().Be(1000m);
+            points.Last().ByType.Single(t => t.AssetTypeName == "Accion Argentina").Value.Should().Be(1000m);
+        }
+
+        // D-14: el complemento exacto de GetInvestmentHoldingsAsync (RawQuantity > 0) — una posición
+        // totalmente vendida, con su resultado realizado calculado con la cotización de cada
+        // movimiento (T6): comprada a $10 (costo $100), vendida a $12 (ingreso $120) → ganancia $20.
+        [Fact]
+        public async Task GetClosedInvestmentPositionsAsync_ComputesRealizedResultForFullyClosedPosition()
+        {
+            using var context = CreateContext();
+            var reference = AddReferenceAsset(context);
+            var fci = AddInvestmentAsset(context, "Bull Market Acciones", "BULMAAA", "BOLSA", "FCI");
+            var stillOpen = AddInvestmentAsset(context, "Apple", "AAPL", "BOLSA", "CEDEAR");
+
+            var buyDate = new DateTime(2025, 1, 1);
+            var sellDate = new DateTime(2025, 6, 1);
+
+            AddTransaction(context, fci, buyDate, amount: 10m, quotePrice: 1m / 10m);    // compra: $100
+            AddTransaction(context, fci, sellDate, amount: -10m, quotePrice: 1m / 12m);  // venta: $120
+            AddTransaction(context, stillOpen, buyDate, amount: 5m, quotePrice: 1m / 50m); // tenencia viva, no debe aparecer
+
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = buyDate, Type = "NA", Value = 1m });
+            context.AssetQuotes.Add(new AssetQuote { Asset = stillOpen, Date = buyDate, Type = "NA", Value = 1m / 50m });
+
+            await context.SaveChangesAsync();
+
+            var repo = new TransactionRepository(context);
+            var closed = (await repo.GetClosedInvestmentPositionsAsync(UserId, reference.Id)).ToList();
+
+            closed.Should().ContainSingle();
+            closed[0].Symbol.Should().Be("BULMAAA");
+            closed[0].RealizedResult.Should().Be(20m);
+            closed[0].LastMovementDate.Should().Be(sellDate);
+        }
     }
 }
