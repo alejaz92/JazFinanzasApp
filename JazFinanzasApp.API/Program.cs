@@ -57,6 +57,7 @@ builder.Services.AddScoped<ISharedEventRepository, SharedEventRepository>();
 builder.Services.AddScoped<ISharedEventMovementRepository, SharedEventMovementRepository>();
 builder.Services.AddScoped<ISharedEventPaymentRepository, SharedEventPaymentRepository>();
 builder.Services.AddScoped<ITagRepository, TagRepository>();
+builder.Services.AddScoped<IReportFavoriteRepository, ReportFavoriteRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // Registrar los servicios
@@ -89,6 +90,7 @@ builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<IInvestmentReportService, InvestmentReportService>();
 builder.Services.AddScoped<ITripReportService, TripReportService>();
 builder.Services.AddScoped<ISharedEventReportService, SharedEventReportService>();
+builder.Services.AddScoped<IReportFavoriteService, ReportFavoriteService>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

@@ -49,6 +49,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<Tag> Tags { get; set; }
         public DbSet<TransactionTag> TransactionTags { get; set; }
         public DbSet<CardTransactionTag> CardTransactionTags { get; set; }
+        public DbSet<ReportFavorite> ReportFavorites { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -181,6 +182,11 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+            modelBuilder.Entity<ReportFavorite>()
+                .HasOne(f => f.User)
+                .WithMany() // Si no hay colección en User
+                .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.Cascade); // borrar el usuario borra sus favoritos
             modelBuilder.Entity<TransactionTag>()
                 .HasOne(tt => tt.Transaction)
                 .WithMany() // Si no hay colección en Transaction
