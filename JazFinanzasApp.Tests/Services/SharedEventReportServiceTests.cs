@@ -11,9 +11,9 @@ namespace JazFinanzasApp.Tests.Services
 {
     // Fase 21 (Bloque E, Flujo 7 — Compartidos). "Por evento" no se testea acá: reusa
     // SharedEventService.GetByIdAsync tal cual (ya cubierto por SharedEventServiceTests). Este archivo
-    // cubre lo nuevo: la evolución mensual del saldo (solo Eventos, sin el pool de SharedExpense
-    // sueltas — ver comentario en SharedEventReportDTOs), el ranking de eventos y el historial por
-    // persona.
+    // cubre lo nuevo: el ranking de eventos y el historial por persona. Hubo tests de una evolución
+    // mensual del saldo (BalanceEvolution), sacada tras la revisión de la Fase 22 — ver el comentario
+    // en SharedEventReportService.
     public class SharedEventReportServiceTests
     {
         private const int UserId = 1;
@@ -51,41 +51,6 @@ namespace JazFinanzasApp.Tests.Services
             var result = await _sut.GetGeneralAsync(UserId);
 
             result.Balances.Should().BeEquivalentTo(debts);
-        }
-
-        [Fact]
-        public async Task GetGeneralAsync_BalanceEvolution_ComputesMyBalanceAsOfEachMonth_ContributedMinusConsumed()
-        {
-            var today = DateTime.UtcNow.Date;
-            var sharedEvent = new SharedEvent
-            {
-                Id = 10,
-                Name = "Bariloche 2026",
-                Movements = new List<SharedEventMovement>
-                {
-                    // El usuario pagó 100 (PayerPersonId null) y consumió 60 de su parte -- el resto (40)
-                    // lo consumió un tercero, así que MyBalance = 100 - 60 = 40 (me deben esos 40).
-                    new()
-                    {
-                        AssetId = 2, Asset = UsdAsset, Date = today, PayerPersonId = null, TotalAmount = 100m,
-                        Shares = new List<SharedEventMovementShare>
-                        {
-                            new() { PersonId = null, Amount = 60m },
-                            new() { PersonId = PersonId, Amount = 40m }
-                        }
-                    }
-                }
-            };
-            _sharedEventRepoMock.Setup(r => r.GetAllDetailByUserIdAsync(UserId)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
-
-            var result = await _sut.GetGeneralAsync(UserId);
-
-            result.BalanceEvolution.Should().ContainSingle();
-            var point = result.BalanceEvolution.Single();
-            point.AssetId.Should().Be(2);
-            point.AssetSymbol.Should().Be("USD");
-            point.Month.Should().Be(new DateTime(today.Year, today.Month, 1));
-            point.MyBalance.Should().Be(40m);
         }
 
         [Fact]
@@ -202,37 +167,6 @@ namespace JazFinanzasApp.Tests.Services
             result.Movements[0].EventId.Should().Be(10);
             result.Movements[0].EventName.Should().Be("Bariloche 2026");
             result.Movements[0].Movement.Description.Should().Be("Con Renzo");
-        }
-
-        [Fact]
-        public async Task GetByPersonAsync_BalanceEvolution_SignIsFlippedRelativeToGeneral()
-        {
-            _personRepoMock.Setup(r => r.GetByIdAsync(PersonId)).ReturnsAsync(new Person { Id = PersonId, UserId = UserId, Name = "Renzo" });
-            var today = DateTime.UtcNow.Date;
-
-            // Renzo pagó los 100 y el usuario consumió los 100 -- el usuario le debe a Renzo, así que
-            // en la convención de "PendingInFavor - PendingAgainst" (positivo = me deben) el punto
-            // tiene que dar negativo, aunque el neto de Renzo dentro del evento (ComputeBalances) sea
-            // +100 (puso más de lo que consumió). Por eso GetByPersonAsync invierte el signo.
-            var sharedEvent = new SharedEvent
-            {
-                Id = 10,
-                Name = "Bariloche 2026",
-                Movements = new List<SharedEventMovement>
-                {
-                    new()
-                    {
-                        AssetId = 2, Asset = UsdAsset, Date = today, PayerPersonId = PersonId, TotalAmount = 100m,
-                        Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 100m } }
-                    }
-                }
-            };
-            _sharedEventRepoMock.Setup(r => r.GetAllDetailByUserIdAsync(UserId)).ReturnsAsync(new List<SharedEvent> { sharedEvent });
-
-            var result = await _sut.GetByPersonAsync(UserId, PersonId);
-
-            result.BalanceEvolution.Should().ContainSingle();
-            result.BalanceEvolution.Single().MyBalance.Should().Be(-100m);
         }
     }
 }

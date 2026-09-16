@@ -10,8 +10,17 @@ namespace JazFinanzasApp.API.Business.Services
     // Bloque E, Fase 21 (docs/plans/activos/plan-rediseno-reportes-v2.md): backend de Compartidos
     // (Flujo 7). "Por evento" no suma nada acá: ya está resuelto por SharedEventService.GetByIdAsync
     // (Balances, CategoryTotals, Movements, Payments), que es exactamente "quién puso qué, cómo se
-    // repartió, qué quedó pendiente" -- este servicio cubre General (Balances actuales + evolución +
-    // ranking) y Por persona (lo mismo, más el historial cruzando eventos).
+    // repartió, qué quedó pendiente" -- este servicio cubre General (Balances actuales + ranking) y
+    // Por persona (lo mismo, más el historial cruzando eventos).
+    //
+    // Hubo una evolución mensual del saldo (BalanceEvolution), sacada tras la revisión de la Fase 22:
+    // solo podía reconstruirse a partir de movimientos/pagos de Evento, que tienen fecha. El pool de
+    // SharedExpense sueltas (fuera de un Evento) --que es de donde sale la mayoría del saldo real,
+    // Renzo en `demo` incluido-- no tiene esa fecha en el 89% de los casos históricos (solo el total
+    // acumulado de hoy), así que el gráfico terminaba mostrando una "evolución" que en la práctica
+    // podía no moverse nunca mientras el saldo real de la persona sí lo hacía -- contradecía a la
+    // tabla de "Saldo actual" de la misma pantalla sin que hubiera forma honesta de conciliarlo mes a
+    // mes. Se prefirió sacarlo a dejar un gráfico que mintiera por construcción.
     public class SharedEventReportService : ISharedEventReportService
     {
         private readonly ISharedEventRepository _sharedEventRepository;
@@ -32,8 +41,6 @@ namespace JazFinanzasApp.API.Business.Services
         {
             var balances = (await _sharedEventService.GetConsolidatedDebtsAsync(userId)).ToList();
             var events = await _sharedEventRepository.GetAllDetailByUserIdAsync(userId);
-
-            var balanceEvolution = BuildBalanceEvolution(events, personId: null, negate: false);
 
             // Ranking nominal: si un evento mezclara monedas se suma igual para ordenar (no para
             // mostrar un total financiero, eso lo hace Amounts por separado) -- en la práctica los
@@ -62,7 +69,6 @@ namespace JazFinanzasApp.API.Business.Services
             return new SharedEventGeneralReportDTO
             {
                 Balances = balances,
-                BalanceEvolution = balanceEvolution,
                 EventRanking = ranking
             };
         }
@@ -78,11 +84,6 @@ namespace JazFinanzasApp.API.Business.Services
                 .ToList();
 
             var events = await _sharedEventRepository.GetAllDetailByUserIdAsync(userId);
-
-            // Signo invertido respecto de GetGeneralAsync: acá "positivo" tiene que leerse igual que
-            // Balances (PendingInFavor - PendingAgainst, "me debe"), y el neto de ComputeBalances para
-            // un tercero es al revés de eso (positivo ahí = esa persona puso más de lo que consumió).
-            var balanceEvolution = BuildBalanceEvolution(events, personId, negate: true);
 
             var personMovements = events
                 .SelectMany(e => (e.Movements ?? new List<SharedEventMovement>())
@@ -143,76 +144,10 @@ namespace JazFinanzasApp.API.Business.Services
                 PersonId = personId,
                 PersonName = person.Alias ?? person.Name,
                 Balances = balances,
-                BalanceEvolution = balanceEvolution,
                 CategoryTotals = categoryTotals,
                 Movements = movements,
                 Payments = payments
             };
-        }
-
-        // Una serie mensual por moneda, desde el primer movimiento/pago de esa moneda hasta el mes
-        // actual -- "arranca corta y se va llenando sola" (Flujo 7). `negate` es para Por persona
-        // (ver el comentario en GetByPersonAsync).
-        private static List<SharedEventBalancePointDTO> BuildBalanceEvolution(List<SharedEvent> events, int? personId, bool negate)
-        {
-            var assetActivity = events
-                .SelectMany(e => (e.Movements ?? new List<SharedEventMovement>())
-                    .Select(m => (AssetId: m.AssetId, Symbol: m.Asset?.Symbol ?? string.Empty, Date: m.Date))
-                    .Concat((e.Payments ?? new List<SharedEventPayment>())
-                        .Select(p => (AssetId: p.AssetId, Symbol: p.Asset?.Symbol ?? string.Empty, Date: p.Date))))
-                .GroupBy(x => x.AssetId)
-                .ToDictionary(g => g.Key, g => (Symbol: g.First().Symbol, FirstDate: g.Min(x => x.Date)));
-
-            var currentMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
-            var result = new List<SharedEventBalancePointDTO>();
-
-            foreach (var (assetId, info) in assetActivity)
-            {
-                var monthCursor = new DateTime(info.FirstDate.Year, info.FirstDate.Month, 1);
-                while (monthCursor <= currentMonthStart)
-                {
-                    var monthEnd = monthCursor.AddMonths(1).AddDays(-1);
-                    var balance = ComputeNetBalanceAsOf(events, personId, assetId, monthEnd);
-
-                    result.Add(new SharedEventBalancePointDTO
-                    {
-                        Month = monthCursor,
-                        AssetId = assetId,
-                        AssetSymbol = info.Symbol,
-                        MyBalance = negate ? -balance : balance
-                    });
-
-                    monthCursor = monthCursor.AddMonths(1);
-                }
-            }
-
-            return result.OrderBy(p => p.AssetId).ThenBy(p => p.Month).ToList();
-        }
-
-        // Misma fórmula que SharedEventService.ComputeBalances (Contributed - Consumed + pagos), pero
-        // filtrando movimientos y pagos a Date <= asOf para poder reconstruir un mes pasado.
-        private static decimal ComputeNetBalanceAsOf(List<SharedEvent> events, int? personId, int assetId, DateTime asOf)
-        {
-            decimal contributed = 0, consumed = 0, paymentsFrom = 0, paymentsTo = 0;
-
-            foreach (var e in events)
-            {
-                foreach (var m in (e.Movements ?? new List<SharedEventMovement>())
-                    .Where(m => m.AssetId == assetId && m.Date.Date <= asOf.Date))
-                {
-                    if (m.PayerPersonId == personId) contributed += m.TotalAmount;
-                    consumed += m.Shares?.Where(s => s.PersonId == personId).Sum(s => s.Amount) ?? 0;
-                }
-
-                foreach (var p in (e.Payments ?? new List<SharedEventPayment>())
-                    .Where(p => p.AssetId == assetId && p.Date.Date <= asOf.Date))
-                {
-                    if (p.FromPersonId == personId) paymentsFrom += p.Amount;
-                    if (p.ToPersonId == personId) paymentsTo += p.Amount;
-                }
-            }
-
-            return Math.Round(contributed - consumed + paymentsFrom - paymentsTo, 2);
         }
     }
 }
