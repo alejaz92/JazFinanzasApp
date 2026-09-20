@@ -7,5 +7,6 @@
         public DateTime? NextClosingDate { get; set; }
         public DateTime? NextDueDate { get; set; }
         public bool IsCurrentPeriodPaid { get; set; }
+        public DateTime? NextStatementMonth { get; set; }
     }
 }

@@ -20,6 +20,7 @@ namespace JazFinanzasApp.API.Business.Services
         public async Task<IEnumerable<CardDTO>> GetAllForUserAsync(int userId)
         {
             var cards = await _cardRepository.GetByUserIdAsync(userId);
+            var lastPaidByCard = await _cardPaymentRepository.GetLastPaidMonthByCardAsync(userId);
             var dtos = new List<CardDTO>();
             foreach (var c in cards)
             {
@@ -29,7 +30,9 @@ namespace JazFinanzasApp.API.Business.Services
                     Name = c.Name,
                     NextClosingDate = c.NextClosingDate,
                     NextDueDate = c.NextDueDate,
-                    IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(c)
+                    IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(c),
+                    NextStatementMonth = BuildNextStatementMonth(
+                        lastPaidByCard != null && lastPaidByCard.TryGetValue(c.Id, out var lastPaid) ? lastPaid : null)
                 });
             }
             return dtos;
@@ -40,14 +43,26 @@ namespace JazFinanzasApp.API.Business.Services
             var card = await _cardRepository.GetByIdAsync(id)
                 ?? throw new NotFoundException("Card not found");
             if (card.UserId != userId) throw new UnauthorizedDomainException();
+            var paidMonths = await _cardPaymentRepository.GetPaidMonthsAsync(card.Id);
             return new CardDTO
             {
                 Id = card.Id,
                 Name = card.Name,
                 NextClosingDate = card.NextClosingDate,
                 NextDueDate = card.NextDueDate,
-                IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(card)
+                IsCurrentPeriodPaid = await IsCurrentPeriodPaidAsync(card),
+                NextStatementMonth = BuildNextStatementMonth(paidMonths?.Any() == true ? paidMonths.Max() : null)
             };
+        }
+
+        // El mes de un resumen no se puede deducir del mes de su cierre: un resumen que cierra el 1/10
+        // es el de septiembre. Lo que sí es confiable es que el resumen abierto es el que sigue al
+        // último pagado. Sin pagos registrados devuelve null y el consumidor usa el mes del cierre.
+        private static DateTime? BuildNextStatementMonth(DateTime? lastPaidMonth)
+        {
+            return lastPaidMonth.HasValue
+                ? new DateTime(lastPaidMonth.Value.Year, lastPaidMonth.Value.Month, 1).AddMonths(1)
+                : null;
         }
 
         private async Task<bool> IsCurrentPeriodPaidAsync(Card card)
