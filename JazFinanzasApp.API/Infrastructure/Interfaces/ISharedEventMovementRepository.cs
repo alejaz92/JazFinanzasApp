@@ -6,6 +6,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
     {
         Task<SharedEventMovement?> GetDetailByIdAsync(int id);
         Task<bool> HasActivityAsync(int movementId);
+        Task<bool> HasBankPromotionAsync(int cardTransactionId);
         Task RemoveSharesAsync(IEnumerable<SharedEventMovementShare> shares);
         Task<bool> IsTransactionReferencedAsync(int transactionId);
         Task<bool> IsCardTransactionReferencedAsync(int cardTransactionId);

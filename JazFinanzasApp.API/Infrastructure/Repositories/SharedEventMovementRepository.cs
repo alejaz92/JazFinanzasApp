@@ -47,6 +47,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 (a.SharedExpenseSplitId != null && splitIds.Contains(a.SharedExpenseSplitId.Value)));
         }
 
+        public async Task<bool> HasBankPromotionAsync(int cardTransactionId)
+        {
+            return await _context.CardTransactionDiscounts.AnyAsync(d => d.CardTransactionId == cardTransactionId);
+        }
+
         public async Task RemoveSharesAsync(IEnumerable<SharedEventMovementShare> shares)
         {
             _context.SharedEventMovementShares.RemoveRange(shares);

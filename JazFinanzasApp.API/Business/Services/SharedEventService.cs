@@ -258,6 +258,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (await _sharedEventMovementRepository.HasActivityAsync(movementId))
                 throw new BusinessRuleException("No se puede editar un movimiento con pagos aplicados; elimine primero los pagos involucrados");
 
+            if (movement.CardTransactionId != null && await _sharedEventMovementRepository.HasBankPromotionAsync(movement.CardTransactionId.Value))
+                throw new BusinessRuleException("No se puede editar un movimiento con una promoción bancaria adjunta; elimine primero la promoción bancaria");
+
             ValidateMovementInput(sharedEvent, dto);
 
             var asset = await _assetRepository.GetByIdAsync(dto.AssetId)
@@ -316,6 +319,9 @@ namespace JazFinanzasApp.API.Business.Services
 
             if (await _sharedEventMovementRepository.HasActivityAsync(movementId))
                 throw new BusinessRuleException("No se puede eliminar un movimiento con pagos aplicados; elimine primero los pagos involucrados");
+
+            if (movement.CardTransactionId != null && await _sharedEventMovementRepository.HasBankPromotionAsync(movement.CardTransactionId.Value))
+                throw new BusinessRuleException("No se puede eliminar un movimiento con una promoción bancaria adjunta; elimine primero la promoción bancaria");
 
             await _unitOfWork.BeginTransactionAsync();
             try
