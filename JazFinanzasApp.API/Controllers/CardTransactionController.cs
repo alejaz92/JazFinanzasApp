@@ -48,6 +48,13 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(cardTransactionsPaymentDTO);
         }
 
+        [HttpPost("CardPayments/NoExpenses")]
+        public async Task<IActionResult> RegisterEmptyMonth([FromBody] CardNoExpenseMonthDTO cardNoExpenseMonthDTO)
+        {
+            await _cardTransactionService.RegisterEmptyMonthAsync(GetUserId(), cardNoExpenseMonthDTO);
+            return Ok(cardNoExpenseMonthDTO);
+        }
+
         [HttpGet("EditRecurrent/{Id}")]
         public async Task<IActionResult> GetRecurrent(int Id)
         {
