@@ -1085,5 +1085,103 @@ namespace JazFinanzasApp.Tests.Services
             pases.Single(t => t.AccountId == 3).Amount.Should().Be(80m);
             pases.Single(t => t.AccountId == 2).Amount.Should().Be(-80m);
         }
-}
+
+        // ── RegisterEmptyMonthAsync (plan-tarjeta-sin-gastos.md) ─────────────
+
+        private CardNoExpenseMonthDTO MakeNoExpenseDto() => new()
+        {
+            CardId = 1,
+            PaymentMonth = new DateTime(2026, 1, 1),
+            NextClosingDate = new DateTime(2026, 2, 20),
+            NextDueDate = new DateTime(2026, 2, 27)
+        };
+
+        private void SetupRegisterEmptyMonthHappyPathDependencies(Card card)
+        {
+            _cardRepoMock.Setup(r => r.GetByIdAsync(card.Id)).ReturnsAsync(card);
+            _cardPaymentRepoMock.Setup(r => r.IsPaymentAlreadyMadeAsync(card.Id, It.IsAny<DateTime>())).ReturnsAsync(false);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsToPay(card.Id, It.IsAny<DateTime>(), UserId))
+                .ReturnsAsync(Enumerable.Empty<CardTransaction>());
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_WithoutPendingExpenses_MarksMonthPaidAndUpdatesCard()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            SetupRegisterEmptyMonthHappyPathDependencies(card);
+            var dto = MakeNoExpenseDto();
+
+            await _sut.RegisterEmptyMonthAsync(UserId, dto);
+
+            _cardPaymentRepoMock.Verify(r => r.AddAsync(It.Is<CardPayment>(cp =>
+                cp.CardId == dto.CardId && cp.Date == dto.PaymentMonth)), Times.Once);
+            _cardRepoMock.Verify(r => r.UpdateAsync(It.Is<Card>(c =>
+                c.NextClosingDate == dto.NextClosingDate && c.NextDueDate == dto.NextDueDate)), Times.Once);
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_DoesNotCreateAnyTransaction()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            SetupRegisterEmptyMonthHappyPathDependencies(card);
+
+            await _sut.RegisterEmptyMonthAsync(UserId, MakeNoExpenseDto());
+
+            _transactionRepoMock.Verify(r => r.AddAsyncTransaction(It.IsAny<Transaction>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_WhenCardNotFound_ThrowsNotFoundException()
+        {
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync((Card?)null);
+
+            var act = () => _sut.RegisterEmptyMonthAsync(UserId, MakeNoExpenseDto());
+
+            await act.Should().ThrowAsync<NotFoundException>();
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_WithNextDueDateBeforeNextClosingDate_ThrowsBusinessRuleException()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(card);
+            var dto = MakeNoExpenseDto();
+            dto.NextClosingDate = new DateTime(2026, 2, 27);
+            dto.NextDueDate = new DateTime(2026, 2, 20);
+
+            var act = () => _sut.RegisterEmptyMonthAsync(UserId, dto);
+
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _cardPaymentRepoMock.Verify(r => r.AddAsync(It.IsAny<CardPayment>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_WhenMonthAlreadyPaid_ThrowsBusinessRuleException()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(card);
+            _cardPaymentRepoMock.Setup(r => r.IsPaymentAlreadyMadeAsync(1, It.IsAny<DateTime>())).ReturnsAsync(true);
+
+            var act = () => _sut.RegisterEmptyMonthAsync(UserId, MakeNoExpenseDto());
+
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _cardRepoMock.Verify(r => r.UpdateAsync(It.IsAny<Card>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task RegisterEmptyMonthAsync_WhenCardHasPendingExpenses_ThrowsBusinessRuleException()
+        {
+            var card = new Card { Id = 1, UserId = UserId, Name = "Visa" };
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(card);
+            _cardPaymentRepoMock.Setup(r => r.IsPaymentAlreadyMadeAsync(1, It.IsAny<DateTime>())).ReturnsAsync(false);
+            _cardTransactionRepoMock.Setup(r => r.GetCardTransactionsToPay(1, It.IsAny<DateTime>(), UserId))
+                .ReturnsAsync(new[] { new CardTransaction { Id = 20, CardId = 1, UserId = UserId } });
+
+            var act = () => _sut.RegisterEmptyMonthAsync(UserId, MakeNoExpenseDto());
+
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _cardPaymentRepoMock.Verify(r => r.AddAsync(It.IsAny<CardPayment>()), Times.Never);
+            _cardRepoMock.Verify(r => r.UpdateAsync(It.IsAny<Card>()), Times.Never);
+        }
+    }
 }

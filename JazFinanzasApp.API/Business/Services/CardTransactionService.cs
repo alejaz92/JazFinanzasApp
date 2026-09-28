@@ -288,6 +288,37 @@ namespace JazFinanzasApp.API.Business.Services
             }
         }
 
+        // Cierra el mes de una tarjeta que no tuvo gastos: no crea ninguna Transaction ni toca saldos,
+        // solo marca el mes como resuelto (mismo CardPayment que usa el pago real) y carga el próximo
+        // cierre/vencimiento. Ver plan-tarjeta-sin-gastos.md (D1-D5).
+        public async Task RegisterEmptyMonthAsync(int userId, CardNoExpenseMonthDTO dto)
+        {
+            var card = await _cardRepository.GetByIdAsync(dto.CardId)
+                ?? throw new NotFoundException("Card not found");
+
+            if (dto.NextDueDate < dto.NextClosingDate)
+                throw new BusinessRuleException("NextDueDate must be on or after NextClosingDate");
+
+            var isPaymentMade = await _cardPaymentRepository.IsPaymentAlreadyMadeAsync(dto.CardId, dto.PaymentMonth);
+            if (isPaymentMade) throw new BusinessRuleException("Payment already made");
+
+            var pendingTransactions = await _cardTransactionRepository.GetCardTransactionsToPay(dto.CardId, dto.PaymentMonth, userId);
+            if (pendingTransactions.Any())
+                throw new BusinessRuleException("La tarjeta tiene gastos pendientes este mes; registrá el pago normal");
+
+            await _cardPaymentRepository.AddAsync(new CardPayment
+            {
+                CardId = dto.CardId,
+                Card = card,
+                Date = dto.PaymentMonth
+            });
+
+            card.NextClosingDate = dto.NextClosingDate;
+            card.NextDueDate = dto.NextDueDate;
+            card.UpdatedAt = DateTime.UtcNow;
+            await _cardRepository.UpdateAsync(card);
+        }
+
         public async Task<EditRecurrentListDTO> GetRecurrentTransactionAsync(int userId, int id)
         {
             var cardTransaction = await _cardTransactionRepository.GetByIdAsync(id)

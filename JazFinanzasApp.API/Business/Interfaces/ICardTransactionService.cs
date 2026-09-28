@@ -8,6 +8,7 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<IEnumerable<CardTransactionsPendingDTO>> GetPendingCardTransactionsAsync(int userId);
         Task<IEnumerable<CardTransactionPaymentListDTO>> GetCardPaymentsAsync(int userId, int cardId, DateTime paymentMonth);
         Task RegisterCardPaymentAsync(int userId, CardTransactionPaymentDTO dto);
+        Task RegisterEmptyMonthAsync(int userId, CardNoExpenseMonthDTO dto);
         Task<EditRecurrentListDTO> GetRecurrentTransactionAsync(int userId, int id);
         Task UpdateRecurrentTransactionAsync(int userId, int id, EditRecurrentDTO dto);
         Task DeleteCardTransactionAsync(int userId, int id);
