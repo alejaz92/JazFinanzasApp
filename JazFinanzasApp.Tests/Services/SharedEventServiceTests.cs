@@ -385,6 +385,62 @@ namespace JazFinanzasApp.Tests.Services
             result.Balances.First(b => b.PersonId == 9).NetBalance.Should().Be(-10000m);
         }
 
+        // ── CloseAsync ────────────────────────────────────────────────────────
+
+        [Fact]
+        public async Task CloseAsync_WithOnlyThirdPartyDebtsPending_ClosesEvent()
+        {
+            var asset = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" };
+            var transactionClass = new TransactionClass { Id = 5, UserId = UserId, Description = "Comida", IncExp = "E" };
+
+            // Juan pagó y Pedro le debe su parte; el usuario no puso ni consumió nada.
+            var movement = new SharedEventMovement
+            {
+                Id = 1, AssetId = 1, Asset = asset, TransactionClassId = 5, TransactionClass = transactionClass,
+                TotalAmount = 10000m, PayerPersonId = 8, PayerPerson = Juan,
+                Shares = new List<SharedEventMovementShare> { new() { PersonId = 9, Amount = 10000m, Person = Pedro } }
+            };
+
+            var sharedEvent = BuildEvent(Juan, Pedro);
+            sharedEvent.Movements = new List<SharedEventMovement> { movement };
+
+            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+            _sharedEventPaymentRepoMock.Setup(r => r.GetMovementsWithPendingCreditsAsync(EventId, 1))
+                .ReturnsAsync(new List<SharedEventMovement>());
+            _sharedEventPaymentRepoMock.Setup(r => r.GetMovementsWithPendingDebtsAsync(EventId, 1))
+                .ReturnsAsync(new List<SharedEventMovement>());
+
+            await _sut.CloseAsync(UserId, EventId);
+
+            sharedEvent.IsClosed.Should().BeTrue();
+            _sharedEventRepoMock.Verify(r => r.UpdateAsync(sharedEvent), Times.Once);
+        }
+
+        [Fact]
+        public async Task CloseAsync_WithPendingBalanceForUser_ThrowsBusinessRuleException()
+        {
+            var asset = new Asset { Id = 1, Name = "Peso Argentino", Symbol = "ARS" };
+            var transactionClass = new TransactionClass { Id = 5, UserId = UserId, Description = "Comida", IncExp = "E" };
+
+            // Juan pagó y el usuario todavía le debe su parte.
+            var movement = new SharedEventMovement
+            {
+                Id = 1, AssetId = 1, Asset = asset, TransactionClassId = 5, TransactionClass = transactionClass,
+                TotalAmount = 10000m, PayerPersonId = 8, PayerPerson = Juan,
+                Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = 10000m } }
+            };
+
+            var sharedEvent = BuildEvent(Juan);
+            sharedEvent.Movements = new List<SharedEventMovement> { movement };
+
+            _sharedEventRepoMock.Setup(r => r.GetDetailByIdAsync(EventId)).ReturnsAsync(sharedEvent);
+
+            var act = () => _sut.CloseAsync(UserId, EventId);
+
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            sharedEvent.IsClosed.Should().BeFalse();
+        }
+
         // ── Resumen consolidado ───────────────────────────────────────────────
 
         [Fact]

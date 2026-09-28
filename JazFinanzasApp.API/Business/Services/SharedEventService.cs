@@ -149,8 +149,8 @@ namespace JazFinanzasApp.API.Business.Services
 
             var movements = sharedEvent.Movements?.ToList() ?? new List<SharedEventMovement>();
             var balances = ComputeBalances(sharedEvent, movements);
-            if (balances.Any(b => b.NetBalance != 0))
-                throw new BusinessRuleException("No se puede cerrar el evento: hay saldos pendientes en el evento. Registrar los pagos faltantes primero.");
+            if (balances.Any(b => b.PersonId == null && b.NetBalance != 0))
+                throw new BusinessRuleException("No se puede cerrar el evento: quedan saldos pendientes con vos. Registrar los pagos faltantes primero.");
 
             var assetIds = movements.Select(m => m.AssetId).Distinct().ToList();
             foreach (var assetId in assetIds)
