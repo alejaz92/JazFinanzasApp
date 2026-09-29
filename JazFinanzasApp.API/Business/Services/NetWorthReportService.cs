@@ -9,9 +9,11 @@ namespace JazFinanzasApp.API.Business.Services
     public class NetWorthReportService : INetWorthReportService
     {
         private const int MonthlySeriesLength = 12;
-        // T9: "supera los 3 días hábiles" (D-7) aproximado a 5 días de calendario, para no tener
-        // que resolver feriados — un fin de semana de por medio ya cubre los 3 hábiles reales.
-        private const int StaleDaysThreshold = 5;
+        // T2 (plan-alerta-cotizaciones, 2026-09-29): baja de 5 a 1 para usar el mismo criterio que
+        // el aviso de la bandeja de pendientes ("falta la cotización de ayer" ya avisa) — así los
+        // dos avisos de cotización vieja de la app nunca se contradicen. Reemplaza el criterio
+        // anterior de T9 ("supera los 3 días hábiles" aproximado a 5 días de calendario).
+        private const int StaleDaysThreshold = 1;
 
         private readonly ITransactionRepository _transactionRepository;
         private readonly ICardTransactionRepository _cardTransactionRepository;
@@ -65,7 +67,7 @@ namespace JazFinanzasApp.API.Business.Services
             return new NetWorthGeneralDTO
             {
                 Totals = totals,
-                StaleAssets = staleAssets.Select(s => new StaleAssetDTO { AssetName = s.AssetName, QuoteDate = s.QuoteDate }).ToList()
+                StaleAssets = staleAssets.Select(s => new StaleAssetDTO { AssetName = s.AssetName, AssetSymbol = s.AssetSymbol, AssetTypeName = s.AssetTypeName, QuoteDate = s.QuoteDate }).ToList()
             };
         }
 

@@ -34,12 +34,18 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ISharedExpenseService> _sharedExpenseServiceMock = new();
         private readonly Mock<ITripService> _tripServiceMock = new();
         private readonly Mock<IAssetRepository> _assetRepoMock = new();
+        private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock = new();
         private readonly DashboardService _sut;
 
         private static readonly Asset PesoAsset = new() { Id = 1, Name = "Peso Argentino", Symbol = "$", AssetTypeId = 1 };
 
         public DashboardServiceTests()
         {
+            // Default vacío: los tests que no ejercitan el aviso de cotizaciones (la mayoría) no
+            // necesitan setearlo, y sin esto Moq devolvería null (NullInjectorError al hacer
+            // TryGetValue en BuildStaleQuotePendingItems).
+            _assetQuoteRepoMock.Setup(r => r.GetLatestQuoteDateByAssetTypeAsync()).ReturnsAsync(new Dictionary<string, DateTime>());
+
             _sut = new DashboardService(
                 _netWorthReportServiceMock.Object,
                 _incomeExpenseReportServiceMock.Object,
@@ -48,7 +54,8 @@ namespace JazFinanzasApp.Tests.Services
                 _sharedEventServiceMock.Object,
                 _sharedExpenseServiceMock.Object,
                 _tripServiceMock.Object,
-                _assetRepoMock.Object);
+                _assetRepoMock.Object,
+                _assetQuoteRepoMock.Object);
         }
 
         // ── GetCardDueStatus: puerto de card-due-status.util.ts ─────────────────────────────────
@@ -185,6 +192,105 @@ namespace JazFinanzasApp.Tests.Services
 
             item.Should().NotBeNull();
             item!.Detail.Should().Be("Sin gastos hace 4 días");
+        }
+
+        // ── BuildStaleQuotePendingItems: aviso de cotizaciones (plan-alerta-cotizaciones) ───────
+
+        private static StaleAssetDTO MakeStaleAsset(string symbol, string typeName, DateTime quoteDate)
+            => new() { AssetName = symbol, AssetSymbol = symbol, AssetTypeName = typeName, QuoteDate = quoteDate };
+
+        [Fact]
+        public void BuildStaleQuotePendingItems_NoStaleAssets_ReturnsEmpty()
+        {
+            var items = DashboardService.BuildStaleQuotePendingItems(
+                new List<StaleAssetDTO>(), new Dictionary<string, DateTime>(), Today);
+
+            items.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildStaleQuotePendingItems_WholeFamilyStale_ReturnsSingleRowWithAllSymbols()
+        {
+            // Toda la familia "Bono" cotizó por última vez hace 46 días — mismo caso real (AL30,
+            // GD35, AN29 sin cotizar desde el 14/08).
+            var lastQuote = Today.AddDays(-46);
+            var staleAssets = new List<StaleAssetDTO>
+            {
+                MakeStaleAsset("AL30", "Bono", lastQuote),
+                MakeStaleAsset("GD35", "Bono", lastQuote),
+                MakeStaleAsset("AN29", "Bono", lastQuote)
+            };
+            var latestByType = new Dictionary<string, DateTime> { { "Bono", lastQuote } };
+
+            var items = DashboardService.BuildStaleQuotePendingItems(staleAssets, latestByType, Today);
+
+            items.Should().ContainSingle();
+            items[0].Kind.Should().Be("StaleQuote");
+            items[0].Title.Should().Be("Bono");
+            items[0].Detail.Should().Be($"Sin cotizar desde el {lastQuote:dd/MM/yyyy} (46 días) — AL30, GD35, AN29");
+            items[0].Severity.Should().Be("danger");
+        }
+
+        [Fact]
+        public void BuildStaleQuotePendingItems_LooseAssetInFreshFamily_ReturnsOneRowPerAsset()
+        {
+            // La familia "Criptomoneda" cotizó hoy (BTC, ETH...), pero TON quedó atrás — no es un
+            // corte de la fuente entera, así que va suelto, no agrupado.
+            var staleDate = Today.AddDays(-105);
+            var staleAssets = new List<StaleAssetDTO> { MakeStaleAsset("TON", "Criptomoneda", staleDate) };
+            var latestByType = new Dictionary<string, DateTime> { { "Criptomoneda", Today } };
+
+            var items = DashboardService.BuildStaleQuotePendingItems(staleAssets, latestByType, Today);
+
+            items.Should().ContainSingle();
+            items[0].Title.Should().Be("TON");
+            items[0].Detail.Should().Be($"Sin cotizar desde el {staleDate:dd/MM/yyyy} (105 días)");
+            items[0].Severity.Should().Be("danger");
+        }
+
+        [Fact]
+        public void BuildStaleQuotePendingItems_FamilyOneDayStale_TreatsAssetsIndividually()
+        {
+            // La familia entera está un día atrás (no llegó la de hoy todavía) — no alcanza el
+            // umbral de corte (D-2: hace falta que falte la de AYER), así que no se agrupa.
+            var staleDate = Today.AddDays(-3);
+            var staleAssets = new List<StaleAssetDTO> { MakeStaleAsset("XYZ", "FCI", staleDate) };
+            var latestByType = new Dictionary<string, DateTime> { { "FCI", Today.AddDays(-1) } };
+
+            var items = DashboardService.BuildStaleQuotePendingItems(staleAssets, latestByType, Today);
+
+            items.Should().ContainSingle();
+            items[0].Title.Should().Be("XYZ"); // no agrupado bajo "FCI"
+        }
+
+        [Theory]
+        [InlineData(2, "warning")]
+        [InlineData(4, "warning")]
+        [InlineData(5, "danger")]
+        [InlineData(10, "danger")]
+        public void BuildStaleQuotePendingItems_SeverityByDaysStale(int daysStale, string expectedSeverity)
+        {
+            var staleDate = Today.AddDays(-daysStale);
+            var staleAssets = new List<StaleAssetDTO> { MakeStaleAsset("XYZ", "FCI", staleDate) };
+            var latestByType = new Dictionary<string, DateTime> { { "FCI", Today } }; // familia al día: activo suelto
+
+            var items = DashboardService.BuildStaleQuotePendingItems(staleAssets, latestByType, Today);
+
+            items[0].Severity.Should().Be(expectedSeverity);
+        }
+
+        [Fact]
+        public void BuildStaleQuotePendingItems_AssetTypeMissingFromCatalogQuotes_TreatsAssetsIndividually()
+        {
+            // Si por algún motivo el tipo no aparece en latestQuoteDateByAssetType (ninguna
+            // cotización de ese tipo en TODO el catálogo, caso extremo), no debe reventar: se trata
+            // como familia no frenada.
+            var staleAssets = new List<StaleAssetDTO> { MakeStaleAsset("XYZ", "FCI", Today.AddDays(-10)) };
+
+            var items = DashboardService.BuildStaleQuotePendingItems(staleAssets, new Dictionary<string, DateTime>(), Today);
+
+            items.Should().ContainSingle();
+            items[0].Title.Should().Be("XYZ");
         }
 
         // ── BuildThermometer: acumulado del mes, mismo tramo del mes anterior, proyección ───────

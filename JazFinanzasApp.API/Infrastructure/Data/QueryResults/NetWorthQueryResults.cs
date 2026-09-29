@@ -8,9 +8,14 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
 
     // T9: un activo que hoy se tiene en cartera pero cuya última cotización supera el umbral de
     // frescura — no es "el total de hoy no es de hoy", es "esta tenencia puntual está vieja".
+    //
+    // plan-alerta-cotizaciones, T2: AssetSymbol y AssetTypeName se suman para que
+    // DashboardService.BuildStaleQuotePendingItems pueda agrupar por familia (T4) sin otra consulta.
     public class StaleAssetResult
     {
         public string AssetName { get; set; }
+        public string AssetSymbol { get; set; }
+        public string AssetTypeName { get; set; }
         public DateTime QuoteDate { get; set; }
     }
 

@@ -46,6 +46,20 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             
         }
 
+        // plan-alerta-cotizaciones, T4: mismo filtro de tipo de cotización que GetStaleAssetsAsync
+        // (TransactionRepository) y mismo pivote dólar excluido (Id 2, "NetWorthDollarPivotAssetId"
+        // allá) — ese activo nunca tiene cotización propia, así que su familia (Moneda) no debe
+        // depender de él para saber si está frenada.
+        public async Task<Dictionary<string, DateTime>> GetLatestQuoteDateByAssetTypeAsync()
+        {
+            return await _context.AssetQuotes
+                .Where(q => q.Type != "TARJETA" && q.Type != "BLUE")
+                .Where(q => q.AssetId != 2)
+                .GroupBy(q => q.Asset.AssetType.Name)
+                .Select(g => new { AssetTypeName = g.Key, LastDate = g.Max(q => q.Date) })
+                .ToDictionaryAsync(g => g.AssetTypeName, g => g.LastDate);
+        }
+
         public async Task<IEnumerable<CryptoStatsByDateResult>> GetAssetEvolutionStats(int CryptoId, int monthsQuantity, int referenceAssetId)
         { 
             var dateThreshold = DateTime.Now.AddMonths(-monthsQuantity);

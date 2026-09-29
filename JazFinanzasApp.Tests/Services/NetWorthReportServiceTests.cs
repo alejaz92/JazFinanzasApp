@@ -237,5 +237,52 @@ namespace JazFinanzasApp.Tests.Services
             result.Totals.Should().HaveCount(2);
             result.StaleAssets.Should().ContainSingle(s => s.AssetName == "Bonos Rep. Arg. USD Step Up 2030" && s.QuoteDate == staleDate);
         }
+
+        // plan-alerta-cotizaciones, T2: el umbral baja de 5 a 1 para usar el mismo criterio que la
+        // bandeja de pendientes (D-2: "falta la de ayer" ya avisa).
+        [Fact]
+        public async Task GetGeneralAsync_RequestsStaleAssetsWithOneDayThreshold()
+        {
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#000" };
+            _asset_UserRepoMock.Setup(r => r.GetReferenceAssetsAsync(UserId)).ReturnsAsync(new List<Asset_User>());
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Dolar Estadounidense")).ReturnsAsync(dollar);
+            _cardTransactionRepoMock.Setup(r => r.FindAsync(It.IsAny<System.Linq.Expressions.Expression<Func<CardTransaction, bool>>>()))
+                .ReturnsAsync(new List<CardTransaction>());
+            _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
+            _transactionRepoMock.Setup(r => r.GetStaleAssetsAsync(UserId, It.IsAny<int>())).ReturnsAsync(new List<StaleAssetResult>());
+            _transactionRepoMock.Setup(r => r.GetTotalsBalanceByUserAsync(UserId, dollar))
+                .ReturnsAsync(new TotalsBalanceResult { Asset = "Dolar Estadounidense", Symbol = "US$", Color = "#000", Balance = 0m });
+            _transactionRepoMock.Setup(r => r.GetReferenceAssetRateAsync(dollar)).ReturnsAsync((1m, (DateTime?)null));
+
+            await _sut.GetGeneralAsync(UserId);
+
+            _transactionRepoMock.Verify(r => r.GetStaleAssetsAsync(UserId, 1), Times.Once);
+        }
+
+        // Los campos nuevos (T2) tienen que viajar del resultado del repositorio al DTO, para que
+        // DashboardService pueda agrupar por familia sin otra consulta.
+        [Fact]
+        public async Task GetGeneralAsync_StaleAssetDTO_CarriesSymbolAndAssetTypeName()
+        {
+            var dollar = new Asset { Id = 2, Name = "Dolar Estadounidense", Symbol = "US$", Color = "#000" };
+            _asset_UserRepoMock.Setup(r => r.GetReferenceAssetsAsync(UserId)).ReturnsAsync(new List<Asset_User>());
+            _assetRepoMock.Setup(r => r.GetAssetByNameAsync("Dolar Estadounidense")).ReturnsAsync(dollar);
+            _cardTransactionRepoMock.Setup(r => r.FindAsync(It.IsAny<System.Linq.Expressions.Expression<Func<CardTransaction, bool>>>()))
+                .ReturnsAsync(new List<CardTransaction>());
+            _cardPaymentRepoMock.Setup(r => r.GetLastPaidMonthByCardAsync(UserId)).ReturnsAsync(new Dictionary<int, DateTime>());
+            _transactionRepoMock.Setup(r => r.GetTotalsBalanceByUserAsync(UserId, dollar))
+                .ReturnsAsync(new TotalsBalanceResult { Asset = "Dolar Estadounidense", Symbol = "US$", Color = "#000", Balance = 0m });
+            _transactionRepoMock.Setup(r => r.GetReferenceAssetRateAsync(dollar)).ReturnsAsync((1m, (DateTime?)null));
+
+            var staleDate = new DateTime(2026, 8, 14);
+            _transactionRepoMock.Setup(r => r.GetStaleAssetsAsync(UserId, It.IsAny<int>())).ReturnsAsync(new List<StaleAssetResult>
+            {
+                new() { AssetName = "Bonos Rep. Arg. USD Step Up 2030", AssetSymbol = "AL30", AssetTypeName = "Bono", QuoteDate = staleDate }
+            });
+
+            var result = await _sut.GetGeneralAsync(UserId);
+
+            result.StaleAssets.Should().ContainSingle(s => s.AssetSymbol == "AL30" && s.AssetTypeName == "Bono");
+        }
     }
 }

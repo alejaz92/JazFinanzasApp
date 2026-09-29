@@ -1,6 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
+using JazFinanzasApp.API.Business.DTO.NetWorth;
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
 using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.DTO.Trip;
@@ -35,6 +36,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ISharedExpenseService _sharedExpenseService;
         private readonly ITripService _tripService;
         private readonly IAssetRepository _assetRepository;
+        private readonly IAssetQuoteRepository _assetQuoteRepository;
 
         public DashboardService(
             INetWorthReportService netWorthReportService,
@@ -44,7 +46,8 @@ namespace JazFinanzasApp.API.Business.Services
             ISharedEventService sharedEventService,
             ISharedExpenseService sharedExpenseService,
             ITripService tripService,
-            IAssetRepository assetRepository)
+            IAssetRepository assetRepository,
+            IAssetQuoteRepository assetQuoteRepository)
         {
             _netWorthReportService = netWorthReportService;
             _incomeExpenseReportService = incomeExpenseReportService;
@@ -54,22 +57,27 @@ namespace JazFinanzasApp.API.Business.Services
             _sharedExpenseService = sharedExpenseService;
             _tripService = tripService;
             _assetRepository = assetRepository;
+            _assetQuoteRepository = assetQuoteRepository;
         }
 
         public async Task<DashboardDTO> GetDashboardAsync(int userId, int assetId)
         {
             var asset = await GetCurrencyAssetAsync(assetId);
             var today = DateTime.Today;
+            // plan-alerta-cotizaciones, T3: se pide una sola vez y se comparte entre Indicadores
+            // (ya lo usaba) y Pendientes (aviso de cotizaciones nuevo) — así los dos no pueden
+            // divergir, y cada usuario ve solo lo suyo porque GetGeneralAsync ya es por usuario.
+            var netWorthGeneral = await _netWorthReportService.GetGeneralAsync(userId);
 
             return new DashboardDTO
             {
-                Indicators = await BuildIndicatorsAsync(userId, asset, today),
+                Indicators = await BuildIndicatorsAsync(userId, asset, today, netWorthGeneral),
                 Thermometer = await BuildThermometerAsync(userId, asset, today),
-                Pending = await BuildPendingAsync(userId, asset, today)
+                Pending = await BuildPendingAsync(userId, asset, today, netWorthGeneral)
             };
         }
 
-        private async Task<DashboardIndicatorsDTO> BuildIndicatorsAsync(int userId, Asset asset, DateTime today)
+        private async Task<DashboardIndicatorsDTO> BuildIndicatorsAsync(int userId, Asset asset, DateTime today, NetWorthGeneralDTO netWorthGeneral)
         {
             var currentMonth = new DateTime(today.Year, today.Month, 1);
 
@@ -79,8 +87,7 @@ namespace JazFinanzasApp.API.Business.Services
                 .Where(h => h.AssetTypeName == CurrencyAssetTypeName)
                 .Sum(h => h.BalanceInReferenceAsset), 2);
 
-            var netWorth = await _netWorthReportService.GetGeneralAsync(userId);
-            var total = netWorth.Totals.FirstOrDefault(t => t.Asset == asset.Name);
+            var total = netWorthGeneral.Totals.FirstOrDefault(t => t.Asset == asset.Name);
 
             var monthlySeries = (await _netWorthReportService.GetMonthlySeriesAsync(userId, asset.Id)).ToList();
             var netWorthChange = monthlySeries.Count >= 2
@@ -124,7 +131,7 @@ namespace JazFinanzasApp.API.Business.Services
             return BuildThermometer(days, today);
         }
 
-        private async Task<List<DashboardPendingItemDTO>> BuildPendingAsync(int userId, Asset asset, DateTime today)
+        private async Task<List<DashboardPendingItemDTO>> BuildPendingAsync(int userId, Asset asset, DateTime today, NetWorthGeneralDTO netWorthGeneral)
         {
             var pending = new List<DashboardPendingItemDTO>();
 
@@ -192,6 +199,13 @@ namespace JazFinanzasApp.API.Business.Services
                 var item = GetTripPendingItem(detail, today, TripStaleDaysThreshold);
                 if (item != null) pending.Add(item);
             }
+
+            // plan-alerta-cotizaciones: `netWorthGeneral.StaleAssets` ya viene filtrado por
+            // NetWorthReportService.StaleDaysThreshold (T2) a lo que el usuario tiene en cartera —
+            // acá solo se agrupa por familia (T4) y se decide severidad (T1), sin pedir nada más al
+            // repositorio de transacciones.
+            var latestQuoteDateByAssetType = await _assetQuoteRepository.GetLatestQuoteDateByAssetTypeAsync();
+            pending.AddRange(BuildStaleQuotePendingItems(netWorthGeneral.StaleAssets, latestQuoteDateByAssetType, today));
 
             return pending;
         }
@@ -280,6 +294,58 @@ namespace JazFinanzasApp.API.Business.Services
                 Date = lastMovementDate,
                 LinkId = trip.Id
             };
+        }
+
+        // Pura — testeable sin mocks. T1: atraso = días desde la última cotización; hay corte si
+        // atraso >= 2 (falta la de ayer), y pasa de "warning" a "danger" a los 5. T4: una familia
+        // (AssetType) está frenada si la última cotización de TODO el catálogo de ese tipo también
+        // tiene atraso >= 2 — ahí se junta en una sola fila con los símbolos que el usuario tiene en
+        // esa familia; si no, cada activo suelto entra con su propia fila. `staleAssets` ya viene
+        // filtrado por NetWorthReportService (solo lo que el usuario tiene hoy en cartera, D-1).
+        public static List<DashboardPendingItemDTO> BuildStaleQuotePendingItems(
+            IEnumerable<StaleAssetDTO> staleAssets,
+            Dictionary<string, DateTime> latestQuoteDateByAssetType,
+            DateTime today)
+        {
+            const int StaleThresholdDays = 2;
+            const int DangerThresholdDays = 5;
+
+            string Severity(int daysStale) => daysStale >= DangerThresholdDays ? "danger" : "warning";
+
+            var items = new List<DashboardPendingItemDTO>();
+
+            foreach (var group in staleAssets.GroupBy(a => a.AssetTypeName))
+            {
+                var familyLastQuote = latestQuoteDateByAssetType.TryGetValue(group.Key, out var d) ? d : (DateTime?)null;
+                var familyDaysStale = familyLastQuote.HasValue ? (today - familyLastQuote.Value).Days : 0;
+
+                if (familyLastQuote.HasValue && familyDaysStale >= StaleThresholdDays)
+                {
+                    var symbols = string.Join(", ", group.Select(a => a.AssetSymbol));
+                    items.Add(new DashboardPendingItemDTO
+                    {
+                        Kind = "StaleQuote",
+                        Title = group.Key,
+                        Detail = $"Sin cotizar desde el {familyLastQuote.Value:dd/MM/yyyy} ({familyDaysStale} días) — {symbols}",
+                        Severity = Severity(familyDaysStale)
+                    });
+                    continue;
+                }
+
+                foreach (var a in group)
+                {
+                    var daysStale = (today - a.QuoteDate).Days;
+                    items.Add(new DashboardPendingItemDTO
+                    {
+                        Kind = "StaleQuote",
+                        Title = a.AssetSymbol,
+                        Detail = $"Sin cotizar desde el {a.QuoteDate:dd/MM/yyyy} ({daysStale} días)",
+                        Severity = Severity(daysStale)
+                    });
+                }
+            }
+
+            return items;
         }
 
         // Pura — testeable sin mocks. Acumulado del mes en curso hasta hoy, contra el mismo tramo del

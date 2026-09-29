@@ -253,7 +253,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         {
             var transactions = await _context.Transactions
                 .Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId)
-                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, t.Amount, t.Date })
+                .Select(t => new { t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, AssetTypeName = t.Asset.AssetType.Name, t.Amount, t.Date })
                 .ToListAsync();
 
             if (transactions.Count == 0) return Enumerable.Empty<StaleAssetResult>();
@@ -268,7 +268,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             // Solo interesa lo que hoy sigue en cartera — un activo ya vendido del todo no debería
             // avisar por una cotización vieja que ya no valúa nada.
-            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => new { g.First().AssetName, Rows = g.ToList() });
+            var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => new { g.First().AssetName, g.First().AssetSymbol, g.First().AssetTypeName, Rows = g.ToList() });
             var heldAssetIds = byAsset
                 .Where(kv => kv.Value.Rows.Sum(t => t.Amount * GetSplitFactor(kv.Key, t.Date)) != 0)
                 .Select(kv => kv.Key)
@@ -288,7 +288,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
             return heldAssetIds
                 .Where(id => latestQuoteByAsset.TryGetValue(id, out var date) && date < cutoff)
-                .Select(id => new StaleAssetResult { AssetName = byAsset[id].AssetName, QuoteDate = latestQuoteByAsset[id] })
+                .Select(id => new StaleAssetResult
+                {
+                    AssetName = byAsset[id].AssetName,
+                    AssetSymbol = byAsset[id].AssetSymbol,
+                    AssetTypeName = byAsset[id].AssetTypeName,
+                    QuoteDate = latestQuoteByAsset[id]
+                })
                 .OrderBy(r => r.QuoteDate)
                 .ToList();
         }
