@@ -43,6 +43,12 @@ namespace JazFinanzasApp.API.Domain
         public int? TripId { get; set; }
         public Trip? Trip { get; set; }
 
+        // Movimiento generado al registrar un cobro de bono (capital o interés) — se gestiona desde
+        // Cobros de Bonos, no se edita ni se borra desde Movimientos (ver plan-amortizaciones-bonos.md, T8).
+        [ForeignKey("BondCollectionId")]
+        public int? BondCollectionId { get; set; }
+        public BondCollection? BondCollection { get; set; }
+
         public string? Detail {  get; set; }
 
         [Required]
