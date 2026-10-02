@@ -267,6 +267,9 @@ namespace JazFinanzasApp.API.Business.Services
             if (await _sharedEventMovementRepository.IsTransactionReferencedAsync(id))
                 throw new BusinessRuleException("Esta transacción pertenece a un evento compartido; se edita desde el evento");
 
+            if (transaction.BondCollectionId != null)
+                throw new BusinessRuleException("Este movimiento pertenece a un cobro de bono; se gestiona desde Cobros de Bonos");
+
             if (transaction.TransactionClassId != transactionDTO.TransactionClassId)
             {
                 var transactionClass = await _transactionClassRepository.GetByIdAsync(transactionDTO.TransactionClassId)
@@ -327,6 +330,9 @@ namespace JazFinanzasApp.API.Business.Services
 
             if (await _sharedEventMovementRepository.IsTransactionReferencedAsync(id))
                 throw new BusinessRuleException("Esta transacción pertenece a un evento compartido; se elimina desde el evento");
+
+            if (transaction.BondCollectionId != null)
+                throw new BusinessRuleException("Este movimiento pertenece a un cobro de bono; se gestiona desde Cobros de Bonos");
 
             await _unitOfWork.BeginTransactionAsync();
             try

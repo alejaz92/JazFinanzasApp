@@ -2578,5 +2578,38 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ThenBy(t => t.Id)
                 .ToListAsync();
         }
+
+        public async Task<IEnumerable<BondHoldingResult>> GetBondHoldingsBeforeDateAsync(int userId, int assetId, DateTime beforeDate)
+        {
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && t.AssetId == assetId && t.Date < beforeDate)
+                .GroupBy(t => new { t.AccountId, t.PortfolioId, t.Account.Name, PortfolioName = t.Portfolio.Name })
+                .Select(g => new BondHoldingResult
+                {
+                    AccountId = g.Key.AccountId,
+                    AccountName = g.Key.Name,
+                    PortfolioId = g.Key.PortfolioId,
+                    PortfolioName = g.Key.PortfolioName,
+                    Quantity = g.Sum(t => t.Amount)
+                })
+                .Where(x => x.Quantity > 0)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Transaction>> GetByBondCollectionIdAsync(int bondCollectionId)
+        {
+            return await _context.Transactions
+                .Where(t => t.BondCollectionId == bondCollectionId)
+                .ToListAsync();
+        }
+
+        public async Task<int?> GetLastBondInterestTransactionClassIdAsync(int userId)
+        {
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && t.BondCollectionId != null && t.TransactionClass.CountsAsIncomeExpense)
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => (int?)t.TransactionClassId)
+                .FirstOrDefaultAsync();
+        }
     }
 }
