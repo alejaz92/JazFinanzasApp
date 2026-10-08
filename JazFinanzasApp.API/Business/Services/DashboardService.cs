@@ -1,3 +1,4 @@
+using JazFinanzasApp.API.Business.DTO.BondCollection;
 using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
@@ -37,6 +38,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITripService _tripService;
         private readonly IAssetRepository _assetRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
+        private readonly IBondCollectionService _bondCollectionService;
 
         public DashboardService(
             INetWorthReportService netWorthReportService,
@@ -47,7 +49,8 @@ namespace JazFinanzasApp.API.Business.Services
             ISharedExpenseService sharedExpenseService,
             ITripService tripService,
             IAssetRepository assetRepository,
-            IAssetQuoteRepository assetQuoteRepository)
+            IAssetQuoteRepository assetQuoteRepository,
+            IBondCollectionService bondCollectionService)
         {
             _netWorthReportService = netWorthReportService;
             _incomeExpenseReportService = incomeExpenseReportService;
@@ -58,6 +61,7 @@ namespace JazFinanzasApp.API.Business.Services
             _tripService = tripService;
             _assetRepository = assetRepository;
             _assetQuoteRepository = assetQuoteRepository;
+            _bondCollectionService = bondCollectionService;
         }
 
         public async Task<DashboardDTO> GetDashboardAsync(int userId, int assetId)
@@ -200,6 +204,11 @@ namespace JazFinanzasApp.API.Business.Services
                 if (item != null) pending.Add(item);
             }
 
+            // plan-amortizaciones-bonos, Fase 7: pagos de bonos ya ocurridos y todavía sin registrar.
+            // La lista sale de BondCollectionService (T9), la misma que muestra Cobros de Bonos: la
+            // bandeja no recalcula tenencias ni cronogramas.
+            pending.AddRange(BuildBondCollectionPendingItems(await _bondCollectionService.GetPendingAsync(userId)));
+
             // plan-alerta-cotizaciones: `netWorthGeneral.StaleAssets` ya viene filtrado por
             // NetWorthReportService.StaleDaysThreshold (T2) a lo que el usuario tiene en cartera —
             // acá solo se agrupa por familia (T4) y se decide severidad (T1), sin pedir nada más al
@@ -208,6 +217,23 @@ namespace JazFinanzasApp.API.Business.Services
             pending.AddRange(BuildStaleQuotePendingItems(netWorthGeneral.StaleAssets, latestQuoteDateByAssetType, today));
 
             return pending;
+        }
+
+        // Pura — testeable sin mocks. Una fila por pago pendiente: Amount es la estimación total
+        // (capital + interés) y va null si el bono es indexado, que no se puede estimar de antemano
+        // (T6). Severity "warning": es plata cobrada que falta registrar, no algo vencido en contra.
+        public static List<DashboardPendingItemDTO> BuildBondCollectionPendingItems(IEnumerable<BondCollectionPendingDTO> pendingCollections)
+        {
+            return pendingCollections.Select(c => new DashboardPendingItemDTO
+            {
+                Kind = "BondCollection",
+                Title = c.Symbol,
+                Detail = $"Pagó el {c.PaymentDate:dd/MM/yyyy} — {c.AccountName}",
+                Amount = c.IsIndexed ? null : (c.EstimatedCapital ?? 0m) + (c.EstimatedInterest ?? 0m),
+                AssetSymbol = c.CurrencySymbol,
+                Date = c.PaymentDate,
+                Severity = "warning"
+            }).ToList();
         }
 
         // Pura — testeable sin mocks. Suma ValueInPesos (Tarjetas → General ya lo muestra sin

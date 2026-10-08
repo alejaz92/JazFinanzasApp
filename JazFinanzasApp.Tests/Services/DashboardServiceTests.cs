@@ -1,4 +1,5 @@
 using FluentAssertions;
+using JazFinanzasApp.API.Business.DTO.BondCollection;
 using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
@@ -35,6 +36,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<ITripService> _tripServiceMock = new();
         private readonly Mock<IAssetRepository> _assetRepoMock = new();
         private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock = new();
+        private readonly Mock<IBondCollectionService> _bondCollectionServiceMock = new();
         private readonly DashboardService _sut;
 
         private static readonly Asset PesoAsset = new() { Id = 1, Name = "Peso Argentino", Symbol = "$", AssetTypeId = 1 };
@@ -45,6 +47,8 @@ namespace JazFinanzasApp.Tests.Services
             // necesitan setearlo, y sin esto Moq devolvería null (NullInjectorError al hacer
             // TryGetValue en BuildStaleQuotePendingItems).
             _assetQuoteRepoMock.Setup(r => r.GetLatestQuoteDateByAssetTypeAsync()).ReturnsAsync(new Dictionary<string, DateTime>());
+            // Idem para los cobros de bonos pendientes (plan-amortizaciones-bonos, Fase 7).
+            _bondCollectionServiceMock.Setup(s => s.GetPendingAsync(It.IsAny<int>())).ReturnsAsync(new List<BondCollectionPendingDTO>());
 
             _sut = new DashboardService(
                 _netWorthReportServiceMock.Object,
@@ -55,7 +59,8 @@ namespace JazFinanzasApp.Tests.Services
                 _sharedExpenseServiceMock.Object,
                 _tripServiceMock.Object,
                 _assetRepoMock.Object,
-                _assetQuoteRepoMock.Object);
+                _assetQuoteRepoMock.Object,
+                _bondCollectionServiceMock.Object);
         }
 
         // ── GetCardDueStatus: puerto de card-due-status.util.ts ─────────────────────────────────
@@ -192,6 +197,50 @@ namespace JazFinanzasApp.Tests.Services
 
             item.Should().NotBeNull();
             item!.Detail.Should().Be("Sin gastos hace 4 días");
+        }
+
+        // ── BuildBondCollectionPendingItems: aviso de cobros de bonos (plan-amortizaciones-bonos) ──
+
+        private static BondCollectionPendingDTO MakeBondPending(bool isIndexed = false, decimal? capital = 39.44m, decimal? interest = 1.33m) => new()
+        {
+            BondPaymentId = 10,
+            Symbol = "AL30",
+            PaymentDate = new DateTime(2026, 7, 9),
+            AccountName = "Bull Market",
+            CurrencySymbol = "USD",
+            IsIndexed = isIndexed,
+            EstimatedCapital = capital,
+            EstimatedInterest = interest
+        };
+
+        [Fact]
+        public void BuildBondCollectionPendingItems_OnePending_ReturnsRowWithEstimatedTotal()
+        {
+            var items = DashboardService.BuildBondCollectionPendingItems(new[] { MakeBondPending() });
+
+            items.Should().ContainSingle();
+            items[0].Kind.Should().Be("BondCollection");
+            items[0].Title.Should().Be("AL30");
+            items[0].Detail.Should().Be("Pagó el 09/07/2026 — Bull Market");
+            items[0].Amount.Should().Be(40.77m); // capital 39,44 + interés 1,33
+            items[0].AssetSymbol.Should().Be("USD");
+            items[0].Date.Should().Be(new DateTime(2026, 7, 9));
+            items[0].Severity.Should().Be("warning");
+        }
+
+        [Fact]
+        public void BuildBondCollectionPendingItems_IndexedBond_HasNoAmount()
+        {
+            var items = DashboardService.BuildBondCollectionPendingItems(new[] { MakeBondPending(isIndexed: true, capital: null, interest: null) });
+
+            items.Should().ContainSingle();
+            items[0].Amount.Should().BeNull();
+        }
+
+        [Fact]
+        public void BuildBondCollectionPendingItems_NoPending_ReturnsEmpty()
+        {
+            DashboardService.BuildBondCollectionPendingItems(new List<BondCollectionPendingDTO>()).Should().BeEmpty();
         }
 
         // ── BuildStaleQuotePendingItems: aviso de cotizaciones (plan-alerta-cotizaciones) ───────
@@ -519,6 +568,30 @@ namespace JazFinanzasApp.Tests.Services
 
             result.Pending.Should().ContainSingle();
             result.Pending.Should().Contain(p => p.Kind == "PersonDebt" && p.Title == "Andy Botello" && p.Detail == "Te debe" && p.Amount == 38000m && p.LinkId == 5);
+        }
+
+        // Cobros de bonos pendientes (plan-amortizaciones-bonos, Fase 7): salen de BondCollectionService.
+        [Fact]
+        public async Task GetDashboardAsync_IncludesPendingBondCollectionsInPending()
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(PesoAsset.Id)).ReturnsAsync(PesoAsset);
+            _netWorthReportServiceMock.Setup(s => s.GetByAccountAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<AccountBalanceDTO>());
+            _netWorthReportServiceMock.Setup(s => s.GetGeneralAsync(UserId)).ReturnsAsync(new NetWorthGeneralDTO());
+            _netWorthReportServiceMock.Setup(s => s.GetMonthlySeriesAsync(UserId, PesoAsset.Id)).ReturnsAsync(new List<NetWorthMonthlyPointDTO>());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetWaterfallAsync(UserId, It.IsAny<DateTime>(), PesoAsset.Id)).ReturnsAsync(new IncExpWaterfallDTO());
+            _incomeExpenseReportServiceMock.Setup(s => s.GetCalendarAsync(UserId, PesoAsset.Id, It.IsAny<int>())).ReturnsAsync(new SpendingCalendarDTO());
+            _cardReportServiceMock.Setup(s => s.GetMonthSummaryAsync(UserId, It.IsAny<DateTime>(), 0)).ReturnsAsync(new List<CardTransactionPaymentListDTO>());
+            _cardServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<CardDTO>());
+            _sharedEventServiceMock.Setup(s => s.GetConsolidatedDebtsAsync(UserId)).ReturnsAsync(new List<SharedEventConsolidatedDebtDTO>());
+            _sharedEventServiceMock.Setup(s => s.GetActiveSummaryAsync(UserId)).ReturnsAsync(new List<SharedEventActiveSummaryDTO>());
+            _sharedExpenseServiceMock.Setup(s => s.GetSummaryAsync(UserId)).ReturnsAsync(new List<PersonDebtSummaryDTO>());
+            _tripServiceMock.Setup(s => s.GetAllForUserAsync(UserId)).ReturnsAsync(new List<TripDTO>());
+            _bondCollectionServiceMock.Setup(s => s.GetPendingAsync(UserId)).ReturnsAsync(new List<BondCollectionPendingDTO> { MakeBondPending() });
+
+            var result = await _sut.GetDashboardAsync(UserId, PesoAsset.Id);
+
+            result.Pending.Should().ContainSingle();
+            result.Pending.Should().Contain(p => p.Kind == "BondCollection" && p.Title == "AL30" && p.Amount == 40.77m && p.AssetSymbol == "USD");
         }
     }
 }
