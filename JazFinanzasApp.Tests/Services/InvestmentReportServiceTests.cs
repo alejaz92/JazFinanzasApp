@@ -52,6 +52,86 @@ namespace JazFinanzasApp.Tests.Services
             InvestmentReportService.GainLossPercent(0m, 500m).Should().BeNull();
         }
 
+        // plan-amortizaciones-bonos, T11: lo cobrado se suma al valor actual; el original no cambia.
+        // Números del AL30 de la Etapa 1: lo pagado ~220, vale ~316 y ya devolvió 157,58 -> ~+115%
+        // (sin contar lo cobrado se veía +43,64%, medio rendimiento).
+        [Fact]
+        public void GainLossPercent_WithCollectedValue_AddsItToActualValueAgainstTheOriginal()
+        {
+            InvestmentReportService.GainLossPercent(220m, 316m).Should().Be(43.64m);
+            InvestmentReportService.GainLossPercent(220m, 316m, 157.58m).Should().Be(115.26m);
+        }
+
+        [Fact]
+        public void GainLossPercent_WithoutCollectedValue_IsIdenticalToBefore()
+        {
+            InvestmentReportService.GainLossPercent(1000m, 1500m, 0m).Should().Be(50m);
+            InvestmentReportService.GainLossPercent(1000m, 800m, 0m).Should().Be(-20m);
+        }
+
+        [Fact]
+        public void GainLossPercent_WithZeroOriginalValueAndCollectedValue_ReturnsNull()
+        {
+            InvestmentReportService.GainLossPercent(0m, 500m, 100m).Should().BeNull();
+        }
+
+        [Fact]
+        public void BuildTickerList_BondWithCollections_CountsThemInGainLossButNotInOriginalNorActual()
+        {
+            var holdings = new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 2, AssetName = "Bono AL30", Symbol = "AL30", AssetTypeName = "Bono", Quantity = 5.81m, OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m }
+            };
+
+            var tickers = InvestmentReportService.BuildTickerList(holdings, totalActual: 316m);
+
+            tickers.Should().ContainSingle();
+            tickers[0].OriginalValue.Should().Be(220m);
+            tickers[0].ActualValue.Should().Be(316m);
+            tickers[0].CollectedValue.Should().Be(157.58m);
+            tickers[0].GainLossAmount.Should().Be(253.58m); // 316 + 157,58 - 220
+            tickers[0].GainLossPercent.Should().Be(115.26m);
+            tickers[0].WeightPercent.Should().Be(100m);     // el peso sigue sobre el valor actual
+        }
+
+        [Fact]
+        public void BuildTickerList_WithoutCollections_GainLossIsIdenticalToBefore()
+        {
+            var holdings = new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 1, AssetName = "Galicia", Symbol = "GGAL", AssetTypeName = "Accion Argentina", Quantity = 10m, OriginalValue = 200m, ActualValue = 300m }
+            };
+
+            var tickers = InvestmentReportService.BuildTickerList(holdings, totalActual: 300m);
+
+            tickers[0].CollectedValue.Should().Be(0m);
+            tickers[0].GainLossAmount.Should().Be(100m);
+            tickers[0].GainLossPercent.Should().Be(50m);
+        }
+
+        [Fact]
+        public void BuildTypeAggregates_BondType_SumsCollectedValueAndUsesItInThePercent()
+        {
+            var holdings = new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 1, AssetName = "AL30", Symbol = "AL30", AssetTypeName = "Bono", OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m },
+                new() { AssetId = 2, AssetName = "GD35", Symbol = "GD35", AssetTypeName = "Bono", OriginalValue = 30m, ActualValue = 40m, CollectedValue = 2.22m },
+                new() { AssetId = 3, AssetName = "Galicia", Symbol = "GGAL", AssetTypeName = "Accion Argentina", OriginalValue = 200m, ActualValue = 300m }
+            };
+
+            var types = InvestmentReportService.BuildTypeAggregates(holdings);
+
+            var bonos = types.Single(t => t.AssetTypeName == "Bono");
+            bonos.OriginalValue.Should().Be(250m);
+            bonos.ActualValue.Should().Be(356m);
+            bonos.CollectedValue.Should().Be(159.80m);
+            bonos.GainLossPercent.Should().Be(106.32m); // (356 + 159,80 - 250) / 250
+
+            var acciones = types.Single(t => t.AssetTypeName == "Accion Argentina");
+            acciones.CollectedValue.Should().Be(0m);
+            acciones.GainLossPercent.Should().Be(50m);
+        }
+
         [Fact]
         public async Task GetContributionsVsPerformanceAsync_ComputesValuationAsThePlugBetweenSnapshotsAndFlows()
         {
@@ -240,6 +320,88 @@ namespace JazFinanzasApp.Tests.Services
 
             result.ClosedPositions.Should().BeEmpty();
             _transactionRepoMock.Verify(r => r.GetClosedInvestmentPositionsAsync(It.IsAny<int>(), It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetStocksAsync_BondWithCollections_ExposesTotalCollectedAndKeepsTotalsOfOriginalAndActual()
+        {
+            var referenceAsset = new Asset { Id = 2, Symbol = "USD" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(referenceAsset);
+
+            var holdings = new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 1, AssetName = "Galicia", Symbol = "GGAL", AssetTypeName = "Accion Argentina", Bucket = "Stocks", Quantity = 10m, OriginalValue = 200m, ActualValue = 300m },
+                new() { AssetId = 2, AssetName = "Bono AL30", Symbol = "AL30", AssetTypeName = "Bono", Bucket = "Bonds", Quantity = 5m, OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m }
+            };
+            _transactionRepoMock.Setup(r => r.GetInvestmentHoldingsAsync(UserId, 2)).ReturnsAsync(holdings);
+            _transactionRepoMock.Setup(r => r.GetStocksValueMonthlySeriesByTypeAsync(UserId, referenceAsset, It.IsAny<int>()))
+                .ReturnsAsync(new List<StocksMonthlyPointResult>());
+
+            var result = await _sut.GetStocksAsync(UserId, 2);
+
+            result.TotalOriginalValue.Should().Be(420m);
+            result.TotalActualValue.Should().Be(616m);
+            result.TotalCollectedValue.Should().Be(157.58m);
+            result.Tickers.Single(t => t.Symbol == "AL30").GainLossPercent.Should().Be(115.26m);
+            result.Types.Single(t => t.AssetTypeName == "Bono").CollectedValue.Should().Be(157.58m);
+        }
+
+        [Fact]
+        public async Task GetStocksAsync_WithIncludeClosed_PassesThroughRealizedResultAndCollectedValue()
+        {
+            var referenceAsset = new Asset { Id = 2, Symbol = "USD" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(referenceAsset);
+            _transactionRepoMock.Setup(r => r.GetStocksValueMonthlySeriesByTypeAsync(UserId, referenceAsset, It.IsAny<int>()))
+                .ReturnsAsync(new List<StocksMonthlyPointResult>());
+            _transactionRepoMock.Setup(r => r.GetClosedInvestmentPositionsAsync(UserId, 2)).ReturnsAsync(new List<ClosedPositionResult>
+            {
+                new() { AssetId = 9, AssetName = "Bono AL29", Symbol = "AL29", AssetTypeName = "Bono", RealizedResult = 125m, CollectedValue = 25m, LastMovementDate = new DateTime(2026, 5, 1) }
+            });
+
+            var result = await _sut.GetStocksAsync(UserId, 2, includeClosed: true);
+
+            result.ClosedPositions.Should().ContainSingle();
+            result.ClosedPositions[0].RealizedResult.Should().Be(125m);
+            result.ClosedPositions[0].CollectedValue.Should().Be(25m);
+        }
+
+        [Fact]
+        public async Task GetPortfoliosOverviewAsync_UsesCollectedValueInGainLossPercent()
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new Asset { Id = 2, Symbol = "USD" });
+            _transactionRepoMock.Setup(r => r.GetPortfolioStatsAsync(UserId, 2, true)).ReturnsAsync(new List<PortfolioStatsResult>
+            {
+                new() { PortfolioId = 1, PortfolioName = "Default", IsDefault = true, OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m }
+            });
+
+            var result = await _sut.GetPortfoliosOverviewAsync(UserId, 2);
+
+            result.Portfolios.Should().ContainSingle();
+            result.Portfolios[0].CollectedValue.Should().Be(157.58m);
+            result.Portfolios[0].GainLossPercent.Should().Be(115.26m);
+        }
+
+        [Fact]
+        public async Task GetOverviewAsync_ExposesTotalCollectedAndUsesItInTheTotalPercent()
+        {
+            var referenceAsset = new Asset { Id = 2, Symbol = "USD" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(referenceAsset);
+            _transactionRepoMock.Setup(r => r.GetInvestmentHoldingsAsync(UserId, 2)).ReturnsAsync(new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 2, AssetName = "Bono AL30", Symbol = "AL30", AssetTypeName = "Bono", Bucket = "Bonds", Quantity = 5m, OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m }
+            });
+            _transactionRepoMock.Setup(r => r.GetNetWorthMonthlySeriesAsync(UserId, referenceAsset, It.IsAny<int>()))
+                .ReturnsAsync(new List<NetWorthMonthlyPointResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentContributionsByMonthAsync(UserId, 2, It.IsAny<DateTime>()))
+                .ReturnsAsync(new List<InvestmentContributionMonthResult>());
+
+            var result = await _sut.GetOverviewAsync(UserId, 2);
+
+            result.TotalOriginalValue.Should().Be(220m);
+            result.TotalActualValue.Should().Be(316m);
+            result.TotalCollectedValue.Should().Be(157.58m);
+            result.GainLossPercent.Should().Be(115.26m);
+            result.Holdings.Single().CollectedValue.Should().Be(157.58m);
         }
     }
 }

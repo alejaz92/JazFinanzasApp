@@ -12,6 +12,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // plan-amortizaciones-bonos, T10: lo ya cobrado del activo (capital + interés de sus
+        // BondCollection Registered/Untracked), en la moneda de referencia. 0 si no es un bono.
+        public decimal CollectedValue { get; set; }
     }
 
     // Aportes vs rendimiento (Fase 19): aportes y retiros de un mes, en la moneda de referencia.
@@ -44,7 +47,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public string AssetName { get; set; }
         public string Symbol { get; set; }
         public string AssetTypeName { get; set; }
+        // Ya incluye CollectedValue (T11): -OriginalValue + CollectedValue.
         public decimal RealizedResult { get; set; }
+        public decimal CollectedValue { get; set; }
         public DateTime LastMovementDate { get; set; }
     }
 }

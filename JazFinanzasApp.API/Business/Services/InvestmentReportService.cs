@@ -41,8 +41,12 @@ namespace JazFinanzasApp.API.Business.Services
 
         // Pura — testeable sin mocks. null cuando OriginalValue es 0 (posición sin costo conocido,
         // ej. un ajuste): un % de ganancia sobre una base $0 no tiene lectura.
-        public static decimal? GainLossPercent(decimal originalValue, decimal actualValue) =>
-            originalValue != 0 ? Math.Round((actualValue - originalValue) / originalValue * 100, 2) : null;
+        // plan-amortizaciones-bonos, T11: collectedValue es lo ya cobrado de un bono (capital +
+        // interés) y se suma al valor actual; el valor original NO cambia, para que el % se mida
+        // contra lo invertido (restarlo del costo daría +400% en el AL30, que no significa nada).
+        // Sin cobros (default 0) el resultado es idéntico al de siempre.
+        public static decimal? GainLossPercent(decimal originalValue, decimal actualValue, decimal collectedValue = 0m) =>
+            originalValue != 0 ? Math.Round((actualValue + collectedValue - originalValue) / originalValue * 100, 2) : null;
 
         // Panorama de inversiones: mapa de bloques de todo (bolsa, cripto, bonos) coloreado por
         // ganancia/pérdida + línea del valor total con los aportes marcados como puntos.
@@ -54,6 +58,7 @@ namespace JazFinanzasApp.API.Business.Services
             var holdings = (await _transactionRepository.GetInvestmentHoldingsAsync(userId, assetId)).ToList();
             var totalOriginal = holdings.Sum(h => h.OriginalValue);
             var totalActual = holdings.Sum(h => h.ActualValue);
+            var totalCollected = holdings.Sum(h => h.CollectedValue);
 
             var series = await _transactionRepository.GetNetWorthMonthlySeriesAsync(userId, referenceAsset, MonthlySeriesLength);
             var valueSeries = series
@@ -68,7 +73,8 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 TotalOriginalValue = Math.Round(totalOriginal, 2),
                 TotalActualValue = Math.Round(totalActual, 2),
-                GainLossPercent = GainLossPercent(totalOriginal, totalActual),
+                TotalCollectedValue = Math.Round(totalCollected, 2),
+                GainLossPercent = GainLossPercent(totalOriginal, totalActual, totalCollected),
                 Holdings = holdings.Select(h => new InvestmentHoldingDTO
                 {
                     AssetId = h.AssetId,
@@ -78,7 +84,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue)
+                    CollectedValue = h.CollectedValue,
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue)
                 }).ToList(),
                 ValueSeries = valueSeries,
                 ContributionMarkers = contributionsByMonth
@@ -107,7 +114,8 @@ namespace JazFinanzasApp.API.Business.Services
                     IsDefault = s.IsDefault,
                     OriginalValue = s.OriginalValue,
                     ActualValue = s.ActualValue,
-                    GainLossPercent = GainLossPercent(s.OriginalValue, s.ActualValue),
+                    CollectedValue = s.CollectedValue,
+                    GainLossPercent = GainLossPercent(s.OriginalValue, s.ActualValue, s.CollectedValue),
                     SharePercent = totalActual != 0 ? Math.Round(s.ActualValue / totalActual * 100, 2) : 0m
                 }).ToList()
             };
@@ -141,7 +149,8 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 OriginalValue = stats?.OriginalValue ?? 0m,
                 ActualValue = stats?.ActualValue ?? 0m,
-                GainLossPercent = GainLossPercent(stats?.OriginalValue ?? 0m, stats?.ActualValue ?? 0m),
+                CollectedValue = stats?.CollectedValue ?? 0m,
+                GainLossPercent = GainLossPercent(stats?.OriginalValue ?? 0m, stats?.ActualValue ?? 0m, stats?.CollectedValue ?? 0m),
                 Holdings = holdings.Select(h => new PortfolioHoldingItemDTO
                 {
                     AssetType = h.AssetType,
@@ -151,7 +160,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
+                    CollectedValue = h.CollectedValue,
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue),
                     OriginQuote = h.OriginQuote,
                     CurrentQuote = h.CurrentQuote
                 }).ToList(),
@@ -188,6 +198,7 @@ namespace JazFinanzasApp.API.Business.Services
 
             var totalOriginal = holdings.Sum(h => h.OriginalValue);
             var totalActual = holdings.Sum(h => h.ActualValue);
+            var totalCollected = holdings.Sum(h => h.CollectedValue);
 
             var series = await _transactionRepository.GetStocksValueMonthlySeriesByTypeAsync(userId, referenceAsset, MonthlySeriesLength);
 
@@ -200,6 +211,7 @@ namespace JazFinanzasApp.API.Business.Services
                         Symbol = c.Symbol,
                         AssetTypeName = c.AssetTypeName,
                         RealizedResult = c.RealizedResult,
+                        CollectedValue = c.CollectedValue,
                         LastMovementDate = c.LastMovementDate
                     }).ToList()
                 : new List<ClosedPositionDTO>();
@@ -209,6 +221,7 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 TotalOriginalValue = Math.Round(totalOriginal, 2),
                 TotalActualValue = Math.Round(totalActual, 2),
+                TotalCollectedValue = Math.Round(totalCollected, 2),
                 Types = types,
                 Tickers = BuildTickerList(holdings, totalActual),
                 ValueSeries = series.Select(p => new StocksMonthlyPointDTO
@@ -397,8 +410,9 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossAmount = Math.Round(h.ActualValue - h.OriginalValue, 2),
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
+                    CollectedValue = h.CollectedValue,
+                    GainLossAmount = Math.Round(h.ActualValue + h.CollectedValue - h.OriginalValue, 2),
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue),
                     WeightPercent = totalActual != 0 ? Math.Round(h.ActualValue / totalActual * 100, 2) : 0m
                 })
                 .OrderByDescending(t => t.ActualValue)
@@ -413,13 +427,15 @@ namespace JazFinanzasApp.API.Business.Services
                 {
                     var originalValue = g.Sum(h => h.OriginalValue);
                     var actualValue = g.Sum(h => h.ActualValue);
+                    var collectedValue = g.Sum(h => h.CollectedValue);
                     return new StockTypeAggregateDTO
                     {
                         AssetTypeName = g.Key,
                         TickerCount = g.Count(),
                         OriginalValue = Math.Round(originalValue, 2),
                         ActualValue = Math.Round(actualValue, 2),
-                        GainLossPercent = GainLossPercent(originalValue, actualValue)
+                        CollectedValue = Math.Round(collectedValue, 2),
+                        GainLossPercent = GainLossPercent(originalValue, actualValue, collectedValue)
                     };
                 })
                 .OrderByDescending(t => t.ActualValue)

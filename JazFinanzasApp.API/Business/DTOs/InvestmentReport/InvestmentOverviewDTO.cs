@@ -7,6 +7,9 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public string ReferenceAssetSymbol { get; set; }
         public decimal TotalOriginalValue { get; set; }
         public decimal TotalActualValue { get; set; }
+        // plan-amortizaciones-bonos, T11: lo ya cobrado de bonos (capital + interés), en la moneda de
+        // referencia. GainLossPercent lo suma al valor actual (el original no cambia).
+        public decimal TotalCollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
         public List<InvestmentHoldingDTO> Holdings { get; set; } = new();
         public List<InvestmentValuePointDTO> ValueSeries { get; set; } = new();
@@ -23,6 +26,7 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
     }
 

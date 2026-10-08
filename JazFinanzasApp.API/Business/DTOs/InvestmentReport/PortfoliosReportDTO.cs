@@ -14,6 +14,8 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public bool IsDefault { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // plan-amortizaciones-bonos, T11: lo cobrado de bonos en esta cartera (moneda de referencia).
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
         // % del total de ActualValue de todas las carteras — la "distribución" del Flujo 5.
         public decimal SharePercent { get; set; }
@@ -29,6 +31,7 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public string ReferenceAssetSymbol { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
         public List<PortfolioHoldingItemDTO> Holdings { get; set; } = new();
         public List<InvestmentValuePointDTO> ValueSeries { get; set; } = new();
@@ -43,6 +46,7 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
         // Cotización de origen/actual (2026-09-10): ver PortfolioHoldingResult — calculadas en el
         // repositorio sobre valores sin redondear, para que el mismo activo (ej. ARS) muestre la
