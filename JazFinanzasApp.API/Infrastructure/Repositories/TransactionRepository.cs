@@ -2529,6 +2529,23 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             await _context.SaveChangesAsync();
         }
 
+        // Consumo parcial del placeholder: sigue existiendo (achicado), así que la FK se conserva, pero el
+        // pago del evento ya no se puede revertir solo.
+        public async Task MarkSharedEventIncomeAsConsumedAsync(int transactionId)
+        {
+            var allocations = await _context.SharedEventPaymentAllocations
+                .Where(a => a.CreatedIncomeTransactionId == transactionId)
+                .ToListAsync();
+
+            foreach (var allocation in allocations)
+            {
+                allocation.IncomeTransactionConsumed = true;
+                allocation.UpdatedAt = DateTime.UtcNow;
+            }
+
+            await _context.SaveChangesAsync();
+        }
+
         public async Task<IEnumerable<Transaction>> GetTripSuggestibleTransactionsAsync(int userId, DateTime startDate, DateTime endDate)
         {
             var endExclusive = endDate.Date.AddDays(1);

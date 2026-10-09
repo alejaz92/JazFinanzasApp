@@ -12,6 +12,7 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task DeleteByTransactionIdAsync(int transactionId);
         Task AddReimbursementAsync(SharedExpenseReimbursement reimbursement);
         Task<IEnumerable<SharedExpenseReimbursement>> GetReimbursementsBySplitIdAsync(int splitId);
+        Task UpdateReimbursementAsync(SharedExpenseReimbursement reimbursement);
         Task DeleteReimbursementAsync(int id);
         Task<bool> IsLinkedToSharedEventAsync(int sharedExpenseId);
         Task DeleteByIdWithSplitsAsync(int id);
