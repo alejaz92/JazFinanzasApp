@@ -242,7 +242,7 @@ namespace JazFinanzasApp.API.Business.Services
                     // Se vincula por la propiedad de navegación y no por el Id: el consumo todavía no se
                     // persistió, y EF resuelve la FK al guardar toda la transacción de una.
                     if (consumoCreado != null) transaction.CardTransaction = consumoCreado;
-                    await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction);
+                    await ApplySharedExpenseReimbursementsAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction, dto.accountId, dto.PaymentDate, userId);
                     await ApplyCardTransactionDiscountInstallmentAsync(cardTransaction.CardTransactionId, cardTransaction.InstallmentNumber, transaction, dto.accountId, dto.PaymentDate, userId);
                     await _transactionRepository.AddAsyncTransaction(transaction);
                 }
@@ -398,27 +398,37 @@ namespace JazFinanzasApp.API.Business.Services
             await _cardTransactionRepository.DeleteAsync(id);
         }
 
-        private async Task ApplySharedExpenseReimbursementsAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction)
+        private async Task ApplySharedExpenseReimbursementsAsync(int cardTransactionId, int installmentNumber, Transaction expenseTransaction, int payingAccountId, DateTime paymentDate, int userId)
         {
             var sharedExpense = await _sharedExpenseRepository.GetByCardTransactionIdAsync(cardTransactionId);
             if (sharedExpense == null)
                 return;
 
+            // En la última cuota cada persona salda todo lo que le queda: InstallmentSplitAmount viene
+            // redondeado a centavos, y sin esto la suma de las cuotas puede quedar un centavo corta de lo
+            // que devolvió (Regalo Gena: 3 × 3.245,83 = 9.737,49 contra 9.737,50) y el reintegro no se
+            // consume nunca.
+            var cardTransaction = await _cardTransactionRepository.GetByIdAsync(cardTransactionId);
+            var isLastInstallment = cardTransaction != null
+                && cardTransaction.Installments > 0
+                && installmentNumber >= cardTransaction.Installments;
+
             foreach (var split in sharedExpense.Splits)
             {
-                await ApplyPersonPoolInstallmentAsync(split, expenseTransaction);
+                await ApplyPersonPoolInstallmentAsync(split, isLastInstallment, expenseTransaction, payingAccountId, paymentDate, userId);
             }
         }
 
         // Las personas pagan a un pool sin atar cada Transaction a una cuota específica (mes a mes o upfront);
         // cada cuota consume hasta InstallmentSplitAmount del pool disponible.
-        private async Task ApplyPersonPoolInstallmentAsync(SharedExpenseSplit split, Transaction expenseTransaction)
+        private async Task ApplyPersonPoolInstallmentAsync(SharedExpenseSplit split, bool isLastInstallment, Transaction expenseTransaction, int payingAccountId, DateTime paymentDate, int userId)
         {
             var available = split.AmountReimbursed - split.AmountApplied;
             if (available <= 0)
                 return;
 
-            var toApply = Math.Min(available, split.InstallmentSplitAmount);
+            var cap = isLastInstallment ? split.Amount - split.AmountApplied : split.InstallmentSplitAmount;
+            var toApply = Math.Min(available, cap);
             if (toApply <= 0)
                 return;
 
@@ -426,7 +436,7 @@ namespace JazFinanzasApp.API.Business.Services
             split.AmountApplied += toApply;
             split.UpdatedAt = DateTime.UtcNow;
 
-            await RemoveConsumedReimbursementsAsync(split);
+            await ConsumeReimbursementsAsync(split, toApply, payingAccountId, paymentDate, userId);
             await _sharedExpenseRepository.UpdateSplitAsync(split);
         }
 
@@ -485,7 +495,8 @@ namespace JazFinanzasApp.API.Business.Services
                 // descuadraría las dos: la que paga quedaría inflada y la del reintegro corta.
                 var income = await _transactionRepository.GetByIdAsync(installment.TransactionId);
                 if (income != null && income.AccountId != payingAccountId)
-                    await EmitCrossAccountTransferAsync(income, payingAccountId, installment.Amount, paymentDate, userId);
+                    await EmitCrossAccountTransferAsync(income, payingAccountId, installment.Amount, paymentDate, userId,
+                        TransferDetail(income.Detail, "Descuento - ", "Pase por descuento - "));
 
                 await _cardTransactionDiscountRepository.DeleteInstallmentAsync(installment.Id);
                 await _transactionRepository.DeleteAsync(installment.TransactionId);
@@ -500,14 +511,10 @@ namespace JazFinanzasApp.API.Business.Services
         // cuentas propias que cierra el círculo: la que paga entrega el importe y la del reintegro lo
         // recibe. No cuenta como gasto ni como ingreso (MovementType EX, sin clase), así que no
         // ensucia ninguna categoría. Mismo patrón que TransactionService.RefundTransactionAsync.
-        private async Task EmitCrossAccountTransferAsync(Transaction income, int payingAccountId, decimal amount, DateTime date, int userId)
+        // Lo usan los descuentos bancarios y las devoluciones de gastos compartidos.
+        private async Task EmitCrossAccountTransferAsync(Transaction income, int payingAccountId, decimal amount, DateTime date, int userId, string detalle)
         {
             var time = DateTime.UtcNow;
-            const string prefijo = "Descuento - ";
-            var compra = income.Detail != null && income.Detail.StartsWith(prefijo)
-                ? income.Detail.Substring(prefijo.Length)
-                : income.Detail;
-            var detalle = "Pase por descuento - " + compra;
 
             await _transactionRepository.AddAsyncTransaction(new Transaction
             {
@@ -542,16 +549,58 @@ namespace JazFinanzasApp.API.Business.Services
             });
         }
 
-        private async Task RemoveConsumedReimbursementsAsync(SharedExpenseSplit split)
+        private static string TransferDetail(string? incomeDetail, string incomePrefix, string transferPrefix)
+        {
+            var compra = incomeDetail != null && incomeDetail.StartsWith(incomePrefix)
+                ? incomeDetail.Substring(incomePrefix.Length)
+                : incomeDetail;
+            return transferPrefix + compra;
+        }
+
+        // Da de baja, del más viejo al más nuevo, los ingresos de devolución que esta cuota absorbe. Un
+        // ingreso que la cuota no alcanza a cubrir entero se achica en lo consumido en vez de quedar
+        // intacto: si no, la cuota ya se abarató pero la plata seguía contada como ingreso, y en los
+        // gastos en cuotas el mismo monto quedaba sumado dos veces hasta la última cuota.
+        // Cuando la devolución entró en otra cuenta que la que paga la tarjeta (el amigo transfirió a
+        // MercadoPago y el resumen se paga desde Santander), se emite el mismo pase entre cuentas que en
+        // los descuentos bancarios. Sin él, la cuenta del ingreso perdía la plata y la que paga quedaba
+        // inflada por el mismo importe (desfase de octubre 2026 en MercadoPago, Santander y Brubank).
+        private async Task ConsumeReimbursementsAsync(SharedExpenseSplit split, decimal amount, int payingAccountId, DateTime paymentDate, int userId)
         {
             var reimbursements = await _sharedExpenseRepository.GetReimbursementsBySplitIdAsync(split.Id);
 
-            decimal cumulative = 0;
+            var remaining = amount;
             foreach (var reimbursement in reimbursements)
             {
-                cumulative += reimbursement.Amount;
-                if (split.AmountApplied < cumulative)
+                if (remaining <= 0)
                     break;
+
+                var consumed = Math.Min(remaining, reimbursement.Amount);
+                remaining -= consumed;
+
+                var income = await _transactionRepository.GetByIdAsync(reimbursement.TransactionId);
+                if (income != null && income.AccountId != payingAccountId)
+                    await EmitCrossAccountTransferAsync(income, payingAccountId, consumed, paymentDate, userId,
+                        TransferDetail(income.Detail, "Reintegro - ", "Pase por reintegro - "));
+
+                if (consumed < reimbursement.Amount)
+                {
+                    reimbursement.Amount -= consumed;
+                    reimbursement.UpdatedAt = DateTime.UtcNow;
+                    await _sharedExpenseRepository.UpdateReimbursementAsync(reimbursement);
+
+                    if (income != null)
+                    {
+                        income.Amount -= consumed;
+                        income.UpdatedAt = DateTime.UtcNow;
+                        await _transactionRepository.UpdateAsync(income);
+                    }
+
+                    // Si el ingreso es el placeholder de un pago de Evento Compartido, ese pago ya no se puede
+                    // revertir solo: la reversa borraría el ingreso por el monto original, que ya no es el que queda.
+                    await _transactionRepository.MarkSharedEventIncomeAsConsumedAsync(reimbursement.TransactionId);
+                    continue;
+                }
 
                 await _sharedExpenseRepository.DeleteReimbursementAsync(reimbursement.Id);
 
