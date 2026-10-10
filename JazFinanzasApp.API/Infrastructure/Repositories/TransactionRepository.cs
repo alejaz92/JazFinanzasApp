@@ -1588,6 +1588,31 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             public decimal QuantityContribution { get; set; }
             public decimal OriginalValueContribution { get; set; }
             public decimal ActualValueContribution { get; set; }
+            // plan-amortizaciones-bonos, T10: lo cobrado (capital + interés) en la moneda de referencia.
+            // Solo lo traen las filas que salen de un BondCollection (con cantidad y valores en 0);
+            // las de un movimiento común lo tienen en 0.
+            public decimal CollectedValueContribution { get; set; }
+            // La parte de CollectedValueContribution que es interés (no devolución de capital) — Aportes
+            // vs rendimiento la muestra aparte como rendimiento (plan-amortizaciones-bonos, T12).
+            public decimal CollectedInterestValueContribution { get; set; }
+        }
+
+        // Un cobro de bono ya registrado (Registered o Untracked), con lo mínimo para valuarlo.
+        private class CollectedRow
+        {
+            public int PortfolioId { get; set; }
+            public int AssetId { get; set; }
+            public string AssetName { get; set; } = "";
+            public string Symbol { get; set; } = "";
+            public string AssetTypeName { get; set; } = "";
+            public string Environment { get; set; } = "";
+            public int AccountId { get; set; }
+            public string AccountName { get; set; } = "";
+            public DateTime CollectionDate { get; set; }
+            // Capital + interés; InterestAmount es solo la parte de interés.
+            public decimal Amount { get; set; }
+            public decimal InterestAmount { get; set; }
+            public decimal? QuotePrice { get; set; }
         }
 
         // environment == null: sin filtrar por ambiente (usado por las stats de cartera, que combinan
@@ -1597,8 +1622,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // since (Fase 19, Inversiones): sin valor, todo el historial; con valor, solo transacciones desde
         // esa fecha — lo usa GetInvestmentContributionsByMonthAsync para no contar los 62 ajustes de saldo
         // 2020-2023 como aportes reales (1.5 del plan).
+        // includeCollected (plan-amortizaciones-bonos, T10/T11): suma al final una fila por cada cobro de
+        // bono (BondCollection Registered/Untracked; Dismissed no cuenta) con su CollectedValueContribution,
+        // respetando los mismos filtros (cartera, ambiente, tipo de activo, desde). Apagado por default:
+        // solo lo piden las stats que muestran el resultado de una tenencia, y el resto sigue idéntico.
         private async Task<List<InvestmentValueContribution>> GetInvestmentValueContributionsAsync(
-            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable, int? portfolioId = null, DateTime? since = null)
+            int userId, string? environment, int referenceAssetId, int assetTypeId, bool considerStable, int? portfolioId = null, DateTime? since = null,
+            bool includeCollected = false)
         {
             var stableSymbols = new[] { "DAI", "USDT", "USDC" };
 
@@ -1625,7 +1655,32 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 })
                 .ToListAsync();
 
-            if (transactions.Count == 0)
+            var collected = !includeCollected
+                ? new List<CollectedRow>()
+                : await _context.BondCollections
+                    .Where(c => c.UserId == userId && c.Status != BondCollectionStatus.Dismissed && c.CollectionDate != null)
+                    .Where(c => portfolioId == null || c.PortfolioId == portfolioId)
+                    .Where(c => environment == null || c.BondPayment.Asset.AssetType.Environment == environment)
+                    .Where(c => assetTypeId == 0 || c.BondPayment.Asset.AssetTypeId == assetTypeId)
+                    .Where(c => since == null || c.CollectionDate >= since)
+                    .Select(c => new CollectedRow
+                    {
+                        PortfolioId = c.PortfolioId,
+                        AssetId = c.BondPayment.AssetId,
+                        AssetName = c.BondPayment.Asset.Name,
+                        Symbol = c.BondPayment.Asset.Symbol,
+                        AssetTypeName = c.BondPayment.Asset.AssetType.Name,
+                        Environment = c.BondPayment.Asset.AssetType.Environment,
+                        AccountId = c.AccountId,
+                        AccountName = c.Account.Name,
+                        CollectionDate = c.CollectionDate!.Value,
+                        Amount = c.CapitalAmount + c.InterestAmount,
+                        InterestAmount = c.InterestAmount,
+                        QuotePrice = c.QuotePrice
+                    })
+                    .ToListAsync();
+
+            if (transactions.Count == 0 && collected.Count == 0)
                 return new List<InvestmentValueContribution>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
@@ -1690,7 +1745,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            return transactions
+            var contributions = transactions
                 .Select(t =>
                 {
                     var cumulativeFactor = GetSplitFactor(t.AssetId, t.Date);
@@ -1724,6 +1779,34 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     };
                 })
                 .ToList();
+
+            // T10: mismo cálculo que OriginalValueContribution — monto en su moneda / cotización de esa
+            // moneda a la fecha del cobro x cotización de referencia a esa fecha (con el mismo fan-out) —
+            // reusando GetReferenceQuotesOnOrBefore, sin duplicar la búsqueda de cotización de referencia.
+            decimal ValueOfCollected(CollectedRow c, decimal amount) =>
+                c.QuotePrice.HasValue && c.QuotePrice.Value > 0
+                    ? GetReferenceQuotesOnOrBefore(c.CollectionDate).Sum(refQuote => (amount / c.QuotePrice.Value) * refQuote)
+                    : 0m;
+
+            contributions.AddRange(collected.Select(c => new InvestmentValueContribution
+            {
+                PortfolioId = c.PortfolioId,
+                AssetId = c.AssetId,
+                AssetName = c.AssetName,
+                Symbol = c.Symbol,
+                AssetTypeName = c.AssetTypeName,
+                Environment = c.Environment,
+                AccountId = c.AccountId,
+                AccountName = c.AccountName,
+                Date = c.CollectionDate,
+                QuantityContribution = 0m,
+                OriginalValueContribution = 0m,
+                ActualValueContribution = 0m,
+                CollectedValueContribution = ValueOfCollected(c, c.Amount),
+                CollectedInterestValueContribution = ValueOfCollected(c, c.InterestAmount)
+            }));
+
+            return contributions;
         }
 
         // Resumen de valor por cartera (ver docs/plans/activos/portfolios-estadisticas.md, Fase 1).
@@ -1741,7 +1824,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(p => new { p.Id, p.Name, p.IsDefault })
                 .ToListAsync();
 
-            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true);
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, includeCollected: true);
             if (!includeCash) contributions = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             var valueByPortfolio = contributions
@@ -1749,7 +1832,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToDictionary(g => g.Key, g => new
                 {
                     OriginalValue = g.Sum(c => c.OriginalValueContribution),
-                    ActualValue = g.Sum(c => c.ActualValueContribution)
+                    ActualValue = g.Sum(c => c.ActualValueContribution),
+                    CollectedValue = g.Sum(c => c.CollectedValueContribution)
                 });
 
             return portfolios
@@ -1762,7 +1846,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         PortfolioName = p.Name,
                         IsDefault = p.IsDefault,
                         OriginalValue = Math.Round(value?.OriginalValue ?? 0m, 2),
-                        ActualValue = Math.Round(value?.ActualValue ?? 0m, 2)
+                        ActualValue = Math.Round(value?.ActualValue ?? 0m, 2),
+                        CollectedValue = Math.Round(value?.CollectedValue ?? 0m, 2)
                     };
                 })
                 .OrderByDescending(r => r.ActualValue)
@@ -1790,7 +1875,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         public async Task<IEnumerable<PortfolioHoldingResult>> GetPortfolioHoldingsAsync(int userId, int portfolioId, int referenceAssetId, bool includeCash = true)
         {
             var contributions = await GetInvestmentValueContributionsAsync(
-                userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, portfolioId: portfolioId);
+                userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, portfolioId: portfolioId, includeCollected: true);
             if (!includeCash) contributions = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             return contributions
@@ -1803,7 +1888,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AccountName = g.First().AccountName,
                     RawQuantity = g.Sum(c => c.QuantityContribution),
                     RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
-                    RawActualValue = g.Sum(c => c.ActualValueContribution)
+                    RawActualValue = g.Sum(c => c.ActualValueContribution),
+                    RawCollectedValue = g.Sum(c => c.CollectedValueContribution)
                 })
                 .Where(x => x.RawQuantity != 0 || x.RawOriginalValue != 0)
                 .Select(x => new PortfolioHoldingResult
@@ -1818,6 +1904,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     Quantity = x.RawQuantity,
                     OriginalValue = Math.Round(x.RawOriginalValue, 2),
                     ActualValue = Math.Round(x.RawActualValue, 2),
+                    CollectedValue = Math.Round(x.RawCollectedValue, 2),
                     // Sobre los valores SIN redondear (RawOriginalValue/RawActualValue), no sobre
                     // OriginalValue/ActualValue ya redondeados a 2 decimales — ver comentario en
                     // PortfolioHoldingResult.
@@ -1952,7 +2039,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // (Fase 10/16) hablen de las mismas categorías.
         public async Task<IEnumerable<InvestmentHoldingResult>> GetInvestmentHoldingsAsync(int userId, int referenceAssetId)
         {
-            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true);
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, includeCollected: true);
 
             return contributions
                 .Where(c => c.Environment != "FIAT")
@@ -1966,7 +2053,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     Bucket = ClassifyNetWorthBucket(g.First().AssetTypeName, g.First().Environment, g.First().Symbol),
                     RawQuantity = g.Sum(c => c.QuantityContribution),
                     RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
-                    RawActualValue = g.Sum(c => c.ActualValueContribution)
+                    RawActualValue = g.Sum(c => c.ActualValueContribution),
+                    RawCollectedValue = g.Sum(c => c.CollectedValueContribution)
                 })
                 .Where(x => x.RawQuantity > 0) // tenencia viva, mismo criterio que GetStockStatsAsync/GetPortfolioHoldingsAsync
                 .Select(x => new InvestmentHoldingResult
@@ -1979,7 +2067,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     // Sin redondear (corrección 2026-09-10, mismo motivo que GetPortfolioHoldingsAsync).
                     Quantity = x.RawQuantity,
                     OriginalValue = Math.Round(x.RawOriginalValue, 2),
-                    ActualValue = Math.Round(x.RawActualValue, 2)
+                    ActualValue = Math.Round(x.RawActualValue, 2),
+                    CollectedValue = Math.Round(x.RawCollectedValue, 2)
                 })
                 .OrderByDescending(r => r.ActualValue)
                 .ToList();
@@ -1992,7 +2081,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // que usa el resto de las stats de inversión) — no el de hoy.
         public async Task<IEnumerable<InvestmentContributionMonthResult>> GetInvestmentContributionsByMonthAsync(int userId, int referenceAssetId, DateTime since)
         {
-            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, since: since);
+            // plan-amortizaciones-bonos, T12: includeCollected suma lo cobrado de bonos a los retiros del mes.
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, since: since, includeCollected: true);
             var nonCash = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             if (nonCash.Count == 0) return Enumerable.Empty<InvestmentContributionMonthResult>();
@@ -2004,11 +2094,18 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             for (var month = sinceMonth; month <= currentMonth; month = month.AddMonths(1))
             {
                 var inMonth = nonCash.Where(c => c.Date.Year == month.Year && c.Date.Month == month.Month).ToList();
+                var sold = inMonth.Where(c => c.QuantityContribution < 0).Sum(c => -c.OriginalValueContribution);
+                var collectedInMonth = inMonth.Sum(c => c.CollectedValueContribution);
                 result.Add(new InvestmentContributionMonthResult
                 {
                     Month = month,
                     Contributed = Math.Round(inMonth.Where(c => c.QuantityContribution > 0).Sum(c => c.OriginalValueContribution), 2),
-                    Withdrawn = Math.Round(inMonth.Where(c => c.QuantityContribution < 0).Sum(c => -c.OriginalValueContribution), 2)
+                    // T12: lo cobrado de un bono (capital + interés) es plata que sale de lo invertido hacia una
+                    // cuenta, igual que una venta — por eso se suma a los retiros en vez de verse como una caída
+                    // del valor.
+                    Withdrawn = Math.Round(sold + collectedInMonth, 2),
+                    CollectedValue = Math.Round(collectedInMonth, 2),
+                    InterestCollected = Math.Round(inMonth.Sum(c => c.CollectedInterestValueContribution), 2)
                 });
             }
 
@@ -2024,7 +2121,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // total, así que el resultado realizado es su signo invertido.
         public async Task<IEnumerable<ClosedPositionResult>> GetClosedInvestmentPositionsAsync(int userId, int referenceAssetId)
         {
-            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: "BOLSA", referenceAssetId, assetTypeId: 0, considerStable: true);
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: "BOLSA", referenceAssetId, assetTypeId: 0, considerStable: true, includeCollected: true);
 
             return contributions
                 .GroupBy(c => c.AssetId)
@@ -2036,6 +2133,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AssetTypeName = g.First().AssetTypeName,
                     RawQuantity = g.Sum(c => c.QuantityContribution),
                     RawOriginalValue = g.Sum(c => c.OriginalValueContribution),
+                    RawCollectedValue = g.Sum(c => c.CollectedValueContribution),
                     LastMovementDate = g.Max(c => c.Date)
                 })
                 .Where(x => x.RawQuantity == 0)
@@ -2045,7 +2143,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     AssetName = x.AssetName,
                     Symbol = x.Symbol,
                     AssetTypeName = x.AssetTypeName,
-                    RealizedResult = Math.Round(-x.RawOriginalValue, 2),
+                    // T11: lo cobrado de un bono vendido del todo también es resultado realizado.
+                    RealizedResult = Math.Round(-x.RawOriginalValue + x.RawCollectedValue, 2),
+                    CollectedValue = Math.Round(x.RawCollectedValue, 2),
                     LastMovementDate = x.LastMovementDate
                 })
                 .OrderByDescending(x => x.LastMovementDate)
@@ -2594,6 +2694,59 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .OrderBy(t => t.Date)
                 .ThenBy(t => t.Id)
                 .ToListAsync();
+        }
+
+        public async Task<IEnumerable<BondHoldingResult>> GetBondHoldingsBeforeDateAsync(int userId, int assetId, DateTime beforeDate)
+        {
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && t.AssetId == assetId && t.Date < beforeDate)
+                .GroupBy(t => new { t.AccountId, t.PortfolioId, t.Account.Name, PortfolioName = t.Portfolio.Name })
+                .Select(g => new BondHoldingResult
+                {
+                    AccountId = g.Key.AccountId,
+                    AccountName = g.Key.Name,
+                    PortfolioId = g.Key.PortfolioId,
+                    PortfolioName = g.Key.PortfolioName,
+                    Quantity = g.Sum(t => t.Amount)
+                })
+                .Where(x => x.Quantity > 0)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<BondMovementResult>> GetBondMovementsAsync(int userId, IEnumerable<int> assetIds)
+        {
+            var ids = assetIds.Distinct().ToList();
+            if (ids.Count == 0) return new List<BondMovementResult>();
+
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && ids.Contains(t.AssetId))
+                .Select(t => new BondMovementResult
+                {
+                    AssetId = t.AssetId,
+                    AccountId = t.AccountId,
+                    AccountName = t.Account.Name,
+                    PortfolioId = t.PortfolioId,
+                    PortfolioName = t.Portfolio.Name,
+                    Date = t.Date,
+                    Amount = t.Amount
+                })
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<Transaction>> GetByBondCollectionIdAsync(int bondCollectionId)
+        {
+            return await _context.Transactions
+                .Where(t => t.BondCollectionId == bondCollectionId)
+                .ToListAsync();
+        }
+
+        public async Task<int?> GetLastBondInterestTransactionClassIdAsync(int userId)
+        {
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && t.BondCollectionId != null && t.TransactionClass.CountsAsIncomeExpense)
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => (int?)t.TransactionClassId)
+                .FirstOrDefaultAsync();
         }
     }
 }

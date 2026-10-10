@@ -19,6 +19,10 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
     // GetConsolidatedDebtsAsync (el indicador "Saldo compartido") ya suma ambas fuentes. Es "cualquier
     // otra deuda relacionada conmigo" — lo que el usuario pidió al acotar la bandeja en la ronda
     // anterior — y faltaba.
+    //
+    // plan-amortizaciones-bonos, Fase 7: se suma `BondCollection` — un pago de bono ya ocurrido y
+    // todavía sin registrar (Title = símbolo, Date = fecha de pago, Amount = estimación total, null
+    // si el bono es indexado). Se atiende en Cobros de Bonos, así que no usa LinkId.
     public class DashboardPendingItemDTO
     {
         public string Kind { get; set; } = string.Empty;

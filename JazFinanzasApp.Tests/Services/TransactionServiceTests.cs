@@ -495,6 +495,37 @@ namespace JazFinanzasApp.Tests.Services
             await act.Should().ThrowAsync<BusinessRuleException>();
         }
 
+        [Fact]
+        public async Task DeleteTransactionAsync_WhenPartOfABondCollection_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var transaction = new Transaction { Id = 5, UserId = UserId, BondCollectionId = 50 };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+
+            // Act
+            var act = () => _sut.DeleteTransactionAsync(UserId, 5);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+            _transactionRepoMock.Verify(r => r.DeleteAsync(It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task EditTransactionAsync_WhenPartOfABondCollection_ThrowsBusinessRuleException()
+        {
+            // Arrange
+            var transaction = new Transaction { Id = 5, UserId = UserId, MovementType = "E", TransactionClassId = 1, AccountId = 1, AssetId = 1, BondCollectionId = 50 };
+            _transactionRepoMock.Setup(r => r.GetByIdAsync(5)).ReturnsAsync(transaction);
+
+            var dto = new TransactionEditDTO { TransactionClassId = 1, AccountID = 1, AssetId = 1, Date = DateTime.Today, Amount = 100m, Detail = "x" };
+
+            // Act
+            var act = () => _sut.EditTransactionAsync(UserId, 5, dto);
+
+            // Assert
+            await act.Should().ThrowAsync<BusinessRuleException>();
+        }
+
         // ── GetPaginatedTransactionsAsync ─────────────────────────────────────
 
         [Fact]

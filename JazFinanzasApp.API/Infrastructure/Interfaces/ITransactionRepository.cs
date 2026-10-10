@@ -44,6 +44,19 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task DetachConsumedIncomeFromSharedEventPaymentAllocationsAsync(int transactionId);
         Task MarkSharedEventIncomeAsConsumedAsync(int transactionId);
 
+        // Cobros de bonos (plan-amortizaciones-bonos.md).
+        // T4: tenencia de un activo por (cuenta, cartera) para un usuario, sumando movimientos con
+        // Date < beforeDate — solo las combinaciones con tenencia viva (> 0).
+        Task<IEnumerable<BondHoldingResult>> GetBondHoldingsBeforeDateAsync(int userId, int assetId, DateTime beforeDate);
+        // Todos los movimientos del usuario en esos activos, en UNA consulta: GetPendingAsync calcula con
+        // esto la tenencia de cada pago en memoria, en vez de una consulta por pago de todo el catálogo.
+        Task<IEnumerable<BondMovementResult>> GetBondMovementsAsync(int userId, IEnumerable<int> assetIds);
+        Task<IEnumerable<Transaction>> GetByBondCollectionIdAsync(int bondCollectionId);
+        // T7: categoría de interés usada en el último cobro de bono registrado por el usuario — para
+        // precargar el formulario. Se identifica por `CountsAsIncomeExpense` (la de capital nunca
+        // cuenta como ingreso; la de interés, por construcción, siempre).
+        Task<int?> GetLastBondInterestTransactionClassIdAsync(int userId);
+
         // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
         Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);
         Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);

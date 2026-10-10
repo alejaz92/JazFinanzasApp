@@ -8,6 +8,8 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public string ReferenceAssetSymbol { get; set; }
         public decimal TotalOriginalValue { get; set; }
         public decimal TotalActualValue { get; set; }
+        // plan-amortizaciones-bonos, T11: lo ya cobrado de bonos, en la moneda de referencia.
+        public decimal TotalCollectedValue { get; set; }
         // Agregados por tipo de activo, siempre sobre el entorno completo — el filtro de la barra
         // (D-11) recorta Tickers, no esta lista, para que el combo pueda mostrar todos los tipos
         // aunque se esté mirando uno solo.
@@ -35,6 +37,8 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // Lo ya cobrado (bonos). GainLossAmount = ActualValue + CollectedValue - OriginalValue (T11).
+        public decimal CollectedValue { get; set; }
         public decimal GainLossAmount { get; set; }
         public decimal? GainLossPercent { get; set; }
         // Peso dentro del total de su propia categoría (Bolsa o Cryptos), no del patrimonio entero.
@@ -48,6 +52,7 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public int TickerCount { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
     }
 
@@ -74,7 +79,9 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public string AssetName { get; set; }
         public string Symbol { get; set; }
         public string AssetTypeName { get; set; }
+        // T11: ya incluye lo cobrado (CollectedValue) de un bono vendido del todo.
         public decimal RealizedResult { get; set; }
+        public decimal CollectedValue { get; set; }
         public DateTime LastMovementDate { get; set; }
     }
 }

@@ -7,6 +7,8 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public bool IsDefault { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // plan-amortizaciones-bonos, T10: lo cobrado de bonos en esta cartera, en la moneda de referencia.
+        public decimal CollectedValue { get; set; }
     }
 
     public class PortfolioHoldingResult
@@ -18,6 +20,8 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // plan-amortizaciones-bonos, T10: lo cobrado de este activo en esta cuenta, en la moneda de referencia.
+        public decimal CollectedValue { get; set; }
         // Cotización de origen/actual (2026-09-10): calculadas acá con los valores SIN redondear
         // (antes de Math.Round a 2 decimales para OriginalValue/ActualValue) — dividir dos valores
         // ya redondeados a 2 decimales por cuenta, como hacía el frontend, daba una "Cotización

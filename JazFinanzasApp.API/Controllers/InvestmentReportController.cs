@@ -75,6 +75,15 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(result);
         }
 
+        // Próximos cobros de bonos (plan-amortizaciones-bonos, Fase 14). Sin moneda de referencia: los
+        // montos van en la moneda en la que paga cada bono.
+        [HttpGet("BondUpcoming")]
+        public async Task<IActionResult> GetBondUpcoming()
+        {
+            var result = await _investmentReportService.GetBondUpcomingAsync(GetUserId());
+            return Ok(result);
+        }
+
         [HttpGet("ContributionsVsPerformance/{assetId}")]
         public async Task<IActionResult> GetContributionsVsPerformance(int assetId)
         {

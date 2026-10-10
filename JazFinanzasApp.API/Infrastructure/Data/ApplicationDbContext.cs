@@ -26,6 +26,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<Account_AssetType> Account_AssetTypes { get; set; }
         public DbSet<InvestmentTransaction> InvestmentTransactions { get; set; }
         public DbSet<BondPayment> BondPayments { get; set; }
+        public DbSet<BondCollection> BondCollections { get; set; }
         public DbSet<StockStatsListResult> StockStatsListResult { get; set; }
         public DbSet<StocksGralStatsResult> StocksGralStatsResult { get; set; }
         public DbSet<CryptoStatsByDateResult> CryptoStatsByDateResult { get; set; }
@@ -224,6 +225,53 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany()
                 .HasForeignKey(bp => bp.AssetId)
                 .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<BondPayment>()
+                .HasOne(bp => bp.CurrencyAsset)
+                .WithMany()
+                .HasForeignKey(bp => bp.CurrencyAssetId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<BondPayment>()
+                .HasIndex(bp => new { bp.AssetId, bp.PaymentDate })
+                .IsUnique();
+
+            modelBuilder.Entity<BondCollection>()
+                .HasOne(bc => bc.BondPayment)
+                .WithMany()
+                .HasForeignKey(bc => bc.BondPaymentId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<BondCollection>()
+                .HasOne(bc => bc.User)
+                .WithMany()
+                .HasForeignKey(bc => bc.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<BondCollection>()
+                .HasOne(bc => bc.Account)
+                .WithMany()
+                .HasForeignKey(bc => bc.AccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<BondCollection>()
+                .HasOne(bc => bc.Portfolio)
+                .WithMany()
+                .HasForeignKey(bc => bc.PortfolioId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<BondCollection>()
+                .HasIndex(bc => new { bc.BondPaymentId, bc.UserId, bc.AccountId, bc.PortfolioId })
+                .IsUnique();
+
+            // El servicio borra los movimientos del cobro y el registro en una sola transacción
+            // (plan-amortizaciones-bonos.md, T8) — NoAction para no multiplicar cascade paths en SQL
+            // Server, mismo criterio que TripSuggestionDismissal.TransactionId.
+            modelBuilder.Entity<Transaction>()
+                .HasOne(t => t.BondCollection)
+                .WithMany()
+                .HasForeignKey(t => t.BondCollectionId)
+                .OnDelete(DeleteBehavior.NoAction);
 
             modelBuilder.Entity<AssetSplitEvent>()
                 .HasOne(s => s.Asset)

@@ -1,6 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.InvestmentReport;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
+using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 
@@ -22,6 +23,8 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IPortfolioRepository _portfolioRepository;
         private readonly IAssetSplitEventRepository _assetSplitEventRepository;
+        private readonly IBondPaymentRepository _bondPaymentRepository;
+        private readonly IBondCollectionRepository _bondCollectionRepository;
 
         public InvestmentReportService(
             ITransactionRepository transactionRepository,
@@ -29,7 +32,9 @@ namespace JazFinanzasApp.API.Business.Services
             IAssetTypeRepository assetTypeRepository,
             IAssetQuoteRepository assetQuoteRepository,
             IPortfolioRepository portfolioRepository,
-            IAssetSplitEventRepository assetSplitEventRepository)
+            IAssetSplitEventRepository assetSplitEventRepository,
+            IBondPaymentRepository bondPaymentRepository,
+            IBondCollectionRepository bondCollectionRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
@@ -37,12 +42,18 @@ namespace JazFinanzasApp.API.Business.Services
             _assetQuoteRepository = assetQuoteRepository;
             _portfolioRepository = portfolioRepository;
             _assetSplitEventRepository = assetSplitEventRepository;
+            _bondPaymentRepository = bondPaymentRepository;
+            _bondCollectionRepository = bondCollectionRepository;
         }
 
         // Pura — testeable sin mocks. null cuando OriginalValue es 0 (posición sin costo conocido,
         // ej. un ajuste): un % de ganancia sobre una base $0 no tiene lectura.
-        public static decimal? GainLossPercent(decimal originalValue, decimal actualValue) =>
-            originalValue != 0 ? Math.Round((actualValue - originalValue) / originalValue * 100, 2) : null;
+        // plan-amortizaciones-bonos, T11: collectedValue es lo ya cobrado de un bono (capital +
+        // interés) y se suma al valor actual; el valor original NO cambia, para que el % se mida
+        // contra lo invertido (restarlo del costo daría +400% en el AL30, que no significa nada).
+        // Sin cobros (default 0) el resultado es idéntico al de siempre.
+        public static decimal? GainLossPercent(decimal originalValue, decimal actualValue, decimal collectedValue = 0m) =>
+            originalValue != 0 ? Math.Round((actualValue + collectedValue - originalValue) / originalValue * 100, 2) : null;
 
         // Panorama de inversiones: mapa de bloques de todo (bolsa, cripto, bonos) coloreado por
         // ganancia/pérdida + línea del valor total con los aportes marcados como puntos.
@@ -54,6 +65,7 @@ namespace JazFinanzasApp.API.Business.Services
             var holdings = (await _transactionRepository.GetInvestmentHoldingsAsync(userId, assetId)).ToList();
             var totalOriginal = holdings.Sum(h => h.OriginalValue);
             var totalActual = holdings.Sum(h => h.ActualValue);
+            var totalCollected = holdings.Sum(h => h.CollectedValue);
 
             var series = await _transactionRepository.GetNetWorthMonthlySeriesAsync(userId, referenceAsset, MonthlySeriesLength);
             var valueSeries = series
@@ -68,7 +80,8 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 TotalOriginalValue = Math.Round(totalOriginal, 2),
                 TotalActualValue = Math.Round(totalActual, 2),
-                GainLossPercent = GainLossPercent(totalOriginal, totalActual),
+                TotalCollectedValue = Math.Round(totalCollected, 2),
+                GainLossPercent = GainLossPercent(totalOriginal, totalActual, totalCollected),
                 Holdings = holdings.Select(h => new InvestmentHoldingDTO
                 {
                     AssetId = h.AssetId,
@@ -78,7 +91,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue)
+                    CollectedValue = h.CollectedValue,
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue)
                 }).ToList(),
                 ValueSeries = valueSeries,
                 ContributionMarkers = contributionsByMonth
@@ -107,7 +121,8 @@ namespace JazFinanzasApp.API.Business.Services
                     IsDefault = s.IsDefault,
                     OriginalValue = s.OriginalValue,
                     ActualValue = s.ActualValue,
-                    GainLossPercent = GainLossPercent(s.OriginalValue, s.ActualValue),
+                    CollectedValue = s.CollectedValue,
+                    GainLossPercent = GainLossPercent(s.OriginalValue, s.ActualValue, s.CollectedValue),
                     SharePercent = totalActual != 0 ? Math.Round(s.ActualValue / totalActual * 100, 2) : 0m
                 }).ToList()
             };
@@ -141,7 +156,8 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 OriginalValue = stats?.OriginalValue ?? 0m,
                 ActualValue = stats?.ActualValue ?? 0m,
-                GainLossPercent = GainLossPercent(stats?.OriginalValue ?? 0m, stats?.ActualValue ?? 0m),
+                CollectedValue = stats?.CollectedValue ?? 0m,
+                GainLossPercent = GainLossPercent(stats?.OriginalValue ?? 0m, stats?.ActualValue ?? 0m, stats?.CollectedValue ?? 0m),
                 Holdings = holdings.Select(h => new PortfolioHoldingItemDTO
                 {
                     AssetType = h.AssetType,
@@ -151,7 +167,8 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
+                    CollectedValue = h.CollectedValue,
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue),
                     OriginQuote = h.OriginQuote,
                     CurrentQuote = h.CurrentQuote
                 }).ToList(),
@@ -188,6 +205,7 @@ namespace JazFinanzasApp.API.Business.Services
 
             var totalOriginal = holdings.Sum(h => h.OriginalValue);
             var totalActual = holdings.Sum(h => h.ActualValue);
+            var totalCollected = holdings.Sum(h => h.CollectedValue);
 
             var series = await _transactionRepository.GetStocksValueMonthlySeriesByTypeAsync(userId, referenceAsset, MonthlySeriesLength);
 
@@ -200,6 +218,7 @@ namespace JazFinanzasApp.API.Business.Services
                         Symbol = c.Symbol,
                         AssetTypeName = c.AssetTypeName,
                         RealizedResult = c.RealizedResult,
+                        CollectedValue = c.CollectedValue,
                         LastMovementDate = c.LastMovementDate
                     }).ToList()
                 : new List<ClosedPositionDTO>();
@@ -209,6 +228,7 @@ namespace JazFinanzasApp.API.Business.Services
                 ReferenceAssetSymbol = referenceAsset.Symbol,
                 TotalOriginalValue = Math.Round(totalOriginal, 2),
                 TotalActualValue = Math.Round(totalActual, 2),
+                TotalCollectedValue = Math.Round(totalCollected, 2),
                 Types = types,
                 Tickers = BuildTickerList(holdings, totalActual),
                 ValueSeries = series.Select(p => new StocksMonthlyPointDTO
@@ -312,9 +332,36 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = holding.Quantity,
                     OriginalValue = holding.OriginalValue,
                     ActualValue = holding.ActualValue,
-                    GainLossPercent = GainLossPercent(holding.OriginalValue, holding.ActualValue),
+                    CollectedValue = holding.CollectedValue,
+                    GainLossPercent = GainLossPercent(holding.OriginalValue, holding.ActualValue, holding.CollectedValue),
                     WeightPercent = totalFamilyActual != 0 ? Math.Round(holding.ActualValue / totalFamilyActual * 100, 2) : 0m
                 };
+            }
+
+            // plan-amortizaciones-bonos, Fase 12: cronograma del bono con el estado de cada pago para el
+            // usuario. Un activo sin cronograma (acciones, cripto) no consulta nada más.
+            var today = DateTime.Today;
+            var payments = (await _bondPaymentRepository.GetByAssetIdAsync(assetId)).ToList();
+            var bondSchedule = new List<BondPaymentScheduleItemDTO>();
+            decimal? residualPer100 = null;
+            string bondCurrencySymbol = null;
+            if (payments.Count > 0)
+            {
+                var collections = (await _bondCollectionRepository.GetByUserIdAsync(userId))
+                    .Where(c => c.BondPayment.AssetId == assetId)
+                    .ToList();
+
+                // Tenencia el día anterior a cada pago ya ocurrido (mismo criterio que los cobros pendientes, T4).
+                var holdingsByPayment = new Dictionary<int, List<BondHoldingResult>>();
+                foreach (var payment in payments.Where(p => p.PaymentDate.Date <= today))
+                {
+                    var holdings = (await _transactionRepository.GetBondHoldingsBeforeDateAsync(userId, assetId, payment.PaymentDate)).ToList();
+                    if (holdings.Count > 0) holdingsByPayment[payment.Id] = holdings;
+                }
+
+                bondSchedule = BuildBondSchedule(payments, collections, holdingsByPayment, today);
+                residualPer100 = ResidualPer100(payments, today);
+                bondCurrencySymbol = payments[0].CurrencyAsset?.Symbol;
             }
 
             return new AssetDetailReportDTO
@@ -342,8 +389,164 @@ namespace JazFinanzasApp.API.Business.Services
                 }).ToList(),
                 BalanceByAccount = balance.Select(b => new AccountHoldingAmountDTO { Account = b.Account, Balance = b.Balance }).ToList(),
                 SplitEvents = splitEvents.Select(s => new AssetSplitEventMarkerDTO { Date = s.Date, SplitRatio = s.SplitRatio }).ToList(),
-                Position = position
+                Position = position,
+                BondSchedule = bondSchedule,
+                BondCurrencySymbol = bondCurrencySymbol,
+                ResidualPer100 = residualPer100
             };
+        }
+
+        // Próximos cobros (T14): para cada bono que el usuario tiene hoy, los pagos que quedan hasta el
+        // vencimiento estimados con la tenencia de hoy (todas las cuentas). Tres consultas fijas: el
+        // cronograma completo, los movimientos del usuario en esos bonos y nada más.
+        public async Task<BondUpcomingReportDTO> GetBondUpcomingAsync(int userId)
+        {
+            var payments = (await _bondPaymentRepository.GetAllAsync()).ToList();
+            if (payments.Count == 0) return new BondUpcomingReportDTO();
+
+            var movements = await _transactionRepository.GetBondMovementsAsync(userId, payments.Select(p => p.AssetId));
+            var quantityByAsset = movements
+                .GroupBy(m => m.AssetId)
+                .ToDictionary(g => g.Key, g => g.Sum(m => m.Amount));
+
+            return BuildBondUpcoming(payments, quantityByAsset, DateTime.Today);
+        }
+
+        // Pura — testeable sin mocks. `payments` es el cronograma completo (pasados y futuros: los pasados
+        // hacen falta para el capital vivo); `quantityByAsset` la tenencia de hoy por activo. Un bono sin
+        // tenencia (o vendido del todo) o sin pagos por delante no aparece. La estimación es la misma que
+        // la del aviso de cobros pendientes (BondCollectionService.EstimateCapital/EstimateInterest).
+        public static BondUpcomingReportDTO BuildBondUpcoming(
+            IEnumerable<BondPayment> payments,
+            IReadOnlyDictionary<int, decimal> quantityByAsset,
+            DateTime today)
+        {
+            var report = new BondUpcomingReportDTO();
+
+            foreach (var bondPayments in payments.GroupBy(p => p.AssetId).OrderBy(g => g.Key))
+            {
+                if (!quantityByAsset.TryGetValue(bondPayments.Key, out var quantity) || quantity <= 0) continue;
+
+                var schedule = bondPayments.OrderBy(p => p.PaymentDate).ToList();
+                var upcoming = schedule.Where(p => p.PaymentDate.Date > today.Date).ToList();
+                if (upcoming.Count == 0) continue;
+
+                var first = upcoming[0];
+                var items = upcoming.Select(p =>
+                {
+                    var capital = BondCollectionService.EstimateCapital(p, quantity);
+                    var interest = BondCollectionService.EstimateInterest(p, quantity);
+                    return new BondUpcomingPaymentDTO
+                    {
+                        PaymentDate = p.PaymentDate,
+                        AssetId = p.AssetId,
+                        Symbol = p.Asset.Symbol,
+                        AssetName = p.Asset.Name,
+                        CurrencySymbol = p.CurrencyAsset.Symbol,
+                        HeldQuantity = quantity,
+                        AmortizationRate = p.AmortizationRate,
+                        IsIndexed = p.IsIndexed,
+                        EstimatedCapital = capital,
+                        EstimatedInterest = interest,
+                        EstimatedTotal = capital.HasValue && interest.HasValue ? capital.Value + interest.Value : null,
+                        ResidualAfterPer100 = ResidualPer100(schedule, p.PaymentDate)
+                    };
+                }).ToList();
+
+                report.Payments.AddRange(items);
+                report.Bonds.Add(new BondUpcomingBondDTO
+                {
+                    AssetId = first.AssetId,
+                    Symbol = first.Asset.Symbol,
+                    AssetName = first.Asset.Name,
+                    CurrencySymbol = first.CurrencyAsset.Symbol,
+                    HeldQuantity = quantity,
+                    ResidualPer100 = ResidualPer100(schedule, today),
+                    Maturity = schedule[^1].PaymentDate,
+                    PaymentCount = items.Count,
+                    TotalCapital = items.Sum(i => i.EstimatedCapital ?? 0m),
+                    TotalInterest = items.Sum(i => i.EstimatedInterest ?? 0m),
+                    Total = items.Sum(i => i.EstimatedTotal ?? 0m),
+                    HasIndexedPayments = items.Any(i => i.IsIndexed)
+                });
+            }
+
+            report.Payments = report.Payments.OrderBy(p => p.PaymentDate).ThenBy(p => p.Symbol).ToList();
+            report.Months = report.Payments
+                .GroupBy(p => new { Month = new DateTime(p.PaymentDate.Year, p.PaymentDate.Month, 1), p.CurrencySymbol })
+                .OrderBy(g => g.Key.Month).ThenBy(g => g.Key.CurrencySymbol)
+                .Select(g => new BondUpcomingMonthDTO
+                {
+                    Month = g.Key.Month,
+                    CurrencySymbol = g.Key.CurrencySymbol,
+                    Capital = g.Sum(p => p.EstimatedCapital ?? 0m),
+                    Interest = g.Sum(p => p.EstimatedInterest ?? 0m),
+                    Total = g.Sum(p => p.EstimatedTotal ?? 0m),
+                    PaymentCount = g.Count(),
+                    IndexedPaymentCount = g.Count(p => p.IsIndexed)
+                })
+                .ToList();
+
+            return report;
+        }
+
+        // Pura — testeable sin mocks (T13). Capital vivo por cada 100 nominales originales a una fecha:
+        // 100 x (1 - suma de lo amortizado en los pagos hasta esa fecha, inclusive). Nunca baja de 0.
+        public static decimal ResidualPer100(IEnumerable<BondPayment> payments, DateTime asOf) =>
+            Math.Max(0m, Math.Round(100m * (1m - payments.Where(p => p.PaymentDate.Date <= asOf.Date).Sum(p => p.AmortizationRate)), 2));
+
+        // Pura — testeable sin mocks. Una fila por pago del cronograma, de más viejo a más nuevo, con su
+        // capital vivo después del pago y su estado para el usuario. `holdingsByPayment` trae, para cada
+        // pago ya ocurrido, las combinaciones (cuenta, cartera) con tenencia viva el día anterior.
+        public static List<BondPaymentScheduleItemDTO> BuildBondSchedule(
+            IEnumerable<BondPayment> payments,
+            IEnumerable<BondCollection> collections,
+            Dictionary<int, List<BondHoldingResult>> holdingsByPayment,
+            DateTime today)
+        {
+            var collectionList = collections.ToList();
+            var items = new List<BondPaymentScheduleItemDTO>();
+            decimal amortized = 0m;
+
+            foreach (var payment in payments.OrderBy(p => p.PaymentDate))
+            {
+                amortized += payment.AmortizationRate;
+                var paymentCollections = collectionList.Where(c => c.BondPaymentId == payment.Id).ToList();
+                var counted = paymentCollections.Where(c => c.Status != BondCollectionStatus.Dismissed).ToList();
+
+                string status;
+                if (payment.PaymentDate.Date > today.Date)
+                {
+                    status = BondScheduleStatus.Future;
+                }
+                else
+                {
+                    // Pendiente si queda alguna combinación (cuenta, cartera) con tenencia ese día sin ningún registro.
+                    var resolved = paymentCollections.Select(c => (c.AccountId, c.PortfolioId)).ToHashSet();
+                    var hasUnresolvedHolding = holdingsByPayment.TryGetValue(payment.Id, out var holdings)
+                        && holdings.Any(h => !resolved.Contains((h.AccountId, h.PortfolioId)));
+
+                    if (hasUnresolvedHolding) status = BondScheduleStatus.Pending;
+                    else if (paymentCollections.Any(c => c.Status == BondCollectionStatus.Registered)) status = BondScheduleStatus.Registered;
+                    else if (paymentCollections.Any(c => c.Status == BondCollectionStatus.Untracked)) status = BondScheduleStatus.Untracked;
+                    else if (paymentCollections.Any()) status = BondScheduleStatus.Dismissed;
+                    else status = BondScheduleStatus.NotHeld;
+                }
+
+                items.Add(new BondPaymentScheduleItemDTO
+                {
+                    PaymentDate = payment.PaymentDate,
+                    InterestPer100 = payment.InterestPer100,
+                    AmortizationRate = payment.AmortizationRate,
+                    ResidualAfterPer100 = Math.Max(0m, Math.Round(100m * (1m - amortized), 2)),
+                    IsIndexed = payment.IsIndexed,
+                    Status = status,
+                    CollectedCapital = counted.Sum(c => c.CapitalAmount),
+                    CollectedInterest = counted.Sum(c => c.InterestAmount)
+                });
+            }
+
+            return items;
         }
 
         // Aportes vs rendimiento: cascada valor al inicio → aportes → retiros → valorización → valor
@@ -369,6 +572,7 @@ namespace JazFinanzasApp.API.Business.Services
             var monthly = await _transactionRepository.GetInvestmentContributionsByMonthAsync(userId, assetId, ContributionsStartMonth);
             var contributed = monthly.Sum(m => m.Contributed);
             var withdrawn = monthly.Sum(m => m.Withdrawn);
+            var interestCollected = monthly.Sum(m => m.InterestCollected);
             var valuation = finalValue - initialValue - contributed + withdrawn;
 
             return new ContributionsVsPerformanceDTO
@@ -379,6 +583,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Contributed = Math.Round(contributed, 2),
                 Withdrawn = Math.Round(withdrawn, 2),
                 Valuation = Math.Round(valuation, 2),
+                InterestCollected = Math.Round(interestCollected, 2),
                 FinalValue = Math.Round(finalValue, 2)
             };
         }
@@ -397,8 +602,9 @@ namespace JazFinanzasApp.API.Business.Services
                     Quantity = h.Quantity,
                     OriginalValue = h.OriginalValue,
                     ActualValue = h.ActualValue,
-                    GainLossAmount = Math.Round(h.ActualValue - h.OriginalValue, 2),
-                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue),
+                    CollectedValue = h.CollectedValue,
+                    GainLossAmount = Math.Round(h.ActualValue + h.CollectedValue - h.OriginalValue, 2),
+                    GainLossPercent = GainLossPercent(h.OriginalValue, h.ActualValue, h.CollectedValue),
                     WeightPercent = totalActual != 0 ? Math.Round(h.ActualValue / totalActual * 100, 2) : 0m
                 })
                 .OrderByDescending(t => t.ActualValue)
@@ -413,13 +619,15 @@ namespace JazFinanzasApp.API.Business.Services
                 {
                     var originalValue = g.Sum(h => h.OriginalValue);
                     var actualValue = g.Sum(h => h.ActualValue);
+                    var collectedValue = g.Sum(h => h.CollectedValue);
                     return new StockTypeAggregateDTO
                     {
                         AssetTypeName = g.Key,
                         TickerCount = g.Count(),
                         OriginalValue = Math.Round(originalValue, 2),
                         ActualValue = Math.Round(actualValue, 2),
-                        GainLossPercent = GainLossPercent(originalValue, actualValue)
+                        CollectedValue = Math.Round(collectedValue, 2),
+                        GainLossPercent = GainLossPercent(originalValue, actualValue, collectedValue)
                     };
                 })
                 .OrderByDescending(t => t.ActualValue)
