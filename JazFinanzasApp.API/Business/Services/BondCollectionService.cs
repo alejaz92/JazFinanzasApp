@@ -47,18 +47,49 @@ namespace JazFinanzasApp.API.Business.Services
             var pastPayments = (await _bondPaymentRepository.GetPastAsync(DateTime.Today)).ToList();
             if (pastPayments.Count == 0) return Enumerable.Empty<BondCollectionPendingDTO>();
 
-            var holdingsByPayment = new Dictionary<int, List<BondHoldingResult>>();
-            foreach (var payment in pastPayments)
-            {
-                var holdings = (await _transactionRepository.GetBondHoldingsBeforeDateAsync(userId, payment.AssetId, payment.PaymentDate)).ToList();
-                if (holdings.Count > 0) holdingsByPayment[payment.Id] = holdings;
-            }
+            // Una sola consulta con los movimientos del usuario en los bonos del catálogo, y la tenencia de
+            // cada pago se calcula en memoria. Antes era una consulta por cada pago pasado de TODO el
+            // catálogo (la mayoría de bonos que el usuario no tiene), en cada carga de Inicio y Panorama.
+            var movements = await _transactionRepository.GetBondMovementsAsync(userId, pastPayments.Select(p => p.AssetId));
+            var holdingsByPayment = BuildHoldingsByPayment(pastPayments, movements);
 
             var resolvedKeys = (await _bondCollectionRepository.GetByUserIdAsync(userId))
                 .Select(c => (c.BondPaymentId, c.AccountId, c.PortfolioId))
                 .ToHashSet();
 
             return BuildPending(pastPayments, holdingsByPayment, resolvedKeys);
+        }
+
+        // Pura — testeable sin mocks. Tenencia viva (> 0) por (cuenta, cartera) el día anterior a cada pago:
+        // la misma regla que TransactionRepository.GetBondHoldingsBeforeDateAsync (movimientos con
+        // Date < PaymentDate), pero sobre movimientos ya traídos. Un pago sin tenencia no tiene entrada.
+        public static Dictionary<int, List<BondHoldingResult>> BuildHoldingsByPayment(
+            IEnumerable<BondPayment> payments,
+            IEnumerable<BondMovementResult> movements)
+        {
+            var movementList = movements.ToList();
+            var result = new Dictionary<int, List<BondHoldingResult>>();
+
+            foreach (var payment in payments)
+            {
+                var holdings = movementList
+                    .Where(m => m.AssetId == payment.AssetId && m.Date < payment.PaymentDate)
+                    .GroupBy(m => new { m.AccountId, m.AccountName, m.PortfolioId, m.PortfolioName })
+                    .Select(g => new BondHoldingResult
+                    {
+                        AccountId = g.Key.AccountId,
+                        AccountName = g.Key.AccountName,
+                        PortfolioId = g.Key.PortfolioId,
+                        PortfolioName = g.Key.PortfolioName,
+                        Quantity = g.Sum(m => m.Amount)
+                    })
+                    .Where(h => h.Quantity > 0)
+                    .ToList();
+
+                if (holdings.Count > 0) result[payment.Id] = holdings;
+            }
+
+            return result;
         }
 
         // Pura — testeable sin mocks (T9). `holdingsByPayment` ya trae, para cada BondPayment, las

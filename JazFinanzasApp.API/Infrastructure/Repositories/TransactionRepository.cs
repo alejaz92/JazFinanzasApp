@@ -2696,6 +2696,26 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<IEnumerable<BondMovementResult>> GetBondMovementsAsync(int userId, IEnumerable<int> assetIds)
+        {
+            var ids = assetIds.Distinct().ToList();
+            if (ids.Count == 0) return new List<BondMovementResult>();
+
+            return await _context.Transactions
+                .Where(t => t.UserId == userId && ids.Contains(t.AssetId))
+                .Select(t => new BondMovementResult
+                {
+                    AssetId = t.AssetId,
+                    AccountId = t.AccountId,
+                    AccountName = t.Account.Name,
+                    PortfolioId = t.PortfolioId,
+                    PortfolioName = t.Portfolio.Name,
+                    Date = t.Date,
+                    Amount = t.Amount
+                })
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<Transaction>> GetByBondCollectionIdAsync(int bondCollectionId)
         {
             return await _context.Transactions

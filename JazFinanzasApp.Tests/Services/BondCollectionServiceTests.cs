@@ -150,13 +150,14 @@ namespace JazFinanzasApp.Tests.Services
         {
             var payment = MakePayment(id: 10);
             _bondPaymentRepoMock.Setup(r => r.GetPastAsync(It.IsAny<DateTime>())).ReturnsAsync(new[] { payment });
-            _transactionRepoMock.Setup(r => r.GetBondHoldingsBeforeDateAsync(UserId, 48, payment.PaymentDate))
-                .ReturnsAsync(new[] { MakeHolding() });
+            _transactionRepoMock.Setup(r => r.GetBondMovementsAsync(UserId, It.IsAny<IEnumerable<int>>()))
+                .ReturnsAsync(new[] { MakeMovement(48, quantity: 5m, date: new DateTime(2023, 8, 9)) });
             _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(Enumerable.Empty<BondCollection>());
 
             var result = await _sut.GetPendingAsync(UserId);
 
             result.Should().ContainSingle();
+            result.Single().HeldQuantity.Should().Be(5m);
         }
 
         [Fact]
@@ -164,13 +165,106 @@ namespace JazFinanzasApp.Tests.Services
         {
             var payment = MakePayment(id: 10);
             _bondPaymentRepoMock.Setup(r => r.GetPastAsync(It.IsAny<DateTime>())).ReturnsAsync(new[] { payment });
-            _transactionRepoMock.Setup(r => r.GetBondHoldingsBeforeDateAsync(UserId, 48, payment.PaymentDate))
-                .ReturnsAsync(Enumerable.Empty<BondHoldingResult>());
+            _transactionRepoMock.Setup(r => r.GetBondMovementsAsync(UserId, It.IsAny<IEnumerable<int>>()))
+                .ReturnsAsync(Enumerable.Empty<BondMovementResult>());
             _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(Enumerable.Empty<BondCollection>());
 
             var result = await _sut.GetPendingAsync(UserId);
 
             result.Should().BeEmpty();
+        }
+
+        // La consulta de movimientos es UNA sola, sin importar cuántos pagos pasados tenga el catálogo.
+        [Fact]
+        public async Task GetPendingAsync_QueriesMovementsOnceRegardlessOfPaymentCount()
+        {
+            var payments = Enumerable.Range(1, 20)
+                .Select(i => { var p = MakePayment(id: i); p.AssetId = 40 + i; return p; })
+                .ToList();
+            _bondPaymentRepoMock.Setup(r => r.GetPastAsync(It.IsAny<DateTime>())).ReturnsAsync(payments);
+            _transactionRepoMock.Setup(r => r.GetBondMovementsAsync(UserId, It.IsAny<IEnumerable<int>>()))
+                .ReturnsAsync(Enumerable.Empty<BondMovementResult>());
+            _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(Enumerable.Empty<BondCollection>());
+
+            await _sut.GetPendingAsync(UserId);
+
+            _transactionRepoMock.Verify(r => r.GetBondMovementsAsync(UserId, It.IsAny<IEnumerable<int>>()), Times.Once);
+            _transactionRepoMock.Verify(r => r.GetBondHoldingsBeforeDateAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<DateTime>()), Times.Never);
+        }
+
+        // ── BuildHoldingsByPayment (pura): mismas reglas que GetBondHoldingsBeforeDateAsync ──────
+
+        private static BondMovementResult MakeMovement(int assetId, decimal quantity, DateTime date, int accountId = 1, int portfolioId = 1) =>
+            new() { AssetId = assetId, AccountId = accountId, AccountName = "Bull Market", PortfolioId = portfolioId, PortfolioName = "Default", Date = date, Amount = quantity };
+
+        [Fact]
+        public void BuildHoldingsByPayment_SumsMovementsBeforeThePaymentDate()
+        {
+            var payment = MakePayment(id: 10); // AL30 (48), pago el 09-07-2026
+            var movements = new[]
+            {
+                MakeMovement(48, 3.77m, new DateTime(2023, 8, 9)),
+                MakeMovement(48, 0.5m, new DateTime(2025, 9, 19)),
+                MakeMovement(48, 0.88m, new DateTime(2026, 8, 10)) // posterior al pago: no cuenta
+            };
+
+            var result = BondCollectionService.BuildHoldingsByPayment(new[] { payment }, movements);
+
+            result[10].Should().ContainSingle();
+            result[10][0].Quantity.Should().Be(4.27m);
+        }
+
+        [Fact]
+        public void BuildHoldingsByPayment_PurchaseOnThePaymentDateDoesNotCount()
+        {
+            var payment = MakePayment(id: 10);
+            var movements = new[] { MakeMovement(48, 5m, payment.PaymentDate) }; // mismo día: todavía no lo tenía
+
+            BondCollectionService.BuildHoldingsByPayment(new[] { payment }, movements).Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildHoldingsByPayment_FullySoldPositionHasNoEntry()
+        {
+            var payment = MakePayment(id: 10);
+            var movements = new[]
+            {
+                MakeMovement(48, 5m, new DateTime(2025, 1, 1)),
+                MakeMovement(48, -5m, new DateTime(2026, 3, 1))
+            };
+
+            BondCollectionService.BuildHoldingsByPayment(new[] { payment }, movements).Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildHoldingsByPayment_SplitsByAccountAndPortfolio_AndIgnoresOtherAssets()
+        {
+            var payment = MakePayment(id: 10);
+            var movements = new[]
+            {
+                MakeMovement(48, 3m, new DateTime(2025, 1, 1), accountId: 1, portfolioId: 1),
+                MakeMovement(48, 2m, new DateTime(2025, 1, 1), accountId: 2, portfolioId: 1),
+                MakeMovement(65, 9m, new DateTime(2025, 1, 1), accountId: 1, portfolioId: 1) // GD35: otro bono
+            };
+
+            var result = BondCollectionService.BuildHoldingsByPayment(new[] { payment }, movements);
+
+            result[10].Should().HaveCount(2);
+            result[10].Single(h => h.AccountId == 1).Quantity.Should().Be(3m);
+            result[10].Single(h => h.AccountId == 2).Quantity.Should().Be(2m);
+        }
+
+        [Fact]
+        public void BuildHoldingsByPayment_EachPaymentSeesOnlyItsOwnDateAndAsset()
+        {
+            var early = MakePayment(id: 1); early.PaymentDate = new DateTime(2024, 7, 9);
+            var late = MakePayment(id: 2); late.PaymentDate = new DateTime(2026, 7, 9);
+            var movements = new[] { MakeMovement(48, 5m, new DateTime(2025, 6, 1)) };
+
+            var result = BondCollectionService.BuildHoldingsByPayment(new[] { early, late }, movements);
+
+            result.Should().NotContainKey(1);        // antes de la compra
+            result[2][0].Quantity.Should().Be(5m);   // después de la compra
         }
 
         // ── RegisterAsync ────────────────────────────────────────────────────────

@@ -238,6 +238,45 @@ namespace JazFinanzasApp.Tests.Repositories
             result.Should().BeEmpty();
         }
 
+        // ── GetBondMovementsAsync (retoque de la Fase 7): una consulta con los movimientos del usuario ──
+
+        [Fact]
+        public async Task GetBondMovementsAsync_ReturnsOnlyTheUsersMovementsOfTheGivenAssets()
+        {
+            var (context, reference, bond) = CreateScenario();
+            using var _ = context;
+            var otherBond = new Asset { Name = "Bono GD35", Symbol = "GD35", Color = "#000000", AssetType = bond.AssetType };
+            context.Assets.Add(otherBond);
+            AddBuy(context, bond, new DateTime(2025, 1, 1), amount: 5m, quotePrice: 1m / 80m);
+            AddBuy(context, bond, new DateTime(2025, 6, 1), amount: -1m, quotePrice: 1m / 90m, accountId: 2);
+            AddBuy(context, otherBond, new DateTime(2025, 1, 1), amount: 9m, quotePrice: 1m / 70m);  // no se pide
+            context.Transactions.Add(new Transaction
+            {
+                UserId = 99, Asset = bond, AccountId = 1, PortfolioId = 1, Date = new DateTime(2025, 1, 1),
+                MovementType = "I", Amount = 100m, QuotePrice = 1m / 80m                                // otro usuario
+            });
+            await context.SaveChangesAsync();
+
+            var result = (await new TransactionRepository(context).GetBondMovementsAsync(UserId, new[] { bond.Id })).ToList();
+
+            result.Should().HaveCount(2);
+            result.Should().OnlyContain(m => m.AssetId == bond.Id);
+            result.Sum(m => m.Amount).Should().Be(4m);
+            result.Single(m => m.AccountId == 1).AccountName.Should().Be("Bull Market");
+            result.Single(m => m.AccountId == 1).PortfolioName.Should().Be("Default");
+        }
+
+        [Fact]
+        public async Task GetBondMovementsAsync_WithNoAssetIds_ReturnsEmptyWithoutQuerying()
+        {
+            var (context, _, _) = CreateScenario();
+            using var _c = context;
+
+            var result = await new TransactionRepository(context).GetBondMovementsAsync(UserId, Array.Empty<int>());
+
+            result.Should().BeEmpty();
+        }
+
         // ── Aportes vs rendimiento (Fase 10, T12) ────────────────────────────────────────────────
 
         // Un bono comprado en marzo de 2024 (aporte 400) y vendido en parte en abril, con cobros de
