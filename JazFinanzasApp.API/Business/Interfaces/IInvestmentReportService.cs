@@ -27,5 +27,9 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<AssetDetailReportDTO> GetAssetDetailAsync(int userId, int assetId, int referenceAssetId);
 
         Task<ContributionsVsPerformanceDTO> GetContributionsVsPerformanceAsync(int userId, int assetId);
+
+        // Próximos cobros de bonos (plan-amortizaciones-bonos, Fase 14): sin moneda de referencia, los
+        // montos van en la moneda en la que paga cada bono.
+        Task<BondUpcomingReportDTO> GetBondUpcomingAsync(int userId);
     }
 }

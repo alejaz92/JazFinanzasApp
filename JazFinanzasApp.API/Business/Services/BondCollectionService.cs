@@ -114,14 +114,23 @@ namespace JazFinanzasApp.API.Business.Services
             return pending;
         }
 
+        // Pura (T5/T6). La misma estimación para el aviso de cobros pendientes y para la proyección de
+        // próximos cobros (InvestmentReportService.BuildBondUpcoming), para que no puedan divergir.
+        // null si el bono es indexado: el monto depende del ajuste y no se conoce de antemano.
+        public static decimal? EstimateCapital(BondPayment payment, decimal quantity) =>
+            payment.IsIndexed ? null : Math.Round(quantity * 100 * payment.AmortizationRate, 2);
+
+        public static decimal? EstimateInterest(BondPayment payment, decimal quantity) =>
+            payment.IsIndexed ? null : Math.Round(quantity * payment.InterestPer100, 2);
+
         // Pura — testeable sin mocks (T5, T6). Estimación sin redondear a lo que se cobra en bruto:
         // capital = tenencia x 100 x fracción amortizada; interés = tenencia x interés por 100. Si el
         // bono es indexado (CER/dólar linked), ninguno de los dos se estima: el monto no se conoce de
         // antemano y el formulario lo pide a mano.
         public static BondCollectionPendingDTO BuildPendingItem(BondPayment payment, BondHoldingResult holding)
         {
-            decimal? capital = payment.IsIndexed ? null : Math.Round(holding.Quantity * 100 * payment.AmortizationRate, 2);
-            decimal? interest = payment.IsIndexed ? null : Math.Round(holding.Quantity * payment.InterestPer100, 2);
+            decimal? capital = EstimateCapital(payment, holding.Quantity);
+            decimal? interest = EstimateInterest(payment, holding.Quantity);
 
             return new BondCollectionPendingDTO
             {

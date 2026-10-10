@@ -60,6 +60,70 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal? ResidualPer100 { get; set; }
     }
 
+    // Próximos cobros de bonos (plan-amortizaciones-bonos, Fase 14, T14): los pagos que quedan hasta el
+    // vencimiento de cada bono que el usuario tiene HOY, estimados con la tenencia de hoy (suponen que
+    // la mantiene). Los montos están en la moneda en la que paga cada bono — no se convierten ni se
+    // suman entre monedas distintas, por eso los totales por mes van abiertos por moneda.
+    public class BondUpcomingReportDTO
+    {
+        public List<BondUpcomingPaymentDTO> Payments { get; set; } = new();
+        public List<BondUpcomingMonthDTO> Months { get; set; } = new();
+        public List<BondUpcomingBondDTO> Bonds { get; set; } = new();
+    }
+
+    public class BondUpcomingPaymentDTO
+    {
+        public DateTime PaymentDate { get; set; }
+        public int AssetId { get; set; }
+        public string Symbol { get; set; }
+        public string AssetName { get; set; }
+        public string CurrencySymbol { get; set; }
+        // Tenencia de hoy sumando todas las cuentas y carteras.
+        public decimal HeldQuantity { get; set; }
+        // Fracción (0.08 = 8%) del capital original que amortiza en este pago — se informa aunque el
+        // bono sea indexado, que es lo único que se sabe de antemano.
+        public decimal AmortizationRate { get; set; }
+        public bool IsIndexed { get; set; }
+        // Null si el bono es indexado (CER / dólar linked): el monto depende del ajuste (T6).
+        public decimal? EstimatedCapital { get; set; }
+        public decimal? EstimatedInterest { get; set; }
+        public decimal? EstimatedTotal { get; set; }
+        // Capital vivo por cada 100 nominales originales después de este pago.
+        public decimal ResidualAfterPer100 { get; set; }
+    }
+
+    // Un mes y una moneda: lo que se espera cobrar. Los pagos indexados no suman (no tienen monto);
+    // IndexedPaymentCount avisa cuántos quedaron afuera del total.
+    public class BondUpcomingMonthDTO
+    {
+        public DateTime Month { get; set; }
+        public string CurrencySymbol { get; set; }
+        public decimal Capital { get; set; }
+        public decimal Interest { get; set; }
+        public decimal Total { get; set; }
+        public int PaymentCount { get; set; }
+        public int IndexedPaymentCount { get; set; }
+    }
+
+    public class BondUpcomingBondDTO
+    {
+        public int AssetId { get; set; }
+        public string Symbol { get; set; }
+        public string AssetName { get; set; }
+        public string CurrencySymbol { get; set; }
+        public decimal HeldQuantity { get; set; }
+        // Capital vivo hoy por cada 100 nominales originales.
+        public decimal ResidualPer100 { get; set; }
+        // Fecha del último pago del cronograma (el vencimiento).
+        public DateTime Maturity { get; set; }
+        public int PaymentCount { get; set; }
+        // Lo que falta cobrar hasta el vencimiento, sin contar los pagos indexados.
+        public decimal TotalCapital { get; set; }
+        public decimal TotalInterest { get; set; }
+        public decimal Total { get; set; }
+        public bool HasIndexedPayments { get; set; }
+    }
+
     // Estado de un pago del cronograma para el usuario que mira el detalle.
     // Registered / Untracked / Dismissed: ya tiene su registro de cobro (ver BondCollectionStatus).
     // Pending: ya pasó, tenías el bono y falta registrarlo. Future: todavía no llegó la fecha.

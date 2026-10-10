@@ -396,6 +396,100 @@ namespace JazFinanzasApp.API.Business.Services
             };
         }
 
+        // Próximos cobros (T14): para cada bono que el usuario tiene hoy, los pagos que quedan hasta el
+        // vencimiento estimados con la tenencia de hoy (todas las cuentas). Tres consultas fijas: el
+        // cronograma completo, los movimientos del usuario en esos bonos y nada más.
+        public async Task<BondUpcomingReportDTO> GetBondUpcomingAsync(int userId)
+        {
+            var payments = (await _bondPaymentRepository.GetAllAsync()).ToList();
+            if (payments.Count == 0) return new BondUpcomingReportDTO();
+
+            var movements = await _transactionRepository.GetBondMovementsAsync(userId, payments.Select(p => p.AssetId));
+            var quantityByAsset = movements
+                .GroupBy(m => m.AssetId)
+                .ToDictionary(g => g.Key, g => g.Sum(m => m.Amount));
+
+            return BuildBondUpcoming(payments, quantityByAsset, DateTime.Today);
+        }
+
+        // Pura — testeable sin mocks. `payments` es el cronograma completo (pasados y futuros: los pasados
+        // hacen falta para el capital vivo); `quantityByAsset` la tenencia de hoy por activo. Un bono sin
+        // tenencia (o vendido del todo) o sin pagos por delante no aparece. La estimación es la misma que
+        // la del aviso de cobros pendientes (BondCollectionService.EstimateCapital/EstimateInterest).
+        public static BondUpcomingReportDTO BuildBondUpcoming(
+            IEnumerable<BondPayment> payments,
+            IReadOnlyDictionary<int, decimal> quantityByAsset,
+            DateTime today)
+        {
+            var report = new BondUpcomingReportDTO();
+
+            foreach (var bondPayments in payments.GroupBy(p => p.AssetId).OrderBy(g => g.Key))
+            {
+                if (!quantityByAsset.TryGetValue(bondPayments.Key, out var quantity) || quantity <= 0) continue;
+
+                var schedule = bondPayments.OrderBy(p => p.PaymentDate).ToList();
+                var upcoming = schedule.Where(p => p.PaymentDate.Date > today.Date).ToList();
+                if (upcoming.Count == 0) continue;
+
+                var first = upcoming[0];
+                var items = upcoming.Select(p =>
+                {
+                    var capital = BondCollectionService.EstimateCapital(p, quantity);
+                    var interest = BondCollectionService.EstimateInterest(p, quantity);
+                    return new BondUpcomingPaymentDTO
+                    {
+                        PaymentDate = p.PaymentDate,
+                        AssetId = p.AssetId,
+                        Symbol = p.Asset.Symbol,
+                        AssetName = p.Asset.Name,
+                        CurrencySymbol = p.CurrencyAsset.Symbol,
+                        HeldQuantity = quantity,
+                        AmortizationRate = p.AmortizationRate,
+                        IsIndexed = p.IsIndexed,
+                        EstimatedCapital = capital,
+                        EstimatedInterest = interest,
+                        EstimatedTotal = capital.HasValue && interest.HasValue ? capital.Value + interest.Value : null,
+                        ResidualAfterPer100 = ResidualPer100(schedule, p.PaymentDate)
+                    };
+                }).ToList();
+
+                report.Payments.AddRange(items);
+                report.Bonds.Add(new BondUpcomingBondDTO
+                {
+                    AssetId = first.AssetId,
+                    Symbol = first.Asset.Symbol,
+                    AssetName = first.Asset.Name,
+                    CurrencySymbol = first.CurrencyAsset.Symbol,
+                    HeldQuantity = quantity,
+                    ResidualPer100 = ResidualPer100(schedule, today),
+                    Maturity = schedule[^1].PaymentDate,
+                    PaymentCount = items.Count,
+                    TotalCapital = items.Sum(i => i.EstimatedCapital ?? 0m),
+                    TotalInterest = items.Sum(i => i.EstimatedInterest ?? 0m),
+                    Total = items.Sum(i => i.EstimatedTotal ?? 0m),
+                    HasIndexedPayments = items.Any(i => i.IsIndexed)
+                });
+            }
+
+            report.Payments = report.Payments.OrderBy(p => p.PaymentDate).ThenBy(p => p.Symbol).ToList();
+            report.Months = report.Payments
+                .GroupBy(p => new { Month = new DateTime(p.PaymentDate.Year, p.PaymentDate.Month, 1), p.CurrencySymbol })
+                .OrderBy(g => g.Key.Month).ThenBy(g => g.Key.CurrencySymbol)
+                .Select(g => new BondUpcomingMonthDTO
+                {
+                    Month = g.Key.Month,
+                    CurrencySymbol = g.Key.CurrencySymbol,
+                    Capital = g.Sum(p => p.EstimatedCapital ?? 0m),
+                    Interest = g.Sum(p => p.EstimatedInterest ?? 0m),
+                    Total = g.Sum(p => p.EstimatedTotal ?? 0m),
+                    PaymentCount = g.Count(),
+                    IndexedPaymentCount = g.Count(p => p.IsIndexed)
+                })
+                .ToList();
+
+            return report;
+        }
+
         // Pura — testeable sin mocks (T13). Capital vivo por cada 100 nominales originales a una fecha:
         // 100 x (1 - suma de lo amortizado en los pagos hasta esa fecha, inclusive). Nunca baja de 0.
         public static decimal ResidualPer100(IEnumerable<BondPayment> payments, DateTime asOf) =>

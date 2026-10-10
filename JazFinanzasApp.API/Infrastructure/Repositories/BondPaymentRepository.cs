@@ -32,6 +32,15 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .FirstOrDefaultAsync(bp => bp.Id == id);
         }
 
+        public async Task<IEnumerable<BondPayment>> GetAllAsync()
+        {
+            return await _context.BondPayments
+                .Include(bp => bp.Asset)
+                .Include(bp => bp.CurrencyAsset)
+                .OrderBy(bp => bp.PaymentDate)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<BondPayment>> GetPastAsync(DateTime asOf)
         {
             return await _context.BondPayments
