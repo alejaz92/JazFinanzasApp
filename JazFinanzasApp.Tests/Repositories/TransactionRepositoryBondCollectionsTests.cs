@@ -237,5 +237,73 @@ namespace JazFinanzasApp.Tests.Repositories
 
             result.Should().BeEmpty();
         }
+
+        // ── Aportes vs rendimiento (Fase 10, T12) ────────────────────────────────────────────────
+
+        // Un bono comprado en marzo de 2024 (aporte 400) y vendido en parte en abril, con cobros de
+        // capital + interés: lo cobrado se suma a los retiros del mes de su acreditación, y el interés
+        // se informa aparte. Dismissed y lo anterior a `since` no cuentan.
+        [Fact]
+        public async Task GetInvestmentContributionsByMonthAsync_BondCollections_AddToWithdrawnAndSeparateTheInterest()
+        {
+            var (context, reference, bond) = CreateScenario();
+            using var _ = context;
+
+            AddBuy(context, bond, new DateTime(2024, 3, 15), amount: 5m, quotePrice: 1m / 80m);   // aporte: 400
+            AddBuy(context, bond, new DateTime(2024, 4, 20), amount: -1m, quotePrice: 1m / 100m); // venta: 100
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = new DateTime(2024, 1, 1), Type = "NA", Value = 1m });
+
+            var before = AddPayment(context, bond, reference, new DateTime(2024, 2, 9));
+            var april = AddPayment(context, bond, reference, new DateTime(2024, 4, 9));
+            var may = AddPayment(context, bond, reference, new DateTime(2024, 5, 9));
+            var june = AddPayment(context, bond, reference, new DateTime(2024, 6, 9));
+            AddCollection(context, before, BondCollectionStatus.Registered, 500m, 500m, new DateTime(2024, 2, 10));  // antes de `since`
+            AddCollection(context, april, BondCollectionStatus.Registered, 20m, 5m, new DateTime(2024, 4, 10));
+            AddCollection(context, may, BondCollectionStatus.Untracked, 0m, 10m, new DateTime(2024, 5, 9));
+            AddCollection(context, june, BondCollectionStatus.Dismissed, 999m, 999m, new DateTime(2024, 6, 9));
+            await context.SaveChangesAsync();
+
+            var months = (await new TransactionRepository(context)
+                .GetInvestmentContributionsByMonthAsync(UserId, reference.Id, since: new DateTime(2024, 3, 1))).ToList();
+
+            var mar = months.Single(m => m.Month == new DateTime(2024, 3, 1));
+            mar.Contributed.Should().Be(400m);
+            mar.Withdrawn.Should().Be(0m);
+
+            var apr = months.Single(m => m.Month == new DateTime(2024, 4, 1));
+            apr.Withdrawn.Should().Be(125m);          // 100 de la venta + 25 cobrados (20 de capital + 5 de interés)
+            apr.CollectedValue.Should().Be(25m);
+            apr.InterestCollected.Should().Be(5m);
+
+            var may2 = months.Single(m => m.Month == new DateTime(2024, 5, 1));
+            may2.Withdrawn.Should().Be(10m);
+            may2.InterestCollected.Should().Be(10m);
+
+            var jun = months.Single(m => m.Month == new DateTime(2024, 6, 1));
+            jun.Withdrawn.Should().Be(0m);            // Dismissed no cuenta
+            jun.InterestCollected.Should().Be(0m);
+
+            months.Sum(m => m.Withdrawn).Should().Be(135m);          // 100 + 25 + 10, sin el cobro de febrero
+            months.Sum(m => m.InterestCollected).Should().Be(15m);
+        }
+
+        [Fact]
+        public async Task GetInvestmentContributionsByMonthAsync_WithoutCollections_HasZeroCollectedAndInterest()
+        {
+            var (context, reference, bond) = CreateScenario();
+            using var _ = context;
+
+            AddBuy(context, bond, new DateTime(2024, 3, 15), amount: 5m, quotePrice: 1m / 80m);
+            AddBuy(context, bond, new DateTime(2024, 4, 20), amount: -1m, quotePrice: 1m / 100m);
+            context.AssetQuotes.Add(new AssetQuote { Asset = reference, Date = new DateTime(2024, 1, 1), Type = "NA", Value = 1m });
+            await context.SaveChangesAsync();
+
+            var months = (await new TransactionRepository(context)
+                .GetInvestmentContributionsByMonthAsync(UserId, reference.Id, since: new DateTime(2024, 3, 1))).ToList();
+
+            months.Sum(m => m.Withdrawn).Should().Be(100m);
+            months.Sum(m => m.CollectedValue).Should().Be(0m);
+            months.Sum(m => m.InterestCollected).Should().Be(0m);
+        }
     }
 }

@@ -22,7 +22,11 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
     {
         public DateTime Month { get; set; }
         public decimal Contributed { get; set; }
+        // Ventas + lo cobrado de bonos (plan-amortizaciones-bonos, T12).
         public decimal Withdrawn { get; set; }
+        // La parte de Withdrawn que son cobros de bonos (capital + interés), y de esa, el interés.
+        public decimal CollectedValue { get; set; }
+        public decimal InterestCollected { get; set; }
     }
 
     // D-13 (revisión de Bolsa, 2026-09-12): un mes del entorno BOLSA, con su valor abierto por tipo

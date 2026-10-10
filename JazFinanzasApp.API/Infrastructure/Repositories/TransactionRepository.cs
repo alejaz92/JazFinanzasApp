@@ -1592,6 +1592,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             // Solo lo traen las filas que salen de un BondCollection (con cantidad y valores en 0);
             // las de un movimiento común lo tienen en 0.
             public decimal CollectedValueContribution { get; set; }
+            // La parte de CollectedValueContribution que es interés (no devolución de capital) — Aportes
+            // vs rendimiento la muestra aparte como rendimiento (plan-amortizaciones-bonos, T12).
+            public decimal CollectedInterestValueContribution { get; set; }
         }
 
         // Un cobro de bono ya registrado (Registered o Untracked), con lo mínimo para valuarlo.
@@ -1606,7 +1609,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             public int AccountId { get; set; }
             public string AccountName { get; set; } = "";
             public DateTime CollectionDate { get; set; }
+            // Capital + interés; InterestAmount es solo la parte de interés.
             public decimal Amount { get; set; }
+            public decimal InterestAmount { get; set; }
             public decimal? QuotePrice { get; set; }
         }
 
@@ -1670,6 +1675,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         AccountName = c.Account.Name,
                         CollectionDate = c.CollectionDate!.Value,
                         Amount = c.CapitalAmount + c.InterestAmount,
+                        InterestAmount = c.InterestAmount,
                         QuotePrice = c.QuotePrice
                     })
                     .ToListAsync();
@@ -1777,6 +1783,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             // T10: mismo cálculo que OriginalValueContribution — monto en su moneda / cotización de esa
             // moneda a la fecha del cobro x cotización de referencia a esa fecha (con el mismo fan-out) —
             // reusando GetReferenceQuotesOnOrBefore, sin duplicar la búsqueda de cotización de referencia.
+            decimal ValueOfCollected(CollectedRow c, decimal amount) =>
+                c.QuotePrice.HasValue && c.QuotePrice.Value > 0
+                    ? GetReferenceQuotesOnOrBefore(c.CollectionDate).Sum(refQuote => (amount / c.QuotePrice.Value) * refQuote)
+                    : 0m;
+
             contributions.AddRange(collected.Select(c => new InvestmentValueContribution
             {
                 PortfolioId = c.PortfolioId,
@@ -1791,9 +1802,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 QuantityContribution = 0m,
                 OriginalValueContribution = 0m,
                 ActualValueContribution = 0m,
-                CollectedValueContribution = c.QuotePrice.HasValue && c.QuotePrice.Value > 0
-                    ? GetReferenceQuotesOnOrBefore(c.CollectionDate).Sum(refQuote => (c.Amount / c.QuotePrice.Value) * refQuote)
-                    : 0m
+                CollectedValueContribution = ValueOfCollected(c, c.Amount),
+                CollectedInterestValueContribution = ValueOfCollected(c, c.InterestAmount)
             }));
 
             return contributions;
@@ -2071,7 +2081,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
         // que usa el resto de las stats de inversión) — no el de hoy.
         public async Task<IEnumerable<InvestmentContributionMonthResult>> GetInvestmentContributionsByMonthAsync(int userId, int referenceAssetId, DateTime since)
         {
-            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, since: since);
+            // plan-amortizaciones-bonos, T12: includeCollected suma lo cobrado de bonos a los retiros del mes.
+            var contributions = await GetInvestmentValueContributionsAsync(userId, environment: null, referenceAssetId, assetTypeId: 0, considerStable: true, since: since, includeCollected: true);
             var nonCash = contributions.Where(c => c.Environment != "FIAT").ToList();
 
             if (nonCash.Count == 0) return Enumerable.Empty<InvestmentContributionMonthResult>();
@@ -2083,11 +2094,18 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             for (var month = sinceMonth; month <= currentMonth; month = month.AddMonths(1))
             {
                 var inMonth = nonCash.Where(c => c.Date.Year == month.Year && c.Date.Month == month.Month).ToList();
+                var sold = inMonth.Where(c => c.QuantityContribution < 0).Sum(c => -c.OriginalValueContribution);
+                var collectedInMonth = inMonth.Sum(c => c.CollectedValueContribution);
                 result.Add(new InvestmentContributionMonthResult
                 {
                     Month = month,
                     Contributed = Math.Round(inMonth.Where(c => c.QuantityContribution > 0).Sum(c => c.OriginalValueContribution), 2),
-                    Withdrawn = Math.Round(inMonth.Where(c => c.QuantityContribution < 0).Sum(c => -c.OriginalValueContribution), 2)
+                    // T12: lo cobrado de un bono (capital + interés) es plata que sale de lo invertido hacia una
+                    // cuenta, igual que una venta — por eso se suma a los retiros en vez de verse como una caída
+                    // del valor.
+                    Withdrawn = Math.Round(sold + collectedInMonth, 2),
+                    CollectedValue = Math.Round(collectedInMonth, 2),
+                    InterestCollected = Math.Round(inMonth.Sum(c => c.CollectedInterestValueContribution), 2)
                 });
             }
 

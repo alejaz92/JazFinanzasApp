@@ -403,5 +403,75 @@ namespace JazFinanzasApp.Tests.Services
             result.GainLossPercent.Should().Be(115.26m);
             result.Holdings.Single().CollectedValue.Should().Be(157.58m);
         }
+
+        // ── Aportes vs rendimiento con cobros de bonos (Fase 10, T12) ────────────────────────────
+
+        private void SetupContributions(Asset referenceAsset, decimal initial, decimal final, List<InvestmentContributionMonthResult> monthly)
+        {
+            _assetRepoMock.Setup(r => r.GetByIdAsync(referenceAsset.Id)).ReturnsAsync(referenceAsset);
+            _transactionRepoMock
+                .Setup(r => r.GetNetWorthMonthlySeriesAsync(UserId, referenceAsset, It.IsAny<int>()))
+                .ReturnsAsync(new List<NetWorthMonthlyPointResult>
+                {
+                    new() { Month = new DateTime(2024, 2, 1), Bonds = initial },
+                    new() { Month = new DateTime(2026, 9, 1), Bonds = final }
+                });
+            _transactionRepoMock
+                .Setup(r => r.GetInvestmentContributionsByMonthAsync(UserId, referenceAsset.Id, new DateTime(2024, 3, 1)))
+                .ReturnsAsync(monthly);
+        }
+
+        // Un bono que valía 1.000, devolvió 100 de capital y pagó 20 de interés, y subió 50 de precio:
+        // vale 950 (900 por el capital devuelto + 50 de precio). Sin contar lo cobrado la cascada lo
+        // mostraba como una pérdida de 50.
+        [Fact]
+        public async Task GetContributionsVsPerformanceAsync_WithBondCollections_CapitalIsAWithdrawalAndInterestIsReturn()
+        {
+            var referenceAsset = new Asset { Id = 5, Symbol = "USD" };
+            SetupContributions(referenceAsset, initial: 1000m, final: 950m, new List<InvestmentContributionMonthResult>
+            {
+                new() { Month = new DateTime(2026, 7, 1), Contributed = 0m, Withdrawn = 120m, CollectedValue = 120m, InterestCollected = 20m }
+            });
+
+            var result = await _sut.GetContributionsVsPerformanceAsync(UserId, 5);
+
+            result.Withdrawn.Should().Be(120m);             // 100 de capital + 20 de interés
+            result.InterestCollected.Should().Be(20m);
+            result.Valuation.Should().Be(70m);              // 950 - 1000 - 0 + 120: incluye los 20 de interés
+            (result.Valuation - result.InterestCollected).Should().Be(50m); // la valorización de precio, sin pérdida aparente
+        }
+
+        [Fact]
+        public async Task GetContributionsVsPerformanceAsync_WithBondCollections_CascadeStillAddsUpToFinalValue()
+        {
+            var referenceAsset = new Asset { Id = 5, Symbol = "USD" };
+            SetupContributions(referenceAsset, initial: 1000m, final: 1500m, new List<InvestmentContributionMonthResult>
+            {
+                new() { Month = new DateTime(2024, 3, 1), Contributed = 500m },
+                new() { Month = new DateTime(2024, 4, 1), Withdrawn = 125m, CollectedValue = 25m, InterestCollected = 5m }
+            });
+
+            var result = await _sut.GetContributionsVsPerformanceAsync(UserId, 5);
+
+            var cascade = result.InitialValue + result.Contributed - result.Withdrawn
+                          + (result.Valuation - result.InterestCollected) + result.InterestCollected;
+            cascade.Should().Be(result.FinalValue);
+        }
+
+        [Fact]
+        public async Task GetContributionsVsPerformanceAsync_WithoutCollections_HasNoInterestAndKeepsTheOldValuation()
+        {
+            var referenceAsset = new Asset { Id = 5, Symbol = "USD" };
+            SetupContributions(referenceAsset, initial: 1000m, final: 1500m, new List<InvestmentContributionMonthResult>
+            {
+                new() { Month = new DateTime(2024, 3, 1), Contributed = 500m },
+                new() { Month = new DateTime(2024, 4, 1), Withdrawn = 100m }
+            });
+
+            var result = await _sut.GetContributionsVsPerformanceAsync(UserId, 5);
+
+            result.InterestCollected.Should().Be(0m);
+            result.Valuation.Should().Be(100m); // igual que antes: 1500 - 1000 - 500 + 100
+        }
     }
 }

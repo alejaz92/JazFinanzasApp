@@ -382,6 +382,7 @@ namespace JazFinanzasApp.API.Business.Services
             var monthly = await _transactionRepository.GetInvestmentContributionsByMonthAsync(userId, assetId, ContributionsStartMonth);
             var contributed = monthly.Sum(m => m.Contributed);
             var withdrawn = monthly.Sum(m => m.Withdrawn);
+            var interestCollected = monthly.Sum(m => m.InterestCollected);
             var valuation = finalValue - initialValue - contributed + withdrawn;
 
             return new ContributionsVsPerformanceDTO
@@ -392,6 +393,7 @@ namespace JazFinanzasApp.API.Business.Services
                 Contributed = Math.Round(contributed, 2),
                 Withdrawn = Math.Round(withdrawn, 2),
                 Valuation = Math.Round(valuation, 2),
+                InterestCollected = Math.Round(interestCollected, 2),
                 FinalValue = Math.Round(finalValue, 2)
             };
         }
