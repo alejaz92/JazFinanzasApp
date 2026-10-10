@@ -47,6 +47,49 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         // D-15: la posición del usuario en este activo — null si nunca tuvo tenencia (ej. se llega
         // al detalle desde un ticker que ya está en 0 sin pasar por Bolsa — Detalle).
         public AssetPositionDTO Position { get; set; }
+
+        // plan-amortizaciones-bonos, Fase 12. Cronograma de pagos del bono con el estado de cada uno
+        // para el usuario; vacío (y los dos campos siguientes null) si el activo no tiene cronograma
+        // cargado — acciones, cripto, y los bonos que todavía no tienen uno.
+        public List<BondPaymentScheduleItemDTO> BondSchedule { get; set; } = new();
+        // Moneda en la que paga el bono (no es la de referencia del reporte): los montos del
+        // cronograma y de lo cobrado están en esta moneda.
+        public string BondCurrencySymbol { get; set; }
+        // Capital vivo hoy por cada 100 nominales originales (T13): 100 x (1 - suma de lo amortizado
+        // hasta hoy). Explica por qué la cotización de un bono amortizado está tan por debajo de 100.
+        public decimal? ResidualPer100 { get; set; }
+    }
+
+    // Estado de un pago del cronograma para el usuario que mira el detalle.
+    // Registered / Untracked / Dismissed: ya tiene su registro de cobro (ver BondCollectionStatus).
+    // Pending: ya pasó, tenías el bono y falta registrarlo. Future: todavía no llegó la fecha.
+    // NotHeld: ya pasó y no tenías el bono ese día.
+    public static class BondScheduleStatus
+    {
+        public const string Registered = "Registered";
+        public const string Untracked = "Untracked";
+        public const string Dismissed = "Dismissed";
+        public const string Pending = "Pending";
+        public const string Future = "Future";
+        public const string NotHeld = "NotHeld";
+    }
+
+    public class BondPaymentScheduleItemDTO
+    {
+        public DateTime PaymentDate { get; set; }
+        // Por cada 100 nominales originales. Si IsIndexed (CER / dólar linked) el interés es solo
+        // informativo: el monto real depende del ajuste.
+        public decimal InterestPer100 { get; set; }
+        // Fracción (0.08 = 8%) del capital original que amortiza en esta fecha.
+        public decimal AmortizationRate { get; set; }
+        // Capital vivo por cada 100 nominales originales DESPUÉS de este pago.
+        public decimal ResidualAfterPer100 { get; set; }
+        public bool IsIndexed { get; set; }
+        public string Status { get; set; }
+        // Lo cobrado de este pago (Registered y Untracked; 0 si no hay o es Dismissed), en la
+        // moneda del bono. Suma todas las cuentas y carteras donde lo tenías.
+        public decimal CollectedCapital { get; set; }
+        public decimal CollectedInterest { get; set; }
     }
 
     // D-16: una marca vertical en la línea de cotización.
@@ -64,6 +107,9 @@ namespace JazFinanzasApp.API.Business.DTO.InvestmentReport
         public decimal Quantity { get; set; }
         public decimal OriginalValue { get; set; }
         public decimal ActualValue { get; set; }
+        // plan-amortizaciones-bonos, T11: lo ya cobrado de un bono, en la moneda de referencia.
+        // GainLossPercent lo suma al valor actual; OriginalValue no cambia.
+        public decimal CollectedValue { get; set; }
         public decimal? GainLossPercent { get; set; }
         public decimal WeightPercent { get; set; }
     }

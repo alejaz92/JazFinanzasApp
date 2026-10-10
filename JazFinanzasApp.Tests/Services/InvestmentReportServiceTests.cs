@@ -1,4 +1,5 @@
 using FluentAssertions;
+using JazFinanzasApp.API.Business.DTO.InvestmentReport;
 using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
@@ -21,6 +22,8 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock = new();
         private readonly Mock<IPortfolioRepository> _portfolioRepoMock = new();
         private readonly Mock<IAssetSplitEventRepository> _assetSplitEventRepoMock = new();
+        private readonly Mock<IBondPaymentRepository> _bondPaymentRepoMock = new();
+        private readonly Mock<IBondCollectionRepository> _bondCollectionRepoMock = new();
         private readonly InvestmentReportService _sut;
 
         public InvestmentReportServiceTests()
@@ -31,7 +34,9 @@ namespace JazFinanzasApp.Tests.Services
                 _assetTypeRepoMock.Object,
                 _assetQuoteRepoMock.Object,
                 _portfolioRepoMock.Object,
-                _assetSplitEventRepoMock.Object);
+                _assetSplitEventRepoMock.Object,
+                _bondPaymentRepoMock.Object,
+                _bondCollectionRepoMock.Object);
 
             // Defaults vacíos — la mayoría de los tests no necesita splits ni tenencias; los que sí
             // (T16, D-15) pisan estos setups con su propio escenario.
@@ -402,6 +407,208 @@ namespace JazFinanzasApp.Tests.Services
             result.TotalCollectedValue.Should().Be(157.58m);
             result.GainLossPercent.Should().Be(115.26m);
             result.Holdings.Single().CollectedValue.Should().Be(157.58m);
+        }
+
+        // ── Detalle de un bono: cronograma, capital vivo y estado de cada pago (Fase 12) ─────────
+
+        private static readonly Asset Usd = new() { Id = 2, Symbol = "USD" };
+
+        // Cronograma real del AL30 (el que carga cronogramas-bonos.sql): 13 pagos semestrales, el primero
+        // amortiza 4% y los otros doce 8%; el interés por 100 baja con el capital vivo.
+        private static List<BondPayment> Al30Schedule()
+        {
+            var rows = new (string Date, decimal Interest, decimal Amortization)[]
+            {
+                ("2024-07-09", 0.375m, 0.04m), ("2025-01-09", 0.36m, 0.08m), ("2025-07-09", 0.33m, 0.08m),
+                ("2026-01-09", 0.30m, 0.08m), ("2026-07-09", 0.27m, 0.08m), ("2027-01-09", 0.24m, 0.08m),
+                ("2027-07-09", 0.21m, 0.08m), ("2028-01-09", 0.42m, 0.08m), ("2028-07-09", 0.35m, 0.08m),
+                ("2029-01-09", 0.28m, 0.08m), ("2029-07-09", 0.21m, 0.08m), ("2030-01-09", 0.14m, 0.08m),
+                ("2030-07-09", 0.07m, 0.08m)
+            };
+            var id = 100;
+            return rows.Select(r => new BondPayment
+            {
+                Id = id++, AssetId = 48, PaymentDate = DateTime.Parse(r.Date),
+                InterestPer100 = r.Interest, AmortizationRate = r.Amortization,
+                CurrencyAssetId = 2, CurrencyAsset = Usd
+            }).ToList();
+        }
+
+        private static BondHoldingResult BullMarket(decimal quantity) =>
+            new() { AccountId = 18, AccountName = "Bull Market", PortfolioId = 2, PortfolioName = "Default", Quantity = quantity };
+
+        private static BondCollection Collection(BondPayment payment, string status, decimal capital, decimal interest) =>
+            new() { BondPaymentId = payment.Id, BondPayment = payment, AccountId = 18, PortfolioId = 2, Status = status, CapitalAmount = capital, InterestAmount = interest };
+
+        [Fact]
+        public void ResidualPer100_Al30_IsSixtyFourToday_AndFiftySixOnlyAfterJanuary2027()
+        {
+            var schedule = Al30Schedule();
+
+            InvestmentReportService.ResidualPer100(schedule, new DateTime(2024, 1, 1)).Should().Be(100m);
+            InvestmentReportService.ResidualPer100(schedule, new DateTime(2024, 7, 9)).Should().Be(96m);   // el día del pago ya cuenta
+            InvestmentReportService.ResidualPer100(schedule, new DateTime(2026, 10, 10)).Should().Be(64m);  // hoy
+            InvestmentReportService.ResidualPer100(schedule, new DateTime(2027, 1, 9)).Should().Be(56m);
+            InvestmentReportService.ResidualPer100(schedule, new DateTime(2030, 7, 9)).Should().Be(0m);    // amortizó todo
+        }
+
+        [Fact]
+        public void BuildBondSchedule_Al30_ComputesResidualAfterEachPayment()
+        {
+            var items = InvestmentReportService.BuildBondSchedule(
+                Al30Schedule(), new List<BondCollection>(), new Dictionary<int, List<BondHoldingResult>>(), new DateTime(2026, 10, 10));
+
+            items.Select(i => i.ResidualAfterPer100).Take(7).Should().Equal(96m, 88m, 80m, 72m, 64m, 56m, 48m);
+            items.Last().ResidualAfterPer100.Should().Be(0m);
+            items.Select(i => i.PaymentDate).Should().BeInAscendingOrder();
+        }
+
+        [Fact]
+        public void BuildBondSchedule_StatusPerPayment_FollowsCollectionsHoldingsAndDate()
+        {
+            var schedule = Al30Schedule();
+            var today = new DateTime(2026, 10, 10);
+            var collections = new List<BondCollection>
+            {
+                Collection(schedule[0], BondCollectionStatus.Untracked, 15.08m, 1.41m),
+                Collection(schedule[1], BondCollectionStatus.Registered, 30.80m, 1.37m),
+                Collection(schedule[2], BondCollectionStatus.Registered, 30.80m, 1.26m),
+                Collection(schedule[3], BondCollectionStatus.Dismissed, 0m, 0m),
+                // schedule[4] (09-07-2026): tenía el bono y todavía no lo registró -> Pending
+            };
+            // Tenencia el día anterior a cada pago ya ocurrido (la compra del AL30 es de 2023).
+            var holdings = schedule.Take(5).ToDictionary(p => p.Id, _ => new List<BondHoldingResult> { BullMarket(4m) });
+
+            var items = InvestmentReportService.BuildBondSchedule(schedule, collections, holdings, today);
+
+            items[0].Status.Should().Be(BondScheduleStatus.Untracked);
+            items[1].Status.Should().Be(BondScheduleStatus.Registered);
+            items[2].Status.Should().Be(BondScheduleStatus.Registered);
+            items[3].Status.Should().Be(BondScheduleStatus.Dismissed);
+            items[4].Status.Should().Be(BondScheduleStatus.Pending);
+            items.Skip(5).Should().OnlyContain(i => i.Status == BondScheduleStatus.Future);
+        }
+
+        [Fact]
+        public void BuildBondSchedule_CollectedAmounts_CountRegisteredAndUntrackedButNotDismissed()
+        {
+            var schedule = Al30Schedule();
+            var collections = new List<BondCollection>
+            {
+                Collection(schedule[1], BondCollectionStatus.Registered, 30.80m, 1.37m),
+                Collection(schedule[0], BondCollectionStatus.Untracked, 15.08m, 1.41m),
+                Collection(schedule[3], BondCollectionStatus.Dismissed, 999m, 999m)
+            };
+
+            var items = InvestmentReportService.BuildBondSchedule(
+                schedule, collections, new Dictionary<int, List<BondHoldingResult>>(), new DateTime(2026, 10, 10));
+
+            items[1].CollectedCapital.Should().Be(30.80m);
+            items[1].CollectedInterest.Should().Be(1.37m);
+            items[0].CollectedCapital.Should().Be(15.08m);   // Untracked también cuenta como cobrado
+            items[3].CollectedCapital.Should().Be(0m);       // Dismissed no
+            items[3].CollectedInterest.Should().Be(0m);
+        }
+
+        [Fact]
+        public void BuildBondSchedule_PastPaymentWithoutHoldingNorCollection_IsNotHeld()
+        {
+            var schedule = Al30Schedule();
+
+            var items = InvestmentReportService.BuildBondSchedule(
+                schedule, new List<BondCollection>(), new Dictionary<int, List<BondHoldingResult>>(), new DateTime(2026, 10, 10));
+
+            items.Take(5).Should().OnlyContain(i => i.Status == BondScheduleStatus.NotHeld);
+            items.Skip(5).Should().OnlyContain(i => i.Status == BondScheduleStatus.Future);
+        }
+
+        [Fact]
+        public void BuildBondSchedule_WhenOneOfTwoHoldingsIsStillUnregistered_IsPending()
+        {
+            var schedule = Al30Schedule();
+            var payment = schedule[0];
+            var otherBroker = new BondHoldingResult { AccountId = 99, PortfolioId = 2, Quantity = 1m };
+            var holdings = new Dictionary<int, List<BondHoldingResult>> { [payment.Id] = new() { BullMarket(3m), otherBroker } };
+
+            // Solo la tenencia de Bull Market (cuenta 18) está registrada; la de la cuenta 99 no.
+            var items = InvestmentReportService.BuildBondSchedule(
+                schedule, new List<BondCollection> { Collection(payment, BondCollectionStatus.Registered, 10m, 1m) }, holdings, new DateTime(2026, 10, 10));
+
+            items[0].Status.Should().Be(BondScheduleStatus.Pending);
+        }
+
+        // Detalle de un bono con cobros: la posición suma lo cobrado y su % lo usa (T11), y trae el
+        // cronograma, el capital vivo de hoy y la moneda en la que paga el bono.
+        [Fact]
+        public async Task GetAssetDetailAsync_Bond_ReturnsScheduleResidualCurrencyAndPositionWithCollected()
+        {
+            var bond = new Asset { Id = 48, Symbol = "AL30", Name = "Bonos Rep. Arg. USD Step Up 2030" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(48)).ReturnsAsync(bond);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(Usd);
+            _assetQuoteRepoMock.Setup(r => r.GetAssetEvolutionStats(48, It.IsAny<int>(), 2)).ReturnsAsync(new List<CryptoStatsByDateResult>());
+            _transactionRepoMock.Setup(r => r.GetBalanceByAssetAndUserAsync(48, UserId)).ReturnsAsync(new List<BalanceResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentsTransactionsStats(UserId, 48, 2)).ReturnsAsync(new List<InvestmentTransactionsResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentHoldingsAsync(UserId, 2)).ReturnsAsync(new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 48, AssetName = bond.Name, Symbol = "AL30", AssetTypeName = "Bono", Bucket = "Bonds", Quantity = 5.81m, OriginalValue = 220m, ActualValue = 316m, CollectedValue = 157.58m }
+            });
+
+            var schedule = Al30Schedule();
+            _bondPaymentRepoMock.Setup(r => r.GetByAssetIdAsync(48)).ReturnsAsync(schedule);
+            _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(new List<BondCollection>
+            {
+                Collection(schedule[1], BondCollectionStatus.Registered, 30.80m, 1.37m)
+            });
+
+            var result = await _sut.GetAssetDetailAsync(UserId, 48, 2);
+
+            result.BondSchedule.Should().HaveCount(13);
+            result.BondCurrencySymbol.Should().Be("USD");
+            result.ResidualPer100.Should().Be(InvestmentReportService.ResidualPer100(schedule, DateTime.Today));
+            result.Position.Should().NotBeNull();
+            result.Position!.CollectedValue.Should().Be(157.58m);
+            result.Position.GainLossPercent.Should().Be(115.26m);   // (316 + 157,58 - 220) / 220
+            result.Position.OriginalValue.Should().Be(220m);
+        }
+
+        // Un activo sin cronograma (acciones, cripto) no cambia el DTO ni consulta cobros.
+        [Fact]
+        public async Task GetAssetDetailAsync_AssetWithoutSchedule_HasNoBondData()
+        {
+            var crypto = new Asset { Id = 4, Symbol = "BTC", Name = "Bitcoin" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(4)).ReturnsAsync(crypto);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(Usd);
+            _assetQuoteRepoMock.Setup(r => r.GetAssetEvolutionStats(4, It.IsAny<int>(), 2)).ReturnsAsync(new List<CryptoStatsByDateResult>());
+            _transactionRepoMock.Setup(r => r.GetBalanceByAssetAndUserAsync(4, UserId)).ReturnsAsync(new List<BalanceResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentsTransactionsStats(UserId, 4, 2)).ReturnsAsync(new List<InvestmentTransactionsResult>());
+            _bondPaymentRepoMock.Setup(r => r.GetByAssetIdAsync(4)).ReturnsAsync(new List<BondPayment>());
+
+            var result = await _sut.GetAssetDetailAsync(UserId, 4, 2);
+
+            result.BondSchedule.Should().BeEmpty();
+            result.BondCurrencySymbol.Should().BeNull();
+            result.ResidualPer100.Should().BeNull();
+            _bondCollectionRepoMock.Verify(r => r.GetByUserIdAsync(It.IsAny<int>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task GetAssetDetailAsync_PositionWithoutCollections_KeepsTheOldGainLossPercent()
+        {
+            var stock = new Asset { Id = 7, Symbol = "GGAL", Name = "Galicia" };
+            _assetRepoMock.Setup(r => r.GetByIdAsync(7)).ReturnsAsync(stock);
+            _assetRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(Usd);
+            _assetQuoteRepoMock.Setup(r => r.GetAssetEvolutionStats(7, It.IsAny<int>(), 2)).ReturnsAsync(new List<CryptoStatsByDateResult>());
+            _transactionRepoMock.Setup(r => r.GetBalanceByAssetAndUserAsync(7, UserId)).ReturnsAsync(new List<BalanceResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentsTransactionsStats(UserId, 7, 2)).ReturnsAsync(new List<InvestmentTransactionsResult>());
+            _transactionRepoMock.Setup(r => r.GetInvestmentHoldingsAsync(UserId, 2)).ReturnsAsync(new List<InvestmentHoldingResult>
+            {
+                new() { AssetId = 7, AssetName = "Galicia", Symbol = "GGAL", AssetTypeName = "Accion Argentina", Bucket = "Stocks", Quantity = 10m, OriginalValue = 200m, ActualValue = 300m }
+            });
+
+            var result = await _sut.GetAssetDetailAsync(UserId, 7, 2);
+
+            result.Position!.CollectedValue.Should().Be(0m);
+            result.Position.GainLossPercent.Should().Be(50m);
         }
 
         // ── Aportes vs rendimiento con cobros de bonos (Fase 10, T12) ────────────────────────────
