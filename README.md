@@ -1,6 +1,6 @@
 # JazFinanzasApp.Backend
 
-API REST de JazFinanzasApp — finanzas personales e inversiones. Maneja autenticación, cuentas, tarjetas de crédito, transacciones, inversiones (acciones, criptomonedas, portfolios) y gastos compartidos.
+API REST de JazFinanzasApp — finanzas personales e inversiones. Maneja autenticación, cuentas, tarjetas de crédito, transacciones, inversiones (acciones, criptomonedas, bonos con cronograma y cobros de amortización e interés, portfolios) y gastos compartidos.
 
 ---
 
