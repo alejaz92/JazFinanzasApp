@@ -180,66 +180,66 @@ namespace JazFinanzasApp.API.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9140),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6875),
                             Environment = "FIAT",
                             Name = "Moneda",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9142)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6877)
                         },
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9146),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6879),
                             Environment = "CRYPTO",
                             Name = "Criptomoneda",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9146)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6880)
                         },
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9147),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6880),
                             Environment = "BOLSA",
                             Name = "Accion Argentina",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9147)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6881)
                         },
                         new
                         {
                             Id = 4,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9148),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6882),
                             Environment = "BOLSA",
                             Name = "CEDEAR",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9149)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6882)
                         },
                         new
                         {
                             Id = 5,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9149),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6883),
                             Environment = "BOLSA",
                             Name = "FCI",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9149)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6883)
                         },
                         new
                         {
                             Id = 6,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9150),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6884),
                             Environment = "BOLSA",
                             Name = "Bono",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9150)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6884)
                         },
                         new
                         {
                             Id = 7,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9151),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6884),
                             Environment = "BOLSA",
                             Name = "Accion USA",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9151)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6885)
                         },
                         new
                         {
                             Id = 8,
-                            CreatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9152),
+                            CreatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6885),
                             Environment = "BOLSA",
                             Name = "Obligacion Negociable",
-                            UpdatedAt = new DateTime(2026, 10, 1, 23, 52, 17, 114, DateTimeKind.Utc).AddTicks(9152)
+                            UpdatedAt = new DateTime(2026, 10, 11, 13, 53, 32, 459, DateTimeKind.Utc).AddTicks(6886)
                         });
                 });
 

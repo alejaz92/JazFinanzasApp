@@ -9,6 +9,5 @@ namespace JazFinanzasApp.API.Business.Interfaces
         Task<int> RegisterAsync(int userId, BondCollectionRegisterDTO dto);
         Task DismissAsync(int userId, BondCollectionDismissDTO dto);
         Task DeleteAsync(int userId, int id);
-        Task<int?> GetLastInterestClassIdAsync(int userId);
     }
 }

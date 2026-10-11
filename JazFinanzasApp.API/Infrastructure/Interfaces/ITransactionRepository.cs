@@ -52,10 +52,6 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // esto la tenencia de cada pago en memoria, en vez de una consulta por pago de todo el catálogo.
         Task<IEnumerable<BondMovementResult>> GetBondMovementsAsync(int userId, IEnumerable<int> assetIds);
         Task<IEnumerable<Transaction>> GetByBondCollectionIdAsync(int bondCollectionId);
-        // T7: categoría de interés usada en el último cobro de bono registrado por el usuario — para
-        // precargar el formulario. Se identifica por `CountsAsIncomeExpense` (la de capital nunca
-        // cuenta como ingreso; la de interés, por construcción, siempre).
-        Task<int?> GetLastBondInterestTransactionClassIdAsync(int userId);
 
         // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
         Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);

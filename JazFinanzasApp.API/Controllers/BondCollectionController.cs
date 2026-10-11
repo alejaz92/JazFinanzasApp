@@ -34,13 +34,6 @@ namespace JazFinanzasApp.API.Controllers
             return Ok(registered);
         }
 
-        [HttpGet("last-interest-class")]
-        public async Task<IActionResult> GetLastInterestClass()
-        {
-            var classId = await _bondCollectionService.GetLastInterestClassIdAsync(GetUserId());
-            return Ok(classId);
-        }
-
         [HttpPost("register")]
         public async Task<IActionResult> Register(BondCollectionRegisterDTO dto)
         {

@@ -277,7 +277,7 @@ namespace JazFinanzasApp.Tests.Services
             _transactionRepoMock.Setup(r => r.GetBondHoldingsBeforeDateAsync(UserId, payment.AssetId, payment.PaymentDate))
                 .ReturnsAsync(new[] { holding });
             _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(Enumerable.Empty<BondCollection>());
-            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(interestClass.Id)).ReturnsAsync(interestClass);
+            _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync(SystemTransactionClassNames.InvestmentIncome, UserId)).ReturnsAsync(interestClass);
             _transactionClassRepoMock.Setup(r => r.GetTransactionClassByDescriptionAsync("Ingreso Inversiones", UserId)).ReturnsAsync(capitalClass);
             _quotePriceResolverMock.Setup(r => r.ResolveAsync(payment.CurrencyAssetId, It.IsAny<DateTime>())).ReturnsAsync(1m);
             _bondCollectionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<BondCollection>()))
@@ -300,8 +300,7 @@ namespace JazFinanzasApp.Tests.Services
                 PortfolioId = holding.PortfolioId,
                 CollectionDate = payment.PaymentDate,
                 CapitalAmount = 39.44m,
-                InterestAmount = 1.33m,
-                InterestTransactionClassId = interestClass.Id
+                InterestAmount = 1.33m
             };
 
             var id = await _sut.RegisterAsync(UserId, dto);
@@ -420,25 +419,22 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task RegisterAsync_WhenInterestClassDoesNotCountAsIncome_ThrowsBusinessRuleException()
+        public async Task RegisterAsync_WhenUserHasNoInterestSystemClass_ThrowsBusinessRuleException()
         {
             var payment = MakePayment(id: 10);
             var holding = MakeHolding();
-            var badInterestClass = new TransactionClass { Id = 5, UserId = UserId, IncExp = "I", CountsAsIncomeExpense = false };
             _bondPaymentRepoMock.Setup(r => r.GetByIdAsync(payment.Id)).ReturnsAsync(payment);
             _accountRepoMock.Setup(r => r.GetByIdAsync(holding.AccountId)).ReturnsAsync(new Account { Id = holding.AccountId, UserId = UserId });
             _portfolioRepoMock.Setup(r => r.GetByIdAsync(holding.PortfolioId)).ReturnsAsync(new Portfolio { Id = holding.PortfolioId, UserId = UserId });
             _transactionRepoMock.Setup(r => r.GetBondHoldingsBeforeDateAsync(UserId, payment.AssetId, payment.PaymentDate)).ReturnsAsync(new[] { holding });
             _bondCollectionRepoMock.Setup(r => r.GetByUserIdAsync(UserId)).ReturnsAsync(Enumerable.Empty<BondCollection>());
-            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(badInterestClass.Id)).ReturnsAsync(badInterestClass);
 
             var dto = new BondCollectionRegisterDTO
             {
                 BondPaymentId = payment.Id,
                 AccountId = holding.AccountId,
                 PortfolioId = holding.PortfolioId,
-                InterestAmount = 1.33m,
-                InterestTransactionClassId = badInterestClass.Id
+                InterestAmount = 1.33m
             };
 
             var act = () => _sut.RegisterAsync(UserId, dto);
@@ -495,18 +491,6 @@ namespace JazFinanzasApp.Tests.Services
 
             await act.Should().ThrowAsync<UnauthorizedDomainException>();
             _bondCollectionRepoMock.Verify(r => r.DeleteAsync(It.IsAny<int>()), Times.Never);
-        }
-
-        // ── GetLastInterestClassIdAsync ────────────────────────────────────────
-
-        [Fact]
-        public async Task GetLastInterestClassIdAsync_DelegatesToRepository()
-        {
-            _transactionRepoMock.Setup(r => r.GetLastBondInterestTransactionClassIdAsync(UserId)).ReturnsAsync(7);
-
-            var result = await _sut.GetLastInterestClassIdAsync(UserId);
-
-            result.Should().Be(7);
         }
     }
 }

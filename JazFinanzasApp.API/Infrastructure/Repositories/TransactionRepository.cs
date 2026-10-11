@@ -2739,14 +2739,5 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(t => t.BondCollectionId == bondCollectionId)
                 .ToListAsync();
         }
-
-        public async Task<int?> GetLastBondInterestTransactionClassIdAsync(int userId)
-        {
-            return await _context.Transactions
-                .Where(t => t.UserId == userId && t.BondCollectionId != null && t.TransactionClass.CountsAsIncomeExpense)
-                .OrderByDescending(t => t.CreatedAt)
-                .Select(t => (int?)t.TransactionClassId)
-                .FirstOrDefaultAsync();
-        }
     }
 }

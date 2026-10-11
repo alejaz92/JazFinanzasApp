@@ -202,15 +202,9 @@ namespace JazFinanzasApp.API.Business.Services
             TransactionClass? interestClass = null;
             if (dto.InterestAmount > 0)
             {
-                if (dto.InterestTransactionClassId == null)
-                    throw new BusinessRuleException("Falta la categoría del interés");
-                interestClass = await _transactionClassRepository.GetByIdAsync(dto.InterestTransactionClassId.Value)
-                    ?? throw new NotFoundException("Transaction class not found");
-                if (interestClass.UserId != userId) throw new UnauthorizedDomainException();
-                if (interestClass.IncExp != "I")
-                    throw new BusinessRuleException("La categoría del interés tiene que ser de tipo ingreso");
-                if (!interestClass.CountsAsIncomeExpense)
-                    throw new BusinessRuleException("La categoría del interés tiene que contar como ingreso en Reportes");
+                // Categoría fija de sistema (no se elige): el interés es un ingreso real y cuenta en Reportes.
+                interestClass = await _transactionClassRepository.GetTransactionClassByDescriptionAsync(SystemTransactionClassNames.InvestmentIncome, userId)
+                    ?? throw new BusinessRuleException($"Transaction class '{SystemTransactionClassNames.InvestmentIncome}' not found");
             }
 
             var capitalClass = dto.CapitalAmount > 0
@@ -344,11 +338,6 @@ namespace JazFinanzasApp.API.Business.Services
                 await _unitOfWork.RollbackTransactionAsync();
                 throw;
             }
-        }
-
-        public async Task<int?> GetLastInterestClassIdAsync(int userId)
-        {
-            return await _transactionRepository.GetLastBondInterestTransactionClassIdAsync(userId);
         }
     }
 }

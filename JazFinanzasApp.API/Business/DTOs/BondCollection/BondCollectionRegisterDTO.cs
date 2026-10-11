@@ -8,9 +8,5 @@ namespace JazFinanzasApp.API.Business.DTO.BondCollection
         public DateTime CollectionDate { get; set; }
         public decimal CapitalAmount { get; set; }
         public decimal InterestAmount { get; set; }
-
-        // Requerido solo si InterestAmount > 0 (T7: categoría de ingreso elegida por el usuario,
-        // precargada en el frontend con GetLastInterestClassIdAsync).
-        public int? InterestTransactionClassId { get; set; }
     }
 }

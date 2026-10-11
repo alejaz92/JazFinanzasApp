@@ -45,6 +45,8 @@ namespace JazFinanzasApp.API.Business.Services
             await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Gastos Tarjeta", IncExp = "E", UserId = result.UserId, IsSystem = true });
             await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Inversiones", IncExp = "E", UserId = result.UserId, IsSystem = true, CountsAsIncomeExpense = false });
             await _transactionClassRepository.AddAsync(new TransactionClass { Description = "Reintegro", IncExp = "I", UserId = result.UserId, IsSystem = true });
+            // Interés de bonos: sí es un ingreso real (a diferencia del capital, que es "Ingreso Inversiones").
+            await _transactionClassRepository.AddAsync(new TransactionClass { Description = SystemTransactionClassNames.InvestmentIncome, IncExp = "I", UserId = result.UserId, IsSystem = true });
 
             return (true, Enumerable.Empty<string>());
         }

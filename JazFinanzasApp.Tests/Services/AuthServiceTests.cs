@@ -59,7 +59,7 @@ namespace JazFinanzasApp.Tests.Services
             _portfolioRepoMock.Verify(r => r.AddAsync(It.Is<Portfolio>(p =>
                 p.UserId == 42 && p.IsDefault && p.Name == "Default")), Times.Once);
 
-            _transactionClassRepoMock.Verify(r => r.AddAsync(It.IsAny<TransactionClass>()), Times.Exactly(6));
+            _transactionClassRepoMock.Verify(r => r.AddAsync(It.IsAny<TransactionClass>()), Times.Exactly(7));
         }
 
         [Theory]
@@ -69,6 +69,7 @@ namespace JazFinanzasApp.Tests.Services
         [InlineData("Inversiones", false)]
         [InlineData("Gastos Tarjeta", true)]
         [InlineData("Reintegro", true)]
+        [InlineData("Dividendos, Intereses y Ganancias Inversiones", true)]
         public async Task RegisterAsync_SeedsCountsAsIncomeExpenseCorrectly(string description, bool expected)
         {
             var dto = new RegisterUserDTO
