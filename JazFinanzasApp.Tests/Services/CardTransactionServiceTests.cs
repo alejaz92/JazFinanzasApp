@@ -133,6 +133,53 @@ namespace JazFinanzasApp.Tests.Services
                 ct.Installments == 3)), Times.Once);
         }
 
+        // plan-devengado-recurrentes.md, D9: el alta de un recurrente guardaba LastInstallment = 0001-01-01
+        // (el DTO sin fecha de fin), y el campo pasaba a significar dos cosas distintas.
+        private void SetupValidAddMocks()
+        {
+            _cardRepoMock.Setup(r => r.GetByIdAsync(1)).ReturnsAsync(new Card { Id = 1, UserId = UserId, Name = "Visa" });
+            _assetRepoMock.Setup(r => r.GetByIdAsync(3)).ReturnsAsync(new Asset { Id = 3, Name = "Peso Argentino", Symbol = "ARS" });
+            _assetUserRepoMock.Setup(r => r.GetUserAssetAsync(UserId, 3)).ReturnsAsync(new Asset_User { UserId = UserId, AssetId = 3 });
+            _transactionClassRepoMock.Setup(r => r.GetByIdAsync(2)).ReturnsAsync(new TransactionClass { Id = 2, UserId = UserId, Description = "Suscripciones" });
+            _cardTransactionRepoMock.Setup(r => r.AddAsyncReturnObject(It.IsAny<CardTransaction>()))
+                .ReturnsAsync((CardTransaction ct) => { ct.Id = 55; return ct; });
+        }
+
+        [Fact]
+        public async Task AddCardTransactionAsync_Recurrent_SavesNoLastInstallment()
+        {
+            SetupValidAddMocks();
+            var dto = new CardTransactionAddDTO
+            {
+                Date = new DateTime(2026, 1, 10), Detail = "Spotify", CardId = 1, TransactionClassId = 2, AssetId = 3,
+                TotalAmount = 4000m, Installments = 1, FirstInstallment = new DateTime(2026, 1, 1),
+                LastInstallment = default, // lo que llega cuando el formulario no manda fecha de fin
+                Repeat = "YES"
+            };
+
+            await _sut.AddCardTransactionAsync(UserId, dto);
+
+            _cardTransactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.Is<CardTransaction>(ct =>
+                ct.Repeat == "YES" && ct.LastInstallment == null)), Times.Once);
+        }
+
+        [Fact]
+        public async Task AddCardTransactionAsync_InstallmentPurchase_StillSavesItsLastInstallment()
+        {
+            SetupValidAddMocks();
+            var dto = new CardTransactionAddDTO
+            {
+                Date = new DateTime(2026, 1, 10), Detail = "Heladera", CardId = 1, TransactionClassId = 2, AssetId = 3,
+                TotalAmount = 6000m, Installments = 3, FirstInstallment = new DateTime(2026, 2, 15),
+                LastInstallment = new DateTime(2026, 4, 15), Repeat = "NO"
+            };
+
+            await _sut.AddCardTransactionAsync(UserId, dto);
+
+            _cardTransactionRepoMock.Verify(r => r.AddAsyncReturnObject(It.Is<CardTransaction>(ct =>
+                ct.LastInstallment == new DateTime(2026, 4, 1))), Times.Once);
+        }
+
         [Fact]
         public async Task AddCardTransactionAsync_WithTrip_SetsTripId()
         {

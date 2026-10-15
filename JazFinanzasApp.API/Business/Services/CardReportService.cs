@@ -303,7 +303,7 @@ namespace JazFinanzasApp.API.Business.Services
             return cardTransactions.Select(m =>
             {
                 string installmentDisplay;
-                if (m.Repeat == "YES")
+                if (CardTransactionRecurrence.IsRecurring(m))
                 {
                     installmentDisplay = "Recurrente";
                 }
@@ -335,21 +335,19 @@ namespace JazFinanzasApp.API.Business.Services
             .ToList();
         }
 
-        // Devengado de UN mes para una compra puntual (Fase 15, corregido tras la revisión visual del
-        // reporte "General"): una compra de una vez o en cuotas fijas ("NO"/"CLOSED") se devenga una
-        // sola vez, completa, en su fecha de compra (CLAUDE.md Backend: "fecha y monto reales del
-        // gasto"). Una recurrente sin fin ("YES", ej. una suscripción) no tiene un TotalAmount que
-        // devengar una vez — es un cargo que se repite todos los meses desde que arrancó, así que
-        // devenga InstallmentAmount en CADA mes desde FirstInstallment en adelante, no solo en el mes
-        // en que se cargó la fila. Sin este caso especial, una suscripción vieja desaparecía del
-        // consumo devengado de todos los meses salvo el de su alta.
+        // Devengado de UN mes. Una compra de una vez o en cuotas fijas ("NO") se devenga una sola vez,
+        // completa, en su fecha de compra (CLAUDE.md Backend: "fecha y monto reales del gasto"). Un
+        // recurrente no tiene un TotalAmount que devengar una vez: es un cargo que se repite, así que
+        // devenga InstallmentAmount en CADA mes en que estuvo activo, no en el mes en que se cargó la fila.
+        //
+        // Corrección 2026-10-15 (plan-devengado-recurrentes.md, D2): antes solo "YES" tenía este caso
+        // especial, y un tramo "CLOSED" se devengaba como una compra suelta — un mes de precio, en su
+        // Date. Como cambiar el precio cierra el tramo vigente, toda la historia previa al último cambio
+        // de precio desaparecía del reporte (faltaba el 53 % de lo cobrado en pesos y el 84 % en dólares).
         private static decimal GetAccrualAmount(CardTransaction ct, DateTime month)
         {
-            if (ct.Repeat == "YES")
-            {
-                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
-                return month >= firstMonth ? ct.InstallmentAmount : 0m;
-            }
+            if (CardTransactionRecurrence.IsRecurring(ct))
+                return CardTransactionRecurrence.IsActiveIn(ct, month) ? ct.InstallmentAmount : 0m;
 
             var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
             return ctMonth == month ? ct.TotalAmount : 0m;
@@ -359,14 +357,8 @@ namespace JazFinanzasApp.API.Business.Services
         // falta un total del período en vez de una serie mes a mes (composición por categoría).
         private static decimal GetAccrualTotalInWindow(CardTransaction ct, DateTime startMonth, DateTime endMonth)
         {
-            if (ct.Repeat == "YES")
-            {
-                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
-                var effectiveStart = firstMonth > startMonth ? firstMonth : startMonth;
-                if (effectiveStart > endMonth) return 0m;
-                var months = (endMonth.Year - effectiveStart.Year) * 12 + endMonth.Month - effectiveStart.Month + 1;
-                return ct.InstallmentAmount * months;
-            }
+            if (CardTransactionRecurrence.IsRecurring(ct))
+                return ct.InstallmentAmount * CardTransactionRecurrence.CountActiveMonthsBetween(ct, startMonth, endMonth);
 
             var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
             return ctMonth >= startMonth && ctMonth <= endMonth ? ct.TotalAmount : 0m;
@@ -374,11 +366,8 @@ namespace JazFinanzasApp.API.Business.Services
 
         private static bool HasAnyAccrualInWindow(CardTransaction ct, DateTime startMonth, DateTime endMonth)
         {
-            if (ct.Repeat == "YES")
-            {
-                var firstMonth = new DateTime(ct.FirstInstallment.Year, ct.FirstInstallment.Month, 1);
-                return firstMonth <= endMonth;
-            }
+            if (CardTransactionRecurrence.IsRecurring(ct))
+                return CardTransactionRecurrence.CountActiveMonthsBetween(ct, startMonth, endMonth) > 0;
 
             var ctMonth = new DateTime(ct.Date.Year, ct.Date.Month, 1);
             return ctMonth >= startMonth && ctMonth <= endMonth;
@@ -487,6 +476,22 @@ namespace JazFinanzasApp.API.Business.Services
                 return recurrentMonths;
             }
 
+            // Corrección 2026-10-15 (plan-devengado-recurrentes.md, D8): un tramo "CLOSED" tiene
+            // Installments = 1, así que el loop de cuotas de abajo solo veía su primer mes. Un recurrente
+            // dado de baja con fecha futura se sigue cobrando hasta su LastInstallment.
+            if (cardTransaction.Repeat == "CLOSED")
+            {
+                var lastMonth = CardTransactionRecurrence.LastMonth(cardTransaction)!.Value;
+                var closedMonths = new List<DateTime>();
+                for (var m = CardTransactionRecurrence.FirstMonth(cardTransaction); m <= lastMonth && m < windowEnd; m = m.AddMonths(1))
+                {
+                    var isUnpaid = !hasPayment || m > lastPaid;
+                    if (isUnpaid && m >= currentMonth)
+                        closedMonths.Add(m);
+                }
+                return closedMonths;
+            }
+
             var months = new List<DateTime>();
             for (var i = 0; i < cardTransaction.Installments; i++)
             {
@@ -508,7 +513,8 @@ namespace JazFinanzasApp.API.Business.Services
             var purchasesByMonth = monthBuckets.ToDictionary(m => m, _ => new List<FutureCommitmentPurchaseAmountDTO>());
             var timeline = new List<FutureCommitmentPurchaseDTO>();
 
-            var relevantTransactions = includeRecurring ? transactions : transactions.Where(t => t.Repeat != "YES");
+            // Un tramo "CLOSED" con meses por delante sigue siendo una suscripción (D8): sale igual que un "YES".
+            var relevantTransactions = includeRecurring ? transactions : transactions.Where(t => !CardTransactionRecurrence.IsRecurring(t));
 
             foreach (var ct in relevantTransactions)
             {

@@ -78,12 +78,58 @@ namespace JazFinanzasApp.Tests.Services
         public void CountLiveInstallmentMonths_FixedInstallments_AllAlreadyPaid_CountsZero()
         {
             var currentMonth = new DateTime(2026, 8, 1);
-            var ct = MakeCardTransaction(2, "CLOSED", new DateTime(2026, 1, 1), 6); // 01..06
+            var ct = MakeCardTransaction(2, "NO", new DateTime(2026, 1, 1), 6); // 01..06
             var lastPaid = new Dictionary<int, DateTime> { { 2, new DateTime(2026, 6, 1) } };
 
             var live = NetWorthReportService.CountLiveInstallmentMonths(ct, lastPaid, currentMonth);
 
             live.Should().Be(0);
+        }
+
+        // ── Tramos cerrados de un recurrente (plan-devengado-recurrentes.md, D7): Installments vale 1,
+        // así que antes solo se contaba su primer mes; ahora cuenta cada mes impago de su rango ───────
+
+        private static CardTransaction MakeClosedTranche(int cardId, DateTime firstInstallment, DateTime? lastInstallment)
+        {
+            var ct = MakeCardTransaction(cardId, "CLOSED", firstInstallment, 1);
+            ct.LastInstallment = lastInstallment;
+            return ct;
+        }
+
+        [Fact]
+        public void CountLiveInstallmentMonths_ClosedTranche_WithTwoUnpaidMonths_CountsTwo()
+        {
+            // Precio cambiado desde oct antes de pagar los resúmenes de ago y sep: el tramo viejo cierra en sep.
+            var currentMonth = new DateTime(2026, 8, 1);
+            var ct = MakeClosedTranche(4, new DateTime(2026, 5, 1), new DateTime(2026, 9, 1)); // may..sep
+            var lastPaid = new Dictionary<int, DateTime> { { 4, new DateTime(2026, 7, 1) } };
+
+            var live = NetWorthReportService.CountLiveInstallmentMonths(ct, lastPaid, currentMonth);
+
+            live.Should().Be(2); // ago y sep
+        }
+
+        [Fact]
+        public void CountLiveInstallmentMonths_ClosedTranche_FullyPaid_CountsZero()
+        {
+            var currentMonth = new DateTime(2026, 8, 1);
+            var ct = MakeClosedTranche(4, new DateTime(2026, 1, 1), new DateTime(2026, 6, 1));
+            var lastPaid = new Dictionary<int, DateTime> { { 4, new DateTime(2026, 7, 1) } };
+
+            var live = NetWorthReportService.CountLiveInstallmentMonths(ct, lastPaid, currentMonth);
+
+            live.Should().Be(0);
+        }
+
+        [Fact]
+        public void CountLiveInstallmentMonths_ClosedTranche_CardNeverPaid_CountsItsWholeRange()
+        {
+            var currentMonth = new DateTime(2026, 8, 1);
+            var ct = MakeClosedTranche(4, new DateTime(2026, 5, 1), new DateTime(2026, 7, 1));
+
+            var live = NetWorthReportService.CountLiveInstallmentMonths(ct, new Dictionary<int, DateTime>(), currentMonth);
+
+            live.Should().Be(3);
         }
 
         [Fact]

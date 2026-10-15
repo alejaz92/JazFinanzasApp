@@ -169,6 +169,114 @@ namespace JazFinanzasApp.Tests.Services
             evolution.Should().OnlyContain(p => p.DollarsAmount == 15m);
         }
 
+        // ── Devengado de tramos cerrados (plan-devengado-recurrentes.md, Fase 1): cambiar el precio de
+        // un recurrente cierra el tramo vigente ("CLOSED") y abre uno nuevo; el tramo cerrado tiene que
+        // seguir devengando en todos los meses en que estuvo activo, no una sola vez en su Date ───────
+
+        private static CardTransaction MakeRecurrentTranche(
+            int id, string repeat, DateTime firstInstallment, DateTime? lastInstallment, decimal price,
+            int cardId = 10, DateTime? date = null, int transactionClassId = 1, string categoryName = "Suscripciones")
+        {
+            var ct = MakeCardTransaction(id, cardId, repeat, firstInstallment, 1, totalAmount: price, installmentAmount: price,
+                date: date, transactionClassId: transactionClassId, categoryName: categoryName);
+            ct.LastInstallment = lastInstallment;
+            return ct;
+        }
+
+        [Fact]
+        public void BuildCardEvolution_ClosedTranche_AccruesEveryMonthOfItsRange_AndNoneOutside()
+        {
+            var internet = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 2, 1), new DateTime(2026, 4, 1), 28400m);
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { internet }, cardId: 10, latestMonth: new DateTime(2026, 6, 1), monthsBack: 6);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(0m, 28400m, 28400m, 28400m, 0m, 0m); // ene a jun
+        }
+
+        [Fact]
+        public void BuildCardEvolution_ClosedTranche_LoadedBeforeItsFirstMonth_AccruesFromFirstInstallment()
+        {
+            // Seguro Departamento real: cargado en nov-2023, se empezó a cobrar en mar-2024.
+            var tranche = MakeRecurrentTranche(1, "CLOSED", new DateTime(2024, 3, 1), new DateTime(2024, 5, 1), 5458m, date: new DateTime(2023, 11, 15));
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { tranche }, cardId: 10, latestMonth: new DateTime(2024, 5, 1), monthsBack: 7);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(0m, 0m, 0m, 0m, 5458m, 5458m, 5458m); // nov-2023 a may-2024
+        }
+
+        [Fact]
+        public void BuildCardEvolution_ClosedTranche_WithoutLastInstallment_AccruesOnlyItsFirstMonth()
+        {
+            // Xbox Game Pass real (id 17): cerrado sin fecha de cierre (D3).
+            var tranche = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 2, 1), null, 1.06m);
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { tranche }, cardId: 10, latestMonth: new DateTime(2026, 4, 1), monthsBack: 4);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(0m, 1.06m, 0m, 0m); // ene a abr
+        }
+
+        [Fact]
+        public void BuildCardEvolution_ActiveRecurrent_WithPlaceholderLastInstallment_KeepsAccruingEveryMonth()
+        {
+            // Claude Pro, Patreon y Pedidos ya plus reales: vigentes con LastInstallment = 0001-01-01 (D4).
+            var tranche = MakeRecurrentTranche(1, "YES", new DateTime(2026, 2, 1), new DateTime(1, 1, 1), 20m);
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { tranche }, cardId: 10, latestMonth: new DateTime(2026, 4, 1), monthsBack: 4);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(0m, 20m, 20m, 20m); // ene a abr
+        }
+
+        [Fact]
+        public void BuildCardEvolution_ChainOfPriceChanges_ShowsEachPriceInItsOwnMonths()
+        {
+            // El escenario de demo del plan: Spotify a 4.000 desde ene, 5.500 desde abr, 7.000 desde ago.
+            var chain = new List<CardTransaction>
+            {
+                MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 3, 1), 4000m),
+                MakeRecurrentTranche(2, "CLOSED", new DateTime(2026, 4, 1), new DateTime(2026, 7, 1), 5500m),
+                MakeRecurrentTranche(3, "YES", new DateTime(2026, 8, 1), null, 7000m)
+            };
+
+            var evolution = CardReportService.BuildCardEvolution(chain, cardId: 10, latestMonth: new DateTime(2026, 10, 1), monthsBack: 10);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(
+                4000m, 4000m, 4000m, 5500m, 5500m, 5500m, 5500m, 7000m, 7000m, 7000m); // ene a oct
+        }
+
+        [Fact]
+        public void BuildCategoryBreakdown_ClosedTranche_SumsInstallmentAmountOncePerActiveMonthInsideTheWindow()
+        {
+            // Tramo de ene a jul; la ventana arranca en abr, así que entran abr, may, jun y jul.
+            var tranche = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 7, 1), 5500m);
+
+            var result = CardReportService.BuildCategoryBreakdown(new List<CardTransaction> { tranche }, cardId: 10,
+                startMonth: new DateTime(2026, 4, 1), latestMonth: new DateTime(2026, 10, 1));
+
+            result.Should().ContainSingle();
+            result.Single().PesosAmount.Should().Be(22000m);
+        }
+
+        [Fact]
+        public void BuildMonthlyConsumptionSeries_CardWhoseOnlyConsumptionIsAClosedTrancheStartedBeforeTheWindow_IsIncluded()
+        {
+            var tranche = MakeRecurrentTranche(1, "CLOSED", new DateTime(2025, 5, 1), new DateTime(2026, 3, 1), 28400m);
+
+            var series = CardReportService.BuildMonthlyConsumptionSeries(new List<CardTransaction> { tranche }, latestMonth: new DateTime(2026, 4, 1), monthsBack: 3);
+
+            series.Select(p => p.Cards.Single().PesosAmount).Should().Equal(28400m, 28400m, 0m); // feb, mar, abr
+        }
+
+        [Fact]
+        public void BuildCardEvolution_PurchaseInInstallments_StillAccruesItsTotalOnceInItsPurchaseMonth()
+        {
+            var purchase = MakeCardTransaction(1, 10, "NO", new DateTime(2026, 2, 1), 3, totalAmount: 3000m, installmentAmount: 1000m, date: new DateTime(2026, 1, 20));
+            purchase.LastInstallment = new DateTime(2026, 4, 1);
+
+            var evolution = CardReportService.BuildCardEvolution(new List<CardTransaction> { purchase }, cardId: 10, latestMonth: new DateTime(2026, 4, 1), monthsBack: 4);
+
+            evolution.Select(p => p.PesosAmount).Should().Equal(3000m, 0m, 0m, 0m); // ene a abr
+        }
+
         // ── BuildCategoryBreakdown ───────────────────────────────────────────────────────────────
 
         [Fact]
@@ -322,6 +430,46 @@ namespace JazFinanzasApp.Tests.Services
             var fixedInstallment = MakeCardTransaction(2, 10, "NO", currentMonth, 2, detail: "Heladera");
 
             var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { recurrent, fixedInstallment }, new Dictionary<int, DateTime>(), currentMonth, 3, includeRecurring: false);
+
+            result.Timeline.Should().ContainSingle(t => t.Detail == "Heladera");
+            result.MonthlySeries.SelectMany(m => m.Purchases).Should().OnlyContain(p => p.Detail == "Heladera");
+        }
+
+        // ── Tramos cerrados en el compromiso futuro (plan-devengado-recurrentes.md, D8) ───────────
+
+        [Fact]
+        public void GetLiveInstallmentMonths_ClosedTrancheWithFutureEnd_ProjectsUnpaidMonthsUntilItsLastMonthOnly()
+        {
+            // "La doy de baja a partir de diciembre": el tramo se cobra hasta nov y no más.
+            var currentMonth = new DateTime(2026, 9, 1);
+            var ct = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 11, 1), 7000m);
+            var lastPaid = new Dictionary<int, DateTime> { { 10, new DateTime(2026, 8, 1) } };
+
+            var months = CardReportService.GetLiveInstallmentMonths(ct, lastPaid, currentMonth, 18);
+
+            months.Should().Equal(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), new DateTime(2026, 11, 1));
+        }
+
+        [Fact]
+        public void GetLiveInstallmentMonths_ClosedTrancheAlreadyOver_ProjectsNothing()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var ct = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 7, 1), 7000m);
+
+            var months = CardReportService.GetLiveInstallmentMonths(ct, new Dictionary<int, DateTime>(), currentMonth, 18);
+
+            months.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildFutureCommitment_IncludeRecurringFalse_AlsoExcludesClosedTranchesWithFutureMonths()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var closing = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 11, 1), 7000m);
+            closing.Detail = "Spotify";
+            var fixedInstallment = MakeCardTransaction(2, 10, "NO", currentMonth, 2, detail: "Heladera");
+
+            var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { closing, fixedInstallment }, new Dictionary<int, DateTime>(), currentMonth, 3, includeRecurring: false);
 
             result.Timeline.Should().ContainSingle(t => t.Detail == "Heladera");
             result.MonthlySeries.SelectMany(m => m.Purchases).Should().OnlyContain(p => p.Detail == "Heladera");

@@ -141,6 +141,10 @@ namespace JazFinanzasApp.API.Business.Services
         // "YES" (recurrente sin fin): solo se cuenta la cuota del mes en curso si todavía no se pagó
         // (no un compromiso infinito hacia adelante). "NO"/"CLOSED" (rango fijo): cada mes de
         // FirstInstallment a LastInstallment que sea posterior al último mes pagado de esa tarjeta.
+        //
+        // Corrección 2026-10-15 (plan-devengado-recurrentes.md, D7): un "CLOSED" recorría Installments
+        // como una compra en cuotas, pero un tramo de recurrente siempre tiene Installments = 1 — solo se
+        // contaba su primer mes. Ahora recorre su rango real (CardTransactionRecurrence).
         public static int CountLiveInstallmentMonths(CardTransaction cardTransaction, Dictionary<int, DateTime> lastPaidMonthByCard, DateTime currentMonth)
         {
             var hasPayment = lastPaidMonthByCard.TryGetValue(cardTransaction.CardId, out var lastPaid);
@@ -150,6 +154,13 @@ namespace JazFinanzasApp.API.Business.Services
                 var firstInstallmentMonth = new DateTime(cardTransaction.FirstInstallment.Year, cardTransaction.FirstInstallment.Month, 1);
                 var nextDue = !hasPayment ? firstInstallmentMonth : lastPaid.AddMonths(1);
                 return nextDue <= currentMonth ? 1 : 0;
+            }
+
+            if (cardTransaction.Repeat == "CLOSED")
+            {
+                var firstMonth = CardTransactionRecurrence.FirstMonth(cardTransaction);
+                var firstUnpaid = hasPayment && lastPaid.AddMonths(1) > firstMonth ? lastPaid.AddMonths(1) : firstMonth;
+                return CardTransactionRecurrence.CountActiveMonthsBetween(cardTransaction, firstUnpaid, CardTransactionRecurrence.LastMonth(cardTransaction)!.Value);
             }
 
             var count = 0;
