@@ -101,7 +101,9 @@ namespace JazFinanzasApp.API.Business.Services
                 TotalAmount = dto.TotalAmount,
                 Installments = dto.Installments,
                 FirstInstallment = dto.FirstInstallment,
-                LastInstallment = dto.LastInstallment,
+                // Un recurrente vigente no tiene fin: sin esto, el DTO sin fecha de fin llegaba como
+                // 0001-01-01 y se guardaba así (plan-devengado-recurrentes.md, D9).
+                LastInstallment = dto.Repeat == "YES" ? null : dto.LastInstallment,
                 Repeat = dto.Repeat,
                 UserId = userId,
                 InstallmentAmount = dto.TotalAmount / dto.Installments,
