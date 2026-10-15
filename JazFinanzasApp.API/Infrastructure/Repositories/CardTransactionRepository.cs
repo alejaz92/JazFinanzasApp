@@ -26,10 +26,12 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Include(cm => cm.TransactionClass)
                 .Include(cm => cm.Asset)
                 .Include(cm => cm.Trip)
+                // Un recurrente dado de baja con fecha futura ("CLOSED" con LastInstallment por delante) se
+                // sigue cobrando hasta ese mes, así que sigue pendiente (plan-devengado-recurrentes.md, D6).
                 .Where(cm => cm.Card.UserId == userId && (
                     cm.Repeat == "YES" &&  (cm.LastInstallment  ==   nullDate || cm.LastInstallment == null ) ||
-                    cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today 
-                    
+                    cm.Repeat == "NO" && cm.FirstInstallment <= today && cm.LastInstallment >= today ||
+                    cm.Repeat == "CLOSED" && cm.LastInstallment >= today
                 ))
                 .Select(cm => new CardTransactionPendingResult
                 {
@@ -38,7 +40,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     Card = cm.Card.Name,
                     TransactionClass = cm.TransactionClass.Description,
                     Detail = cm.Detail,
-                    Installments = cm.Repeat == "YES" ? "Recurrente" : cm.Installments.ToString(),
+                    // "Recurrente (con baja)" y no "Recurrente": el listado del frontend muestra "Editar
+                    // Recurrente" solo con el texto exacto 'Recurrente', y un "CLOSED" ya no se puede editar.
+                    Installments = cm.Repeat == "YES" ? "Recurrente" : cm.Repeat == "CLOSED" ? "Recurrente (con baja)" : cm.Installments.ToString(),
                     Asset = cm.Asset.Name,
                     AssetSymbol = cm.Asset.Symbol,
                     TotalAmount = cm.TotalAmount,
@@ -61,6 +65,9 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             var firstDayOfMonth = new DateTime(paymentMonth.Year, paymentMonth.Month, 1);
             var lastDayOfMonth = firstDayOfMonth.AddMonths(1).AddDays(-1);
 
+            // Un tramo "CLOSED" (recurrente al que se le cambió el precio o se dio de baja) cobra en cada mes
+            // de FirstInstallment a LastInstallment — misma regla que CardTransactionRecurrence, escrita acá
+            // porque tiene que traducirse a SQL. Sin fin válido, solo su primer mes (plan-devengado-recurrentes.md, D5).
             return await _context.CardTransactions
                 .Include(cm => cm.Card)
                 .Include(cm => cm.TransactionClass)
@@ -68,15 +75,22 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Where(cm => cardId == 0 || cm.CardId == cardId)
                 .Where(cm => cm.UserId == userId
                     && (
-                        
+
                             cm.Repeat == "NO"
                             && cm.FirstInstallment <=lastDayOfMonth
-                            && cm.LastInstallment >= firstDayOfMonth 
+                            && cm.LastInstallment >= firstDayOfMonth
                         ||
-                        
+
                             cm.Repeat == "YES"
-                            && cm.FirstInstallment <= firstDayOfMonth)
-                        )                
+                            && cm.FirstInstallment <= firstDayOfMonth
+                        ||
+
+                            cm.Repeat == "CLOSED"
+                            && cm.FirstInstallment <= lastDayOfMonth
+                            && (cm.LastInstallment == null || cm.LastInstallment < cm.FirstInstallment
+                                ? cm.FirstInstallment
+                                : cm.LastInstallment.Value) >= firstDayOfMonth)
+                        )
                 .ToListAsync();
         }
 

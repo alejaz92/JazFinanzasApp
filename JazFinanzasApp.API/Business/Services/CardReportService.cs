@@ -303,7 +303,7 @@ namespace JazFinanzasApp.API.Business.Services
             return cardTransactions.Select(m =>
             {
                 string installmentDisplay;
-                if (m.Repeat == "YES")
+                if (CardTransactionRecurrence.IsRecurring(m))
                 {
                     installmentDisplay = "Recurrente";
                 }

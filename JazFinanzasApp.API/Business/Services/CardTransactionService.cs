@@ -149,7 +149,7 @@ namespace JazFinanzasApp.API.Business.Services
             return cardTransactions.Select(m =>
             {
                 var currentInstallment = ((paymentMonth.Year - m.FirstInstallment.Year) * 12) + paymentMonth.Month - m.FirstInstallment.Month + 1;
-                var installmentDisplay = m.Repeat == "YES" ? "Recurrente" : $"{currentInstallment}/{m.Installments}";
+                var installmentDisplay = CardTransactionRecurrence.IsRecurring(m) ? "Recurrente" : $"{currentInstallment}/{m.Installments}";
 
                 var valueInPesos = m.Asset.Name == "Dolar Estadounidense" ? m.InstallmentAmount * exchangeRate : m.InstallmentAmount;
 
