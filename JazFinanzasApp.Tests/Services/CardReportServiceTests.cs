@@ -435,6 +435,46 @@ namespace JazFinanzasApp.Tests.Services
             result.MonthlySeries.SelectMany(m => m.Purchases).Should().OnlyContain(p => p.Detail == "Heladera");
         }
 
+        // ── Tramos cerrados en el compromiso futuro (plan-devengado-recurrentes.md, D8) ───────────
+
+        [Fact]
+        public void GetLiveInstallmentMonths_ClosedTrancheWithFutureEnd_ProjectsUnpaidMonthsUntilItsLastMonthOnly()
+        {
+            // "La doy de baja a partir de diciembre": el tramo se cobra hasta nov y no más.
+            var currentMonth = new DateTime(2026, 9, 1);
+            var ct = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 11, 1), 7000m);
+            var lastPaid = new Dictionary<int, DateTime> { { 10, new DateTime(2026, 8, 1) } };
+
+            var months = CardReportService.GetLiveInstallmentMonths(ct, lastPaid, currentMonth, 18);
+
+            months.Should().Equal(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), new DateTime(2026, 11, 1));
+        }
+
+        [Fact]
+        public void GetLiveInstallmentMonths_ClosedTrancheAlreadyOver_ProjectsNothing()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var ct = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 7, 1), 7000m);
+
+            var months = CardReportService.GetLiveInstallmentMonths(ct, new Dictionary<int, DateTime>(), currentMonth, 18);
+
+            months.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void BuildFutureCommitment_IncludeRecurringFalse_AlsoExcludesClosedTranchesWithFutureMonths()
+        {
+            var currentMonth = new DateTime(2026, 9, 1);
+            var closing = MakeRecurrentTranche(1, "CLOSED", new DateTime(2026, 1, 1), new DateTime(2026, 11, 1), 7000m);
+            closing.Detail = "Spotify";
+            var fixedInstallment = MakeCardTransaction(2, 10, "NO", currentMonth, 2, detail: "Heladera");
+
+            var result = CardReportService.BuildFutureCommitment(new List<CardTransaction> { closing, fixedInstallment }, new Dictionary<int, DateTime>(), currentMonth, 3, includeRecurring: false);
+
+            result.Timeline.Should().ContainSingle(t => t.Detail == "Heladera");
+            result.MonthlySeries.SelectMany(m => m.Purchases).Should().OnlyContain(p => p.Detail == "Heladera");
+        }
+
         [Fact]
         public void BuildFutureCommitment_IncludeRecurringTrue_KeepsRecurrentPurchases()
         {

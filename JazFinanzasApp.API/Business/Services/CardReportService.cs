@@ -476,6 +476,22 @@ namespace JazFinanzasApp.API.Business.Services
                 return recurrentMonths;
             }
 
+            // Corrección 2026-10-15 (plan-devengado-recurrentes.md, D8): un tramo "CLOSED" tiene
+            // Installments = 1, así que el loop de cuotas de abajo solo veía su primer mes. Un recurrente
+            // dado de baja con fecha futura se sigue cobrando hasta su LastInstallment.
+            if (cardTransaction.Repeat == "CLOSED")
+            {
+                var lastMonth = CardTransactionRecurrence.LastMonth(cardTransaction)!.Value;
+                var closedMonths = new List<DateTime>();
+                for (var m = CardTransactionRecurrence.FirstMonth(cardTransaction); m <= lastMonth && m < windowEnd; m = m.AddMonths(1))
+                {
+                    var isUnpaid = !hasPayment || m > lastPaid;
+                    if (isUnpaid && m >= currentMonth)
+                        closedMonths.Add(m);
+                }
+                return closedMonths;
+            }
+
             var months = new List<DateTime>();
             for (var i = 0; i < cardTransaction.Installments; i++)
             {
@@ -497,7 +513,8 @@ namespace JazFinanzasApp.API.Business.Services
             var purchasesByMonth = monthBuckets.ToDictionary(m => m, _ => new List<FutureCommitmentPurchaseAmountDTO>());
             var timeline = new List<FutureCommitmentPurchaseDTO>();
 
-            var relevantTransactions = includeRecurring ? transactions : transactions.Where(t => t.Repeat != "YES");
+            // Un tramo "CLOSED" con meses por delante sigue siendo una suscripción (D8): sale igual que un "YES".
+            var relevantTransactions = includeRecurring ? transactions : transactions.Where(t => !CardTransactionRecurrence.IsRecurring(t));
 
             foreach (var ct in relevantTransactions)
             {
