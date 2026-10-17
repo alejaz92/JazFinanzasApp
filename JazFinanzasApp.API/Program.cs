@@ -6,6 +6,7 @@ using JazFinanzasApp.API.Middleware;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Infrastructure.Repositories;
 using JazFinanzasApp.API.Business.Assistant;
+using JazFinanzasApp.API.Business.Assistant.Sources;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -96,6 +97,12 @@ builder.Services.AddScoped<ITripReportService, TripReportService>();
 builder.Services.AddScoped<ISharedEventReportService, SharedEventReportService>();
 builder.Services.AddScoped<IReportFavoriteService, ReportFavoriteService>();
 builder.Services.Configure<AssistantOptions>(builder.Configuration.GetSection(AssistantOptions.SectionName));
+builder.Services.AddScoped<IAssistantCurrencyResolver, AssistantCurrencyResolver>();
+// Fuentes de contexto del asistente: sumar una es una clase y una línea acá (plan-devoluciones-llm.md, D2).
+builder.Services.AddScoped<IAssistantContextSource, IncomeExpenseContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, TopExpensesContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, CardsContextSource>();
+builder.Services.AddScoped<AssistantContextBuilder>();
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

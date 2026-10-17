@@ -66,6 +66,13 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         Task<IEnumerable<TagSpendingResult>> GetSpendingByTagAsync(int userId, Asset asset, int months);
         Task<IEnumerable<DailySpendingResult>> GetDailySpendingAsync(int userId, Asset asset, int year);
 
+        // Asistente (plan-devoluciones-llm.md, D2). Mismas guardas T1/T2 que el resto de Ingresos y
+        // Egresos. El primero es el gasto por categoría del día 1 al `cutoffDay` del mes, contra el mismo
+        // tramo del mes anterior y el promedio de los `comparisonMonths` meses anteriores; el segundo,
+        // los egresos individuales más grandes del rango, rankeados por la primera moneda de `assets`.
+        Task<IEnumerable<CategoryToDateSpendingResult>> GetSpendingToDateByCategoryAsync(int userId, Asset asset, DateTime month, int cutoffDay, int comparisonMonths);
+        Task<IEnumerable<ExpenseMovementResult>> GetLargestExpensesAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive, int take, int? categoryId = null);
+
         // Ingresos (corrección 2026-09-04 sobre la Fase 13). GetIncomeByCategoryMonthlySeriesAsync
         // es la evolución en el tiempo (secundaria); GetIncomeCompositionForMonthAsync es la
         // composición de UN mes elegido (la que el usuario pidió como principal — "quiero elegir
