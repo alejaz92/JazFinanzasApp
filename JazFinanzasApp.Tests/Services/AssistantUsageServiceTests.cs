@@ -404,6 +404,40 @@ namespace JazFinanzasApp.Tests.Services
             (await act.Should().ThrowAsync<AssistantModelException>()).Which.Message.Should().Contain("falta la clave");
         }
 
+        // --- mapeo de la respuesta del SDK ---
+
+        private static Anthropic.Models.Beta.Messages.BetaMessage SdkMessage(string stopReason) =>
+            Anthropic.Models.Beta.Messages.BetaMessage.FromRawUnchecked(
+                System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>($$"""
+                {
+                  "id": "msg_test",
+                  "type": "message",
+                  "role": "assistant",
+                  "model": "claude-opus-5-5",
+                  "content": [ { "type": "text", "text": "{\"headline\":\"h\"}" } ],
+                  "stop_reason": "{{stopReason}}",
+                  "stop_sequence": null,
+                  "usage": { "input_tokens": 11213, "output_tokens": 3320, "cache_read_input_tokens": 100, "cache_creation_input_tokens": 50 }
+                }
+                """)!);
+
+        [Theory]
+        [InlineData("end_turn")]
+        [InlineData("refusal")]
+        [InlineData("max_tokens")]
+        public void TheSdkEnumsAreReadWithoutJsonQuotes(string stopReason)
+        {
+            // Regresión de la primera llamada real: ToString() de los enums del SDK devuelve el valor entre comillas.
+            var response = AnthropicAssistantModelClient.ToResponse(SdkMessage(stopReason));
+
+            response.Model.Should().Be("claude-opus-5-5");
+            response.StopReason.Should().Be(stopReason);
+            response.IsRefusal.Should().Be(stopReason == "refusal");
+            response.IsTruncated.Should().Be(stopReason == "max_tokens");
+            response.Usage.Should().Be(new AssistantModelUsage(11_213, 3_320, 100, 50));
+            response.Text.Should().Be("{\"headline\":\"h\"}");
+        }
+
         // --- respuesta ---
 
         [Fact]

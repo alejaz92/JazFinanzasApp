@@ -110,7 +110,10 @@ namespace JazFinanzasApp.API.Business.Assistant
             JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(schemaJson)
             ?? throw new ArgumentException("El esquema de salida está vacío.", nameof(schemaJson));
 
-        private AssistantModelResponse ToResponse(BetaMessage message)
+        // Model y StopReason son enums del SDK: ToString() devuelve el valor con comillas JSON ("\"end_turn\""),
+        // así que se lee el texto crudo con Raw(). Lo encontró la primera llamada real (Fase 7): con las comillas,
+        // la detección de negativas y cortes y la búsqueda de precios no habrían funcionado.
+        public static AssistantModelResponse ToResponse(BetaMessage message)
         {
             var text = string.Concat(message.Content
                 .Select(block => block.TryPickText(out BetaTextBlock? t) ? t.Text : null)
@@ -123,9 +126,9 @@ namespace JazFinanzasApp.API.Business.Assistant
                 message.Usage.CacheCreationInputTokens ?? 0);
 
             return new AssistantModelResponse(
-                message.Model.ToString(),
+                message.Model.Raw(),
                 string.IsNullOrEmpty(text) ? null : text,
-                message.StopReason?.ToString(),
+                message.StopReason?.Raw(),
                 usage);
         }
     }
