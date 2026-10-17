@@ -76,11 +76,41 @@ namespace JazFinanzasApp.API.Business.DTO.Assistant
         public string? MissingKind { get; set; }
         public DateTime? MissingPeriodStart { get; set; }
         public AssistantReviewDTO? Review { get; set; }
+        // Solo cuando no falta ninguna devolución (D6, paso 3): conviene hacer la revisión semanal. El frontend la
+        // dispara en segundo plano con POST reviews/generate (kind WeeklyScan), sin indicador.
+        public bool WeeklyScanDue { get; set; }
+    }
+
+    // Un hallazgo del asistente, para la bandeja y para el historial de hallazgos.
+    public class AssistantFindingDTO
+    {
+        public int Id { get; set; }
+        // La pasada que lo encontró.
+        public int ReviewId { get; set; }
+        public string Title { get; set; } = "";
+        public string Detail { get; set; } = "";
+        // La categoría a la que se refiere, para el link.
+        public int? TransactionClassId { get; set; }
+        // Active / Dismissed / Expired.
+        public string Status { get; set; } = "";
+        public DateTime ExpiresAt { get; set; }
+        // +1 útil / -1 no útil; null si no se calificó.
+        public int? Rating { get; set; }
+        public List<string> UnverifiedFigures { get; set; } = new();
+        public DateTime CreatedAt { get; set; }
+    }
+
+    public class UpdateAssistantFindingDTO
+    {
+        // true: lo descarta (pasa a Dismissed).
+        public bool? Dismiss { get; set; }
+        // +1 útil / -1 no útil.
+        public int? Rating { get; set; }
     }
 
     public class GenerateAssistantReviewDTO
     {
-        // MonthClose o MidMonth.
+        // MonthClose, MidMonth o WeeklyScan (la revisión semanal solo corre cuando corresponde, salvo con Regenerate).
         public string Kind { get; set; } = "";
         // Primer día del mes. Si falta: el mes anterior para el cierre y el mes en curso para la mitad de mes.
         public DateTime? PeriodStart { get; set; }

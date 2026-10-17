@@ -21,6 +21,16 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Cuántos movimientos tuvo el usuario entre dos fechas, inclusive: transacciones y consumos de tarjeta.
         Task<bool> HasActivityAsync(int userId, DateTime from, DateTime to);
 
+        // Las pasadas del usuario (propósito User, cualquier tipo) creadas desde esa fecha, sin seguimiento.
+        Task<List<AssistantReview>> GetUserPassesSinceAsync(int userId, DateTime since);
+
+        // Cuándo se hizo la última pasada terminada del usuario (Ready, cualquier tipo), o null si no hubo.
+        Task<DateTime?> GetLastReadyPassTimeAsync(int userId);
+
+        // Si el usuario cargó algún movimiento (transacción o consumo de tarjeta) después de esa fecha. Mira cuándo
+        // se cargó, no la fecha del movimiento.
+        Task<bool> HasMovementsLoadedSinceAsync(int userId, DateTime since);
+
         Task<Dictionary<int, AssistantFeedback>> GetFeedbackByReviewIdsAsync(IEnumerable<int> reviewIds);
 
         Task AddAsync(AssistantReview review);

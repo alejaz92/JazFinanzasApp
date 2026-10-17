@@ -62,6 +62,31 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .AnyAsync(c => c.UserId == userId && c.Date >= from.Date && c.Date < end);
         }
 
+        public async Task<List<AssistantReview>> GetUserPassesSinceAsync(int userId, DateTime since)
+        {
+            return await _context.AssistantReviews
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.Purpose == AssistantReviewPurpose.User && r.CreatedAt >= since)
+                .ToListAsync();
+        }
+
+        public async Task<DateTime?> GetLastReadyPassTimeAsync(int userId)
+        {
+            var times = await _context.AssistantReviews
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.Purpose == AssistantReviewPurpose.User && r.Status == AssistantReviewStatus.Ready)
+                .Select(r => r.CreatedAt)
+                .ToListAsync();
+            return times.Count == 0 ? null : times.Max();
+        }
+
+        public async Task<bool> HasMovementsLoadedSinceAsync(int userId, DateTime since)
+        {
+            if (await _context.Transactions.AnyAsync(t => t.Account.UserId == userId && t.CreatedAt > since))
+                return true;
+            return await _context.CardTransactions.AnyAsync(c => c.UserId == userId && c.CreatedAt > since);
+        }
+
         public async Task<Dictionary<int, AssistantFeedback>> GetFeedbackByReviewIdsAsync(IEnumerable<int> reviewIds)
         {
             var ids = reviewIds.ToList();

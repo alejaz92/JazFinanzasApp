@@ -42,7 +42,7 @@ namespace JazFinanzasApp.API.Domain
         // El control de cifras también se aplica a los hallazgos.
         public string? UnverifiedFiguresJson { get; set; }
 
-        // Active / Dismissed / Expired, ver AssistantFindingStatus.
+        // Active / Dismissed / Expired / Repeated, ver AssistantFindingStatus.
         [Required]
         [MaxLength(10)]
         public string Status { get; set; }
@@ -61,7 +61,12 @@ namespace JazFinanzasApp.API.Domain
         public const string Dismissed = "Dismissed";
         public const string Expired = "Expired";
 
+        // Repeated: el asistente lo devolvió pero ya había uno con el mismo Fingerprint en el mes, así que no se
+        // muestra. Se guarda igual para que la revisión de calidad vea cuánto insiste con lo mismo (D15). Se
+        // agregó para eso, en vez de una columna nueva en AssistantReview (que habría pedido otra migración).
+        public const string Repeated = "Repeated";
+
         public static bool IsValid(string? value) =>
-            value == Active || value == Dismissed || value == Expired;
+            value == Active || value == Dismissed || value == Expired || value == Repeated;
     }
 }

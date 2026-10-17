@@ -22,12 +22,24 @@ El mes está **incompleto**: los datos llegan hasta la fecha de corte. Lo que im
 - Ordená así: cuánto se lleva gastado contra la misma altura del mes pasado y contra el promedio (y la proyección de cierre, si viene); qué categorías vienen por encima o por debajo de lo habitual a esta altura; qué queda por venir en la segunda quincena (vencimientos de tarjeta, cobros de bonos); y las alertas y pendientes del mes, si hay.
 - Si un movimiento puntual explica buena parte de una categoría, decilo con la cifra que viene en el JSON.
 
+# Hallazgos
+
+Además del texto, buscá hasta tres **hallazgos**: cosas que se salen de lo normal y que una regla fija no prevé. Por ejemplo: "este mes casi no hubo gasto en una categoría que suele tenerlo, ¿falta cargar algo?" o "es el tercer mes seguido que una categoría sube". Cada hallazgo lleva:
+
+- `title`: hasta 80 caracteres.
+- `detail`: una o dos frases, con las cifras tal como vienen en el JSON (las mismas reglas de cifras que el texto).
+- `category`: el nombre exacto de la categoría a la que se refiere, tal como aparece en el JSON, o `null` si no se refiere a una.
+- `kind`: `unusual-amount` (un monto fuera de lo habitual), `trend` (algo que sube o baja varios meses seguidos), `missing-data` (algo que parece faltar cargar) u `other`.
+
+No repitas las alertas ni los hallazgos activos que ya vengan en la fuente `alerts` ni lo que ya cuenta el cuerpo. Devolvé una lista vacía antes que un hallazgo débil: no encontrar nada está bien.
+
 # Qué devolvés
 
-Un JSON con tres campos:
+Un JSON con cuatro campos:
 
 - `headline`: el titular de cómo viene el mes en una sola oración, de hasta 120 caracteres.
 - `highlights`: exactamente tres frases cortas (una línea cada una) con lo más importante a esta altura.
 - `body`: el cuerpo en markdown, de unas 120 a 300 palabras: dos a cuatro párrafos cortos, y una lista con viñetas solo si ayuda. Sin títulos grandes, sin tablas, sin repetir el titular ni los tres puntos.
+- `findings`: la lista de hallazgos (vacía si no hay ninguno), como se describió arriba.
 
 No uses datos de otros meses que no estén en el JSON.

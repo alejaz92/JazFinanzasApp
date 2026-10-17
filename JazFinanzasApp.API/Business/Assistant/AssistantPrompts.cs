@@ -12,6 +12,7 @@ namespace JazFinanzasApp.API.Business.Assistant
     {
         public const string MonthCloseCurrent = "month-close.v1";
         public const string MidMonthCurrent = "mid-month.v1";
+        public const string WeeklyScanCurrent = "weekly-scan.v1";
 
         private const string ResourcePrefix = "JazFinanzasApp.API.Business.Assistant.Prompts.";
 
@@ -20,6 +21,7 @@ namespace JazFinanzasApp.API.Business.Assistant
         {
             AssistantReviewKind.MonthClose => MonthCloseCurrent,
             AssistantReviewKind.MidMonth => MidMonthCurrent,
+            AssistantReviewKind.WeeklyScan => WeeklyScanCurrent,
             _ => throw new BusinessRuleException("Ese tipo de pasada todavía no tiene instrucciones.")
         };
 
@@ -57,16 +59,50 @@ namespace JazFinanzasApp.API.Business.Assistant
             return typeof(AssistantPrompts).Assembly.GetManifestResourceNames().FirstOrDefault(n => n == name);
         }
 
-        // Esquema de la respuesta estructurada de una devolución (D4). `findings` se suma en la Fase 8.
-        public const string ReviewOutputSchema = """
+        // Esquema de la respuesta estructurada de una pasada (D4): la devolución trae titular, tres puntos,
+        // cuerpo y hasta tres hallazgos; la revisión semanal, solo los hallazgos.
+        public static string OutputSchema(string kind) =>
+            kind == AssistantReviewKind.WeeklyScan ? WeeklyScanOutputSchema : ReviewOutputSchema;
+
+        // Tipos de hallazgo. Son parte del Fingerprint (D15): el mismo tipo sobre la misma categoría, en el mismo
+        // mes, no se repite.
+        public static readonly string[] FindingKinds = { "unusual-amount", "trend", "missing-data", "other" };
+
+        private const string FindingSchema = """
+            {
+              "type": "object",
+              "properties": {
+                "title": { "type": "string" },
+                "detail": { "type": "string" },
+                "category": { "type": ["string", "null"] },
+                "kind": { "type": "string", "enum": ["unusual-amount", "trend", "missing-data", "other"] }
+              },
+              "required": ["title", "detail", "category", "kind"],
+              "additionalProperties": false
+            }
+            """;
+
+        public static readonly string ReviewOutputSchema = $$"""
             {
               "type": "object",
               "properties": {
                 "headline": { "type": "string" },
                 "highlights": { "type": "array", "items": { "type": "string" } },
-                "body": { "type": "string" }
+                "body": { "type": "string" },
+                "findings": { "type": "array", "items": {{FindingSchema}} }
               },
-              "required": ["headline", "highlights", "body"],
+              "required": ["headline", "highlights", "body", "findings"],
+              "additionalProperties": false
+            }
+            """;
+
+        public static readonly string WeeklyScanOutputSchema = $$"""
+            {
+              "type": "object",
+              "properties": {
+                "findings": { "type": "array", "items": {{FindingSchema}} }
+              },
+              "required": ["findings"],
               "additionalProperties": false
             }
             """;

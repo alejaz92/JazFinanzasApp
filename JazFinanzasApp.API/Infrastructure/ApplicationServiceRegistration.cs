@@ -99,6 +99,8 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantUsageRepository, AssistantUsageRepository>();
         services.AddScoped<IAssistantUsageService, AssistantUsageService>();
         services.AddScoped<IAssistantReviewRepository, AssistantReviewRepository>();
+        services.AddScoped<IAssistantFindingRepository, AssistantFindingRepository>();
+        services.AddScoped<IAssistantFindingService, AssistantFindingService>();
         services.AddScoped<IAssistantReviewService, AssistantReviewService>();
 
             return services;

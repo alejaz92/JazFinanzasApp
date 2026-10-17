@@ -14,10 +14,12 @@ namespace JazFinanzasApp.API.Controllers
     public class AssistantController : ControllerBase
     {
         private readonly IAssistantReviewService _reviewService;
+        private readonly IAssistantFindingService _findingService;
 
-        public AssistantController(IAssistantReviewService reviewService)
+        public AssistantController(IAssistantReviewService reviewService, IAssistantFindingService findingService)
         {
             _reviewService = reviewService;
+            _findingService = findingService;
         }
 
         private int GetUserId() => int.Parse(User.FindFirst(ClaimTypes.NameIdentifier)!.Value);
@@ -56,6 +58,20 @@ namespace JazFinanzasApp.API.Controllers
         public async Task<IActionResult> SetFeedback(int id, SetAssistantFeedbackDTO dto)
         {
             return Ok(await _reviewService.SetFeedbackAsync(GetUserId(), id, dto));
+        }
+
+        // D8b: los hallazgos activos (y no vencidos), o con all=true también los descartados y vencidos.
+        [HttpGet("findings")]
+        public async Task<IActionResult> GetFindings([FromQuery] bool all = false)
+        {
+            return Ok(await _findingService.GetAsync(GetUserId(), all));
+        }
+
+        // Descarta o califica un hallazgo, sin entrar a la pantalla del asistente.
+        [HttpPut("findings/{id:int}")]
+        public async Task<IActionResult> UpdateFinding(int id, UpdateAssistantFindingDTO dto)
+        {
+            return Ok(await _findingService.UpdateAsync(GetUserId(), id, dto));
         }
 
         // D10: regenera con otra versión de instrucciones sobre el mismo contexto guardado. Solo Admin.

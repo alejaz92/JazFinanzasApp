@@ -28,7 +28,7 @@ namespace JazFinanzasApp.Tests.Manual
     //   ASSISTANT_LIVE_KEY_FILE=<archivo>      archivo con la clave, fuera de los repos y de OneDrive
     //   ASSISTANT_LIVE_OUT=<carpeta>           dónde escribir el resultado (nunca dentro del repo)
     //   ASSISTANT_LIVE_USER_ID=<id>            usuario (por defecto 2, ajazmatie)
-    //   ASSISTANT_LIVE_KIND=MonthClose|MidMonth  tipo de devolución (por defecto MonthClose)
+    //   ASSISTANT_LIVE_KIND=MonthClose|MidMonth|WeeklyScan  tipo de pasada (por defecto MonthClose)
     //   ASSISTANT_LIVE_MONTH=yyyy-MM           mes del cierre (por defecto el mes anterior)
     public class AssistantLiveGenerationTests
     {
@@ -47,7 +47,7 @@ namespace JazFinanzasApp.Tests.Manual
 
             var userId = int.Parse(Environment.GetEnvironmentVariable("ASSISTANT_LIVE_USER_ID") ?? "2");
             var kind = Environment.GetEnvironmentVariable("ASSISTANT_LIVE_KIND") ?? AssistantReviewKind.MonthClose;
-            kind.Should().BeOneOf(AssistantReviewKind.MonthClose, AssistantReviewKind.MidMonth);
+            kind.Should().BeOneOf(AssistantReviewKind.MonthClose, AssistantReviewKind.MidMonth, AssistantReviewKind.WeeklyScan);
 
             var apiDirectory = FindApiDirectory();
             var configuration = new ConfigurationBuilder()
@@ -78,6 +78,11 @@ namespace JazFinanzasApp.Tests.Manual
             {
                 request = new AssistantContextRequest(userId, kind, thisMonth, today.AddDays(-1));
             }
+            else if (kind == AssistantReviewKind.WeeklyScan)
+            {
+                var monday = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+                request = new AssistantContextRequest(userId, kind, monday, today.AddDays(-1));
+            }
             else
             {
                 var monthText = Environment.GetEnvironmentVariable("ASSISTANT_LIVE_MONTH");
@@ -89,8 +94,9 @@ namespace JazFinanzasApp.Tests.Manual
 
             var contextJson = AssistantContextBuilder.Serialize(await builder.BuildAsync(request));
             var promptVersion = AssistantPrompts.CurrentVersion(kind);
+            var effort = kind == AssistantReviewKind.WeeklyScan ? AssistantEffort.Medium : AssistantEffort.High;
             var modelRequest = new AssistantModelRequest(
-                AssistantPrompts.Load(promptVersion), contextJson, AssistantPrompts.ReviewOutputSchema, AssistantEffort.High);
+                AssistantPrompts.Load(promptVersion), contextJson, AssistantPrompts.OutputSchema(kind), effort);
 
             var client = new AnthropicAssistantModelClient(
                 Options.Create(options), configuration, NullLogger<AnthropicAssistantModelClient>.Instance);
@@ -141,6 +147,11 @@ namespace JazFinanzasApp.Tests.Manual
             foreach (var name in new[] { "headline", "body" })
                 if (doc.RootElement.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
                     parts.Add(value.GetString()!);
+            if (doc.RootElement.TryGetProperty("findings", out var findings) && findings.ValueKind == JsonValueKind.Array)
+                foreach (var finding in findings.EnumerateArray())
+                    foreach (var name in new[] { "title", "detail" })
+                        if (finding.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String)
+                            parts.Add(value.GetString()!);
             if (doc.RootElement.TryGetProperty("highlights", out var highlights) && highlights.ValueKind == JsonValueKind.Array)
                 parts.AddRange(highlights.EnumerateArray().Where(h => h.ValueKind == JsonValueKind.String).Select(h => h.GetString()!));
             return AssistantFigureChecker.FindUnverified(string.Join("\n", parts), contextJson).ToList();

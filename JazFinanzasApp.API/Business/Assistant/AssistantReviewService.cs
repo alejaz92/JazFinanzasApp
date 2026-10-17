@@ -45,6 +45,7 @@ namespace JazFinanzasApp.API.Business.Assistant
         private readonly IAssistantReviewRepository _repository;
         private readonly IAssistantUsageService _usage;
         private readonly AssistantContextBuilder _contextBuilder;
+        private readonly IAssistantFindingService _findings;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<AssistantReviewService> _logger;
 
@@ -52,12 +53,14 @@ namespace JazFinanzasApp.API.Business.Assistant
             IAssistantReviewRepository repository,
             IAssistantUsageService usage,
             AssistantContextBuilder contextBuilder,
+            IAssistantFindingService findings,
             TimeProvider timeProvider,
             ILogger<AssistantReviewService> logger)
         {
             _repository = repository;
             _usage = usage;
             _contextBuilder = contextBuilder;
+            _findings = findings;
             _timeProvider = timeProvider;
             _logger = logger;
         }
@@ -96,12 +99,42 @@ namespace JazFinanzasApp.API.Business.Assistant
             if (Today.Day >= MidMonthFromDay && !await IsCoveredAsync(userId, AssistantReviewKind.MidMonth, currentMonth))
                 return NotGenerated(AssistantReviewKind.MidMonth, currentMonth);
 
+            var weeklyScanDue = await IsWeeklyScanDueAsync(userId);
             var latest = await _repository.GetLatestReadyAsync(userId);
             if (latest == null)
-                return new AssistantLatestDTO { State = AssistantLatestState.Empty };
+                return new AssistantLatestDTO { State = AssistantLatestState.Empty, WeeklyScanDue = weeklyScanDue };
 
-            return new AssistantLatestDTO { State = AssistantLatestState.Ready, Review = await ToDtoAsync(latest) };
+            return new AssistantLatestDTO { State = AssistantLatestState.Ready, Review = await ToDtoAsync(latest), WeeklyScanDue = weeklyScanDue };
         }
+
+        // D6, paso 3: la revisión semanal corre cuando se cumplen las tres condiciones. Se evalúa solo si no falta
+        // ninguna devolución, que tiene prioridad (y ya mira todos los datos).
+        //  1. No hubo ninguna pasada (devolución o revisión semanal) desde el lunes de la semana en curso.
+        //  2. El gasto del mes no pasó el 80 % del tope.
+        //  3. Se cargó algún movimiento desde la última pasada.
+        private async Task<bool> IsWeeklyScanDueAsync(int userId)
+        {
+            var status = await _usage.GetStatusAsync(userId);
+            if (!status.WeeklyScanAllowed)
+                return false;
+
+            var passes = await _repository.GetUserPassesSinceAsync(userId, MondayOf(Today));
+            var now = UtcNow;
+            if (passes.Any(r => CountsAsPass(r, now)))
+                return false;
+
+            var lastPass = await _repository.GetLastReadyPassTimeAsync(userId);
+            return await _repository.HasMovementsLoadedSinceAsync(userId, lastPass ?? DateTime.MinValue);
+        }
+
+        // Una pasada cuenta para "ya hubo una esta semana" si terminó, si está en curso, o si falló hace poco (para
+        // que una falla no reintente en cada entrada a la app, igual que con las devoluciones).
+        private static bool CountsAsPass(AssistantReview r, DateTime now) =>
+            r.Status == AssistantReviewStatus.Ready
+            || (r.Status == AssistantReviewStatus.Pending && now - r.CreatedAt < PendingTimeout)
+            || (r.Status == AssistantReviewStatus.Failed && now - r.CreatedAt < FailedCooldown);
+
+        private static DateTime MondayOf(DateTime date) => date.Date.AddDays(-(((int)date.DayOfWeek + 6) % 7));
 
         public async Task<List<AssistantReviewSummaryDTO>> GetHistoryAsync(int userId, string? kind)
         {
@@ -148,8 +181,13 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             await ExpireStalePendingAsync(userId, request.Kind, periodStart, AssistantReviewPurpose.User);
 
+            // La revisión semanal solo corre cuando corresponde (D6, paso 3), salvo que se pida regenerar. El 80 % del
+            // tope lo vuelve a chequear el servicio de uso, pero acá se corta antes de crear una fila fallida.
+            if (request.Kind == AssistantReviewKind.WeeklyScan && !request.Regenerate && !await IsWeeklyScanDueAsync(userId))
+                throw new BusinessRuleException("No hace falta una revisión semanal ahora: ya hubo una pasada esta semana, no hay movimientos nuevos o se usó más del 80 % del tope.");
+
             // Un período sin movimientos no llama al modelo y no vuelve a intentarse (D6).
-            if (!await _repository.HasActivityAsync(userId, periodStart, cutoff))
+            if (request.Kind != AssistantReviewKind.WeeklyScan && !await _repository.HasActivityAsync(userId, periodStart, cutoff))
             {
                 var empty = NewReview(userId, request.Kind, periodStart, cutoff, AssistantReviewPurpose.User, AssistantReviewStatus.NoActivity);
                 await _repository.AddAsync(empty);
@@ -176,7 +214,8 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             review.ContextJson = contextJson;
             var promptVersion = AssistantPrompts.CurrentVersion(request.Kind);
-            await ExecuteAsync(review, contextJson, promptVersion, AssistantApiCallPurpose.Review, cancellationToken);
+            var callPurpose = request.Kind == AssistantReviewKind.WeeklyScan ? AssistantApiCallPurpose.WeeklyScan : AssistantApiCallPurpose.Review;
+            await ExecuteAsync(review, contextJson, promptVersion, callPurpose, cancellationToken);
             return await ToDtoAsync(review);
         }
 
@@ -210,15 +249,18 @@ namespace JazFinanzasApp.API.Business.Assistant
         private async Task ExecuteAsync(AssistantReview review, string contextJson, string promptVersion, string callPurpose, CancellationToken cancellationToken)
         {
             review.PromptVersion = promptVersion;
+            IReadOnlyList<AssistantModelFinding> modelFindings = Array.Empty<AssistantModelFinding>();
             try
             {
                 var systemPrompt = AssistantPrompts.Load(promptVersion);
-                var request = new AssistantModelRequest(systemPrompt, contextJson, AssistantPrompts.ReviewOutputSchema, AssistantEffort.High);
+                // D4: esfuerzo high para las devoluciones y medium para la revisión semanal.
+                var effort = review.Kind == AssistantReviewKind.WeeklyScan ? AssistantEffort.Medium : AssistantEffort.High;
+                var request = new AssistantModelRequest(systemPrompt, contextJson, AssistantPrompts.OutputSchema(review.Kind), effort);
                 var response = await _usage.CallModelAsync(
                     new AssistantModelCall(review.UserId, callPurpose, promptVersion, review.Id, request), cancellationToken);
 
                 review.Model = response.Model;
-                Interpret(review, response, contextJson);
+                modelFindings = Interpret(review, response, contextJson);
             }
             catch (OperationCanceledException)
             {
@@ -237,25 +279,47 @@ namespace JazFinanzasApp.API.Business.Assistant
             }
 
             await FinishAsync(review);
+            await SaveFindingsAsync(review, modelFindings, contextJson);
         }
 
-        // Una negativa, un corte o una respuesta que no tiene el formato esperado dejan la devolución en Failed.
-        private void Interpret(AssistantReview review, AssistantModelResponse response, string contextJson)
+        // Los hallazgos de una pasada terminada van a la bandeja. Una pasada de comparación (Eval) no los guarda: no
+        // tiene que mostrarle nada al usuario. Si guardarlos falla, la devolución ya está guardada y se sigue.
+        private async Task SaveFindingsAsync(AssistantReview review, IReadOnlyList<AssistantModelFinding> findings, string contextJson)
         {
+            if (review.Status != AssistantReviewStatus.Ready || review.Purpose != AssistantReviewPurpose.User || findings.Count == 0)
+                return;
+            try
+            {
+                var result = await _findings.SaveFromReviewAsync(review, findings, contextJson);
+                _logger.LogInformation("Hallazgos de la pasada {ReviewId}: {Saved} guardados, {Repeated} repetidos, {OverCap} de más",
+                    review.Id, result.Saved, result.Repeated, result.OverCap);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "No se pudieron guardar los hallazgos de la pasada {ReviewId}", review.Id);
+            }
+        }
+
+        // Una negativa, un corte o una respuesta que no tiene el formato esperado dejan la pasada en Failed. Devuelve
+        // los hallazgos que trajo la respuesta (D4): las devoluciones traen de 0 a 3 además del texto, y la revisión
+        // semanal trae solo hallazgos, con la lista vacía como respuesta válida.
+        private IReadOnlyList<AssistantModelFinding> Interpret(AssistantReview review, AssistantModelResponse response, string contextJson)
+        {
+            var none = Array.Empty<AssistantModelFinding>();
             if (response.IsRefusal)
             {
                 Fail(review, "El modelo no pudo responder a este pedido. Probá de nuevo más tarde.");
-                return;
+                return none;
             }
             if (response.IsTruncated)
             {
                 Fail(review, "La respuesta del asistente se cortó por exceder el largo máximo.");
-                return;
+                return none;
             }
             if (string.IsNullOrWhiteSpace(response.Text))
             {
                 Fail(review, "El asistente no devolvió ningún texto.");
-                return;
+                return none;
             }
 
             ModelReviewOutput? output;
@@ -268,11 +332,33 @@ namespace JazFinanzasApp.API.Business.Assistant
                 output = null;
             }
 
-            var highlights = output?.Highlights?.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()).Take(MaxHighlights).ToList();
-            if (output == null || string.IsNullOrWhiteSpace(output.Headline) || string.IsNullOrWhiteSpace(output.Body) || highlights == null || highlights.Count == 0)
+            const string badFormat = "La respuesta del asistente no tuvo el formato esperado.";
+            if (output == null)
             {
-                Fail(review, "La respuesta del asistente no tuvo el formato esperado.");
-                return;
+                Fail(review, badFormat);
+                return none;
+            }
+
+            var findings = (IReadOnlyList<AssistantModelFinding>?)output.Findings ?? none;
+
+            // La revisión semanal no tiene texto propio: solo hallazgos, y ninguno es una respuesta válida.
+            if (review.Kind == AssistantReviewKind.WeeklyScan)
+            {
+                if (output.Findings == null)
+                {
+                    Fail(review, badFormat);
+                    return none;
+                }
+                review.Status = AssistantReviewStatus.Ready;
+                review.ErrorMessage = null;
+                return findings;
+            }
+
+            var highlights = output.Highlights?.Where(h => !string.IsNullOrWhiteSpace(h)).Select(h => h.Trim()).Take(MaxHighlights).ToList();
+            if (string.IsNullOrWhiteSpace(output.Headline) || string.IsNullOrWhiteSpace(output.Body) || highlights == null || highlights.Count == 0)
+            {
+                Fail(review, badFormat);
+                return none;
             }
 
             var headline = output.Headline.Trim();
@@ -287,6 +373,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             review.Status = AssistantReviewStatus.Ready;
             review.ErrorMessage = null;
+            return findings;
         }
 
         private static void Fail(AssistantReview review, string message)
@@ -403,7 +490,8 @@ namespace JazFinanzasApp.API.Business.Assistant
                     return (start, Today.AddDays(-1));
                 }
                 case AssistantReviewKind.WeeklyScan:
-                    throw new BusinessRuleException("La revisión semanal todavía no está disponible.");
+                    // Una por semana: el período es el lunes de la semana en curso y los datos llegan hasta ayer.
+                    return (MondayOf(Today), Today.AddDays(-1));
                 default:
                     throw new BusinessRuleException("El tipo de devolución no es válido.");
             }
@@ -491,6 +579,6 @@ namespace JazFinanzasApp.API.Business.Assistant
         private static List<string> ReadList(string? json) =>
             string.IsNullOrEmpty(json) ? new List<string>() : JsonSerializer.Deserialize<List<string>>(json) ?? new List<string>();
 
-        private record ModelReviewOutput(string? Headline, List<string>? Highlights, string? Body);
+        private record ModelReviewOutput(string? Headline, List<string>? Highlights, string? Body, List<AssistantModelFinding>? Findings);
     }
 }

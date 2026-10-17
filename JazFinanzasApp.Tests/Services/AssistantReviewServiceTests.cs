@@ -16,27 +16,27 @@ namespace JazFinanzasApp.Tests.Services
     // comparación de devoluciones, con un cliente del modelo falso. Ningún test llama a la API real.
     public class AssistantReviewServiceTests
     {
-        private const int UserId = 1;
+        internal const int UserId = 1;
         private const string Model = "claude-opus-5-5";
 
         // El contexto que arma la fuente falsa: estos son los números que el control de cifras conoce.
         private static readonly object FakeData = new { total = 85432, pct = 17.8 };
 
-        private static readonly string GoodOutput = JsonSerializer.Serialize(new
+        internal static readonly string GoodOutput = JsonSerializer.Serialize(new
         {
             headline = "El mes cerró con un gasto de $85.000",
             highlights = new[] { "Primero", "Segundo", "Tercero" },
             body = "El ahorro fue de 18 %."
         });
 
-        private sealed class MutableTimeProvider(DateTime utcNow) : TimeProvider
+        internal sealed class MutableTimeProvider(DateTime utcNow) : TimeProvider
         {
             public DateTime Now { get; set; } = utcNow;
             public override DateTimeOffset GetUtcNow() => new(Now, TimeSpan.Zero);
             public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
         }
 
-        private sealed class FakeSource : IAssistantContextSource
+        internal sealed class FakeSource : IAssistantContextSource
         {
             public string Key => "fake";
             public string Measures => "una fuente de prueba";
@@ -44,7 +44,7 @@ namespace JazFinanzasApp.Tests.Services
             public Task<object?> BuildAsync(AssistantContextRequest request) => Task.FromResult<object?>(FakeData);
         }
 
-        private sealed class FakeModelClient : IAssistantModelClient
+        internal sealed class FakeModelClient : IAssistantModelClient
         {
             public List<AssistantModelRequest> Requests { get; } = new();
             public Func<AssistantModelResponse> Respond { get; set; } = () => Ok(GoodOutput);
@@ -62,15 +62,17 @@ namespace JazFinanzasApp.Tests.Services
             }
         }
 
-        private static AssistantModelResponse Ok(string text) =>
+        internal static AssistantModelResponse Ok(string text) =>
             new(Model, text, "end_turn", new AssistantModelUsage(9_000, 4_000, 0, 0));
 
-        private sealed class Fixture
+        internal sealed class Fixture
         {
             public ApplicationDbContext Context { get; }
             public FakeModelClient Client { get; }
             public MutableTimeProvider Time { get; }
             public AssistantReviewService Service { get; }
+            public AssistantFindingService Findings { get; }
+            public AssistantUsageService Usage { get; }
 
             public Fixture(string? dbName = null, FakeModelClient? client = null, MutableTimeProvider? time = null,
                 bool enabled = true, decimal budget = 3m)
@@ -94,18 +96,22 @@ namespace JazFinanzasApp.Tests.Services
                     new AssistantUsageRepository(Context), Client, Options.Create(assistantOptions), Time,
                     NullLogger<AssistantUsageService>.Instance);
 
+                Usage = usage;
+                Findings = new AssistantFindingService(
+                    new AssistantFindingRepository(Context), new TransactionClassRepository(Context), usage, Time);
+
                 Service = new AssistantReviewService(
                     new AssistantReviewRepository(Context), usage,
                     new AssistantContextBuilder(new IAssistantContextSource[] { new FakeSource() }),
-                    Time, NullLogger<AssistantReviewService>.Instance);
+                    Findings, Time, NullLogger<AssistantReviewService>.Instance);
             }
 
             // Un movimiento del usuario en una fecha, para que el período no cuente como "sin movimientos".
-            public void AddActivity(DateTime date)
+            public void AddActivity(DateTime date, DateTime? loadedAt = null)
             {
                 var account = Context.Accounts.FirstOrDefault(a => a.UserId == UserId)
                               ?? Context.Accounts.Add(new Account { Name = "Cuenta", UserId = UserId }).Entity;
-                Context.Transactions.Add(new Transaction { Account = account, AccountId = account.Id, PortfolioId = 1, AssetId = 1, Date = date, MovementType = "E", Amount = 100m });
+                Context.Transactions.Add(new Transaction { Account = account, AccountId = account.Id, PortfolioId = 1, AssetId = 1, Date = date, MovementType = "E", Amount = 100m, CreatedAt = loadedAt ?? Time.Now });
                 Context.SaveChanges();
             }
 
@@ -113,10 +119,10 @@ namespace JazFinanzasApp.Tests.Services
             public void AddActivityInOctober() => AddActivity(new DateTime(2026, 10, 5));
         }
 
-        private static GenerateAssistantReviewDTO Close(bool regenerate = false) =>
+        internal static GenerateAssistantReviewDTO Close(bool regenerate = false) =>
             new() { Kind = AssistantReviewKind.MonthClose, Regenerate = regenerate };
 
-        private static GenerateAssistantReviewDTO Mid(bool regenerate = false) =>
+        internal static GenerateAssistantReviewDTO Mid(bool regenerate = false) =>
             new() { Kind = AssistantReviewKind.MidMonth, Regenerate = regenerate };
 
         // --- reviews/latest (D6) ---
@@ -785,7 +791,7 @@ namespace JazFinanzasApp.Tests.Services
         {
             using var doc = JsonDocument.Parse(AssistantPrompts.ReviewOutputSchema);
             doc.RootElement.GetProperty("required").EnumerateArray().Select(e => e.GetString())
-                .Should().BeEquivalentTo("headline", "highlights", "body");
+                .Should().BeEquivalentTo("headline", "highlights", "body", "findings");
         }
     }
 }
