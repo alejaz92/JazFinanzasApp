@@ -102,6 +102,10 @@ builder.Services.AddScoped<IAssistantCurrencyResolver, AssistantCurrencyResolver
 builder.Services.AddScoped<IAssistantContextSource, IncomeExpenseContextSource>();
 builder.Services.AddScoped<IAssistantContextSource, TopExpensesContextSource>();
 builder.Services.AddScoped<IAssistantContextSource, CardsContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, NetWorthContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, InvestmentsContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, TripsContextSource>();
+builder.Services.AddScoped<IAssistantContextSource, AlertsContextSource>();
 builder.Services.AddScoped<AssistantContextBuilder>();
 
 builder.Services.AddIdentityCore<User>()

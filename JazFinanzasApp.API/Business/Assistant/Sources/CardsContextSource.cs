@@ -52,12 +52,10 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
 
             if (request.IsMonthClose)
             {
-                var currentMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-
                 // El compromiso futuro se calcula con las cuotas vivas de hoy: para un cierre viejo (por
                 // ejemplo una regeneración de hace varios meses) hablaría del futuro de hoy, no del de
                 // ese mes, así que solo viaja cuando el mes cerrado es el anterior al actual o el actual.
-                IReadOnlyList<FutureMonth> future = request.Month.AddMonths(1) >= currentMonth
+                IReadOnlyList<FutureMonth> future = request.IsLive
                     ? await BuildFutureCommitmentAsync(request, currencies)
                     : Array.Empty<FutureMonth>();
 

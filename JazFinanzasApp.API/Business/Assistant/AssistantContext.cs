@@ -22,6 +22,11 @@ namespace JazFinanzasApp.API.Business.Assistant
 
         // Del día 1 al día de corte inclusive; el mes completo en un cierre.
         public int CutoffDay => IsMonthClose ? DaysInMonth : Math.Min(CutoffDate.Day, DaysInMonth);
+
+        // Si el mes es el actual o el anterior. Los reportes que se calculan con el estado de hoy
+        // (cuotas vivas, tenencias, pendientes) describen bien el cierre de esos dos meses, pero para un
+        // cierre más viejo hablarían de hoy y no de ese mes, así que esas partes no viajan.
+        public bool IsLive => Month.AddMonths(1) >= new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
     }
 
     // Una fuente de contexto: un área de la app que le pasa al asistente un resumen chico y serializable

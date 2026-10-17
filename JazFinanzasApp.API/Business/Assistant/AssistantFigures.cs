@@ -16,6 +16,10 @@ namespace JazFinanzasApp.API.Business.Assistant
         decimal DeltaVsAverage,
         decimal? PctVsAverage);
 
+    // Un valor contra el del mes anterior, para lo que no se promedia (un patrimonio, un valor de cartera):
+    // el promedio de patrimonios de meses distintos no responde ninguna pregunta.
+    public record ValueChange(decimal Current, decimal Previous, decimal Delta, decimal? PctVsPrevious);
+
     // Tasa de ahorro (resultado sobre ingresos, en %) y su variación en puntos porcentuales.
     public record RateComparison(
         decimal? Current,
@@ -45,6 +49,13 @@ namespace JazFinanzasApp.API.Business.Assistant
                 Pct(current, previous),
                 RoundMoney(current - average, isPesos),
                 Pct(current, average));
+
+        public static ValueChange Change(decimal current, decimal previous, bool isPesos) =>
+            new(
+                RoundMoney(current, isPesos),
+                RoundMoney(previous, isPesos),
+                RoundMoney(current - previous, isPesos),
+                Pct(current, previous));
 
         // Resultado sobre ingresos en %, o null si no hubo ingresos.
         public static decimal? Rate(decimal result, decimal income) =>
