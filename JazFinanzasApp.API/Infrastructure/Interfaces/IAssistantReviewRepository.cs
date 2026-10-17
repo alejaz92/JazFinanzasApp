@@ -31,6 +31,15 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // se cargó, no la fecha del movimiento.
         Task<bool> HasMovementsLoadedSinceAsync(int userId, DateTime since);
 
+        // Las últimas revisiones de calidad registradas del usuario, de la más nueva a la más vieja (D9).
+        Task<List<AssistantQualityReview>> GetLastQualityReviewsAsync(int userId, int take);
+
+        // Cuándo se hizo la primera devolución terminada (cierre o mitad de mes) del usuario, o null si no hubo.
+        Task<DateTime?> GetFirstReadyReviewTimeAsync(int userId);
+
+        // Cuántas devoluciones terminadas (cierre o mitad de mes, propósito User) se crearon después de esa fecha.
+        Task<int> CountReadyReviewsSinceAsync(int userId, DateTime since);
+
         Task<Dictionary<int, AssistantFeedback>> GetFeedbackByReviewIdsAsync(IEnumerable<int> reviewIds);
 
         Task AddAsync(AssistantReview review);

@@ -23,6 +23,12 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
     // plan-amortizaciones-bonos, Fase 7: se suma `BondCollection` — un pago de bono ya ocurrido y
     // todavía sin registrar (Title = símbolo, Date = fecha de pago, Amount = estimación total, null
     // si el bono es indexado). Se atiende en Cobros de Bonos, así que no usa LinkId.
+    //
+    // plan-devoluciones-llm, Fase 10: se suman cinco `Kind`.
+    //   CategorySpike / LargeMovement / MissingIncome — alertas por reglas fijas (D8), para todos los usuarios.
+    //     Title = categoría, LinkId = id de la categoría, Detail armado con una plantilla.
+    //   AssistantFinding — un hallazgo del asistente (D8b), solo con el asistente habilitado. FindingId es su id.
+    //   AssistantQualityReviewDue — toca una revisión de calidad del asistente (D9), solo con el asistente habilitado.
     public class DashboardPendingItemDTO
     {
         public string Kind { get; set; } = string.Empty;
@@ -41,5 +47,9 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
         // Id de la tarjeta / evento / persona / viaje, según Kind — para armar el link "Ver X" sin
         // otra consulta.
         public int? LinkId { get; set; }
+
+        // Solo para Kind = AssistantFinding: el id del hallazgo, para descartarlo o calificarlo desde la bandeja
+        // (PUT assistant/findings/{id}) sin entrar a la pantalla del asistente. LinkId, en ese caso, es la categoría.
+        public int? FindingId { get; set; }
     }
 }

@@ -71,6 +71,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // tramo del mes anterior y el promedio de los `comparisonMonths` meses anteriores; el segundo,
         // los egresos individuales más grandes del rango, rankeados por la primera moneda de `assets`.
         Task<IEnumerable<CategoryToDateSpendingResult>> GetSpendingToDateByCategoryAsync(int userId, Asset asset, DateTime month, int cutoffDay, int comparisonMonths);
+        // Ingresos y egresos del usuario desde `from`, en pesos, con las guardas T1/T2 de Ingresos y Egresos. Es la
+        // materia prima de las alertas por reglas (D8); las reglas se calculan en la capa de negocio.
+        Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from);
         Task<IEnumerable<ExpenseMovementResult>> GetLargestExpensesAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive, int take, int? categoryId = null);
 
         // Ingresos (corrección 2026-09-04 sobre la Fase 13). GetIncomeByCategoryMonthlySeriesAsync

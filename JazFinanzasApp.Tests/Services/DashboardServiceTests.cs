@@ -37,6 +37,7 @@ namespace JazFinanzasApp.Tests.Services
         private readonly Mock<IAssetRepository> _assetRepoMock = new();
         private readonly Mock<IAssetQuoteRepository> _assetQuoteRepoMock = new();
         private readonly Mock<IBondCollectionService> _bondCollectionServiceMock = new();
+        private readonly Mock<JazFinanzasApp.API.Business.Assistant.IAssistantAlertService> _assistantAlertsMock = new();
         private readonly DashboardService _sut;
 
         private static readonly Asset PesoAsset = new() { Id = 1, Name = "Peso Argentino", Symbol = "$", AssetTypeId = 1 };
@@ -50,6 +51,9 @@ namespace JazFinanzasApp.Tests.Services
             // Idem para los cobros de bonos pendientes (plan-amortizaciones-bonos, Fase 7).
             _bondCollectionServiceMock.Setup(s => s.GetPendingAsync(It.IsAny<int>())).ReturnsAsync(new List<BondCollectionPendingDTO>());
 
+            // plan-devoluciones-llm, Fase 10: los avisos del asistente tienen sus propios tests; acá no suman nada.
+            _assistantAlertsMock.Setup(a => a.BuildAsync(It.IsAny<int>(), It.IsAny<DateTime>())).ReturnsAsync(new List<DashboardPendingItemDTO>());
+
             _sut = new DashboardService(
                 _netWorthReportServiceMock.Object,
                 _incomeExpenseReportServiceMock.Object,
@@ -60,7 +64,8 @@ namespace JazFinanzasApp.Tests.Services
                 _tripServiceMock.Object,
                 _assetRepoMock.Object,
                 _assetQuoteRepoMock.Object,
-                _bondCollectionServiceMock.Object);
+                _bondCollectionServiceMock.Object,
+                _assistantAlertsMock.Object);
         }
 
         // ── GetCardDueStatus: puerto de card-due-status.util.ts ─────────────────────────────────

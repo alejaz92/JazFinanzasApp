@@ -996,6 +996,41 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result.Where(r => r.CurrentToDate != 0m || r.PreviousToDate != 0m || r.AverageToDate != 0m).ToList();
         }
 
+        public async Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from)
+        {
+            var convert = await BuildCurrencyConverterAsync(pesosAsset);
+
+            var raw = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            (t.MovementType == MOV_EXPENSE || t.MovementType == MOV_INCOME) &&
+                            t.Date >= from &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new
+                {
+                    t.Date,
+                    t.MovementType,
+                    ClassId = t.TransactionClassId!.Value,
+                    ClassName = t.TransactionClass.Description,
+                    t.Detail,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice
+                })
+                .ToListAsync();
+
+            return raw.Select(x => new AlertMovementResult
+            {
+                Date = x.Date,
+                MovementType = x.MovementType,
+                CategoryId = x.ClassId,
+                CategoryName = x.ClassName,
+                Detail = x.Detail,
+                AmountInPesos = Math.Abs(convert(x.AssetId, x.Amount, x.QuotePrice, x.Date))
+            }).ToList();
+        }
+
         // Asistente (plan-devoluciones-llm.md, D2) — los egresos individuales más grandes del rango
         // [from, toExclusive), opcionalmente de una sola categoría, rankeados por la primera moneda de
         // `assets` y con su monto expresado en todas. Mismas guardas T1/T2: una cuota de tarjeta cuenta

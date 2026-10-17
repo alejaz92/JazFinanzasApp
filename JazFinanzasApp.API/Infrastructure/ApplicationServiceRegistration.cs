@@ -102,6 +102,8 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantFindingRepository, AssistantFindingRepository>();
         services.AddScoped<IAssistantFindingService, AssistantFindingService>();
         services.AddScoped<IAssistantReviewService, AssistantReviewService>();
+        services.Configure<AssistantAlertsOptions>(configuration.GetSection(AssistantAlertsOptions.SectionName));
+        services.AddScoped<IAssistantAlertService, AssistantAlertService>();
 
             return services;
         }

@@ -87,6 +87,34 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return await _context.CardTransactions.AnyAsync(c => c.UserId == userId && c.CreatedAt > since);
         }
 
+        public async Task<List<AssistantQualityReview>> GetLastQualityReviewsAsync(int userId, int take)
+        {
+            var rows = await _context.AssistantQualityReviews.AsNoTracking().Where(q => q.UserId == userId).ToListAsync();
+            return rows.OrderByDescending(q => q.ReviewedAt).ThenByDescending(q => q.Id).Take(take).ToList();
+        }
+
+        public async Task<DateTime?> GetFirstReadyReviewTimeAsync(int userId)
+        {
+            var times = await ReadyReviewTimesAsync(userId);
+            return times.Count == 0 ? null : times.Min();
+        }
+
+        public async Task<int> CountReadyReviewsSinceAsync(int userId, DateTime since)
+        {
+            var times = await ReadyReviewTimesAsync(userId);
+            return times.Count(t => t > since);
+        }
+
+        private async Task<List<DateTime>> ReadyReviewTimesAsync(int userId)
+        {
+            return await _context.AssistantReviews
+                .AsNoTracking()
+                .Where(r => r.UserId == userId && r.Purpose == AssistantReviewPurpose.User && r.Status == AssistantReviewStatus.Ready
+                            && r.Kind != AssistantReviewKind.WeeklyScan)
+                .Select(r => r.CreatedAt)
+                .ToListAsync();
+        }
+
         public async Task<Dictionary<int, AssistantFeedback>> GetFeedbackByReviewIdsAsync(IEnumerable<int> reviewIds)
         {
             var ids = reviewIds.ToList();

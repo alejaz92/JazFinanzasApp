@@ -114,6 +114,18 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public Dictionary<int, decimal> AmountByAssetId { get; set; } = new();
     }
 
+    // Un movimiento de ingreso o egreso con su monto ya expresado en pesos, para las alertas por reglas
+    // (plan-devoluciones-llm.md, D8). Monto positivo; MovementType es "I" o "E".
+    public class AlertMovementResult
+    {
+        public DateTime Date { get; set; }
+        public string MovementType { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public string? Detail { get; set; }
+        public decimal AmountInPesos { get; set; }
+    }
+
     public class IncomeCategoryDayResult
     {
         public int CategoryId { get; set; }
