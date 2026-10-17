@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using JazFinanzasApp.API.Business.Assistant;
 using JazFinanzasApp.API.Business.Assistant.Sources;
 using JazFinanzasApp.API.Business.Interfaces;
@@ -90,6 +91,13 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantContextSource, TripsContextSource>();
         services.AddScoped<IAssistantContextSource, AlertsContextSource>();
         services.AddScoped<AssistantContextBuilder>();
+        // Cliente del modelo y registro de gasto (plan-devoluciones-llm.md, D4 y D11). El cliente es singleton
+        // porque guarda el cliente HTTP del SDK; crea la conexión recién en el primer uso, así que sin clave
+        // el backend levanta igual.
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IAssistantModelClient, AnthropicAssistantModelClient>();
+        services.AddScoped<IAssistantUsageRepository, AssistantUsageRepository>();
+        services.AddScoped<IAssistantUsageService, AssistantUsageService>();
 
             return services;
         }

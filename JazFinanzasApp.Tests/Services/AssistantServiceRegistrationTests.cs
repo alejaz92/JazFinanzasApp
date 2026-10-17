@@ -18,6 +18,7 @@ namespace JazFinanzasApp.Tests.Services
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings ?? new Dictionary<string, string?>()).Build();
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddSingleton<IConfiguration>(configuration); // el host real ya lo registra
             services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase(Guid.NewGuid().ToString()));
             services.AddApplicationServices(configuration);
             return services.BuildServiceProvider();
@@ -41,6 +42,18 @@ namespace JazFinanzasApp.Tests.Services
                 InvestmentsContextSource.SourceKey,
                 TripsContextSource.SourceKey,
                 AlertsContextSource.SourceKey);
+        }
+
+        [Fact]
+        public void TheModelClientAndTheUsageServiceResolveWithoutAnApiKey()
+        {
+            // Sin Anthropic:ApiKey el backend tiene que levantar igual (Fase 14): el cliente del SDK se crea
+            // recién en la primera llamada. No se hace ninguna llamada acá.
+            using var provider = BuildProvider();
+            using var scope = provider.CreateScope();
+
+            scope.ServiceProvider.GetRequiredService<IAssistantModelClient>().Should().BeOfType<AnthropicAssistantModelClient>();
+            scope.ServiceProvider.GetRequiredService<IAssistantUsageService>().Should().NotBeNull();
         }
 
         [Fact]
