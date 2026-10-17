@@ -54,6 +54,7 @@ namespace JazFinanzasApp.Tests.Services
 
             scope.ServiceProvider.GetRequiredService<IAssistantModelClient>().Should().BeOfType<AnthropicAssistantModelClient>();
             scope.ServiceProvider.GetRequiredService<IAssistantUsageService>().Should().NotBeNull();
+            scope.ServiceProvider.GetRequiredService<IAssistantReviewService>().Should().NotBeNull();
         }
 
         [Fact]

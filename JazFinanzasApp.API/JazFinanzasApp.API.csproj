@@ -21,6 +21,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Instrucciones del asistente, versionadas por archivo (plan-devoluciones-llm.md, D5). -->
+    <EmbeddedResource Include="Business\Assistant\Prompts\*.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Folder Include="Business\Interfaces\" />
     <Folder Include="Business\Services\" />
   </ItemGroup>
