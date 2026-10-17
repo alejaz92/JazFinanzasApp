@@ -5,6 +5,7 @@ using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Middleware;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Infrastructure.Repositories;
+using JazFinanzasApp.API.Business.Assistant;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -94,6 +95,7 @@ builder.Services.AddScoped<IInvestmentReportService, InvestmentReportService>();
 builder.Services.AddScoped<ITripReportService, TripReportService>();
 builder.Services.AddScoped<ISharedEventReportService, SharedEventReportService>();
 builder.Services.AddScoped<IReportFavoriteService, ReportFavoriteService>();
+builder.Services.Configure<AssistantOptions>(builder.Configuration.GetSection(AssistantOptions.SectionName));
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()

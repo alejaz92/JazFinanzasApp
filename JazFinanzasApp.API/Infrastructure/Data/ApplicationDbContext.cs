@@ -51,6 +51,12 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<TransactionTag> TransactionTags { get; set; }
         public DbSet<CardTransactionTag> CardTransactionTags { get; set; }
         public DbSet<ReportFavorite> ReportFavorites { get; set; }
+        public DbSet<AssistantUserSettings> AssistantUserSettings { get; set; }
+        public DbSet<AssistantReview> AssistantReviews { get; set; }
+        public DbSet<AssistantApiCall> AssistantApiCalls { get; set; }
+        public DbSet<AssistantFeedback> AssistantFeedbacks { get; set; }
+        public DbSet<AssistantFinding> AssistantFindings { get; set; }
+        public DbSet<AssistantQualityReview> AssistantQualityReviews { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -183,6 +189,95 @@ namespace JazFinanzasApp.API.Infrastructure.Data
                 .WithMany() // Si no hay colección en User
                 .HasForeignKey(t => t.UserId)
                 .OnDelete(DeleteBehavior.NoAction); // Evita ciclos de eliminación
+            // Asistente (devoluciones con LLM) — plan-devoluciones-llm.md, Etapa 2. Todo cuelga del usuario
+            // con NoAction para no multiplicar cascade paths en SQL Server (mismo criterio que
+            // BondCollection); solo feedback y hallazgos caen en cascada con la pasada que los generó.
+            modelBuilder.Entity<AssistantUserSettings>()
+                .HasOne(a => a.User)
+                .WithMany()
+                .HasForeignKey(a => a.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<AssistantUserSettings>()
+                .HasIndex(a => a.UserId)
+                .IsUnique();
+
+            modelBuilder.Entity<AssistantReview>()
+                .HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // Dos pestañas abiertas no pueden generar dos veces la misma pasada: solo una Pending por
+            // usuario, tipo y período.
+            modelBuilder.Entity<AssistantReview>()
+                .HasIndex(r => new { r.UserId, r.Kind, r.PeriodStart })
+                .IsUnique()
+                .HasFilter("[Status] = 'Pending'")
+                .HasDatabaseName("IX_AssistantReviews_UserId_Kind_PeriodStart_Pending");
+
+            modelBuilder.Entity<AssistantReview>()
+                .HasIndex(r => new { r.UserId, r.Purpose, r.Kind, r.PeriodStart });
+
+            modelBuilder.Entity<AssistantApiCall>()
+                .HasOne(c => c.User)
+                .WithMany()
+                .HasForeignKey(c => c.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<AssistantApiCall>()
+                .HasOne(c => c.Review)
+                .WithMany()
+                .HasForeignKey(c => c.ReviewId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            // El tope mensual suma CostUsd del mes de un usuario.
+            modelBuilder.Entity<AssistantApiCall>()
+                .HasIndex(c => new { c.UserId, c.CreatedAt });
+
+            modelBuilder.Entity<AssistantFeedback>()
+                .HasOne(f => f.Review)
+                .WithMany()
+                .HasForeignKey(f => f.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<AssistantFeedback>()
+                .HasIndex(f => f.ReviewId)
+                .IsUnique();
+
+            modelBuilder.Entity<AssistantFinding>()
+                .HasOne(f => f.Review)
+                .WithMany()
+                .HasForeignKey(f => f.ReviewId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<AssistantFinding>()
+                .HasOne(f => f.User)
+                .WithMany()
+                .HasForeignKey(f => f.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<AssistantFinding>()
+                .HasOne(f => f.TransactionClass)
+                .WithMany()
+                .HasForeignKey(f => f.TransactionClassId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<AssistantFinding>()
+                .HasIndex(f => new { f.UserId, f.Status });
+
+            modelBuilder.Entity<AssistantFinding>()
+                .HasIndex(f => new { f.UserId, f.Fingerprint });
+
+            modelBuilder.Entity<AssistantQualityReview>()
+                .HasOne(q => q.User)
+                .WithMany()
+                .HasForeignKey(q => q.UserId)
+                .OnDelete(DeleteBehavior.NoAction);
+
+            modelBuilder.Entity<AssistantQualityReview>()
+                .HasIndex(q => new { q.UserId, q.ReviewedAt });
+
             modelBuilder.Entity<ReportFavorite>()
                 .HasOne(f => f.User)
                 .WithMany() // Si no hay colección en User
