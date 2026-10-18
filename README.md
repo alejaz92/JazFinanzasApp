@@ -1,6 +1,6 @@
 # JazFinanzasApp.Backend
 
-API REST de JazFinanzasApp — finanzas personales e inversiones. Maneja autenticación, cuentas, tarjetas de crédito, transacciones, inversiones (acciones, criptomonedas, bonos con cronograma y cobros de amortización e interés, portfolios) y gastos compartidos.
+API REST de JazFinanzasApp — finanzas personales e inversiones. Maneja autenticación, cuentas, tarjetas de crédito, transacciones, inversiones (acciones, criptomonedas, bonos con cronograma y cobros de amortización e interés, portfolios), gastos compartidos y un asistente con IA que cuenta en castellano cómo vino el mes.
 
 ---
 
@@ -96,8 +96,19 @@ Detalle de estructura de carpetas y convenciones de implementación en [CLAUDE.m
 | `Jwt:Key` | Clave secreta para firmar tokens JWT (mín. 32 chars) | `appsettings.json` / Azure App Settings |
 | `Jwt:Issuer` | URL del emisor del token | `appsettings.json` |
 | `Jwt:Audience` | URL del receptor del token | `appsettings.json` |
+| `Anthropic:ApiKey` | Clave de la API de Anthropic para el asistente (`Anthropic__ApiKey` en Azure). Si falta, el backend levanta igual y el asistente responde que no está configurado. **Nunca en el repo ni en `appsettings*.json`.** | Azure App Settings / variable de entorno local |
+| `Assistant:Model`, `Assistant:MaxTokens`, `Assistant:Prices` | Modelo, techo de tokens de salida y precios por millón de tokens (alimentan el costo y el tope mensual) | `appsettings.json` |
+| `AssistantAlerts:*` | Umbrales de las alertas por reglas de la bandeja de Inicio (categoría que se dispara, egreso grande, ingreso que no llegó) | `appsettings.json` |
 
 > **Importante:** Nunca subir credenciales reales al repositorio. Usar variables de entorno o Azure Key Vault en producción.
+
+### Asistente (devoluciones con IA)
+
+Lee los números que los reportes ya calculan y los cuenta en castellano; **no calcula ni carga nada**. Vive en `Business/Assistant/`: fuentes de contexto (una por área de la app), cliente del modelo detrás de una interfaz, instrucciones versionadas como archivos `.md`, control de cifras y registro de gasto con tope mensual. Es por usuario: solo lo ve quien tiene una fila habilitada en `AssistantUserSettings`.
+
+- **Endpoints** (`AssistantController`): `status`, `reviews` (historial, última, detalle, generar, calificar, `preview` solo `Admin`) y `findings`.
+- **Alertas por reglas** en la bandeja de pendientes (`CategorySpike`, `LargeMovement`, `MissingIncome`): para todos los usuarios y sin costo.
+- **Operación:** cuenta, claves y topes en `docs/plans/guias/servicio-anthropic.md`; revisión de calidad en `docs/plans/guias/revision-asistente.md`. Los tests nunca llaman a la API real; hay tests manuales (`Tests/Manual/`) que sí lo hacen y solo corren si se los pide.
 
 ---
 
