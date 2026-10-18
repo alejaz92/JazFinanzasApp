@@ -1,3 +1,4 @@
+using JazFinanzasApp.API.Business.Assistant;
 using JazFinanzasApp.API.Business.DTO.BondCollection;
 using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
@@ -39,6 +40,7 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly IAssetRepository _assetRepository;
         private readonly IAssetQuoteRepository _assetQuoteRepository;
         private readonly IBondCollectionService _bondCollectionService;
+        private readonly IAssistantAlertService _assistantAlerts;
 
         public DashboardService(
             INetWorthReportService netWorthReportService,
@@ -50,7 +52,8 @@ namespace JazFinanzasApp.API.Business.Services
             ITripService tripService,
             IAssetRepository assetRepository,
             IAssetQuoteRepository assetQuoteRepository,
-            IBondCollectionService bondCollectionService)
+            IBondCollectionService bondCollectionService,
+            IAssistantAlertService assistantAlerts)
         {
             _netWorthReportService = netWorthReportService;
             _incomeExpenseReportService = incomeExpenseReportService;
@@ -62,6 +65,7 @@ namespace JazFinanzasApp.API.Business.Services
             _assetRepository = assetRepository;
             _assetQuoteRepository = assetQuoteRepository;
             _bondCollectionService = bondCollectionService;
+            _assistantAlerts = assistantAlerts;
         }
 
         public async Task<DashboardDTO> GetDashboardAsync(int userId, int assetId)
@@ -215,6 +219,11 @@ namespace JazFinanzasApp.API.Business.Services
             // repositorio de transacciones.
             var latestQuoteDateByAssetType = await _assetQuoteRepository.GetLatestQuoteDateByAssetTypeAsync();
             pending.AddRange(BuildStaleQuotePendingItems(netWorthGeneral.StaleAssets, latestQuoteDateByAssetType, today));
+
+            // plan-devoluciones-llm, Fase 10: alertas por reglas (D8), hallazgos del asistente (D8b) y aviso de
+            // revisión de calidad (D9). Al final, para no mover el orden de los avisos que ya existían. El servicio
+            // no lanza: si algo de esto falla, Inicio sigue mostrando lo demás.
+            pending.AddRange(await _assistantAlerts.BuildAsync(userId, today));
 
             return pending;
         }

@@ -87,6 +87,45 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
     // Una fila por (categoría, día) con ingreso real — dato crudo sin agregar, para que el
     // frontend arme las 3 variantes de "días de cobro" en comparación (tabla/timeline/calendario
     // por categoría) sin pedir un endpoint distinto por cada una.
+    // Gasto de una categoría en el tramo "del 1 al día N" del mes pedido, contra el mismo tramo del
+    // mes anterior y el promedio del mismo tramo en los meses anteriores (plan-devoluciones-llm.md, D2).
+    // Los meses sin gasto cuentan como cero en el promedio.
+    public class CategoryToDateSpendingResult
+    {
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public int? ParentId { get; set; }
+        public string? ParentName { get; set; }
+        public decimal CurrentToDate { get; set; }
+        public decimal PreviousToDate { get; set; }
+        public decimal AverageToDate { get; set; }
+    }
+
+    // Un egreso individual, con su monto expresado en cada una de las monedas pedidas.
+    public class ExpenseMovementResult
+    {
+        public int TransactionId { get; set; }
+        public DateTime Date { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public string? Detail { get; set; }
+
+        // Monto positivo, por assetId de la moneda pedida.
+        public Dictionary<int, decimal> AmountByAssetId { get; set; } = new();
+    }
+
+    // Un movimiento de ingreso o egreso con su monto ya expresado en pesos, para las alertas por reglas
+    // (plan-devoluciones-llm.md, D8). Monto positivo; MovementType es "I" o "E".
+    public class AlertMovementResult
+    {
+        public DateTime Date { get; set; }
+        public string MovementType { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public string? Detail { get; set; }
+        public decimal AmountInPesos { get; set; }
+    }
+
     public class IncomeCategoryDayResult
     {
         public int CategoryId { get; set; }

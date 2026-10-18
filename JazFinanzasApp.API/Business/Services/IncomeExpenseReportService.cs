@@ -17,6 +17,9 @@ namespace JazFinanzasApp.API.Business.Services
         private const int DefaultTagMonths = 6;
         private const int DefaultIncomeDayMonths = 12;
 
+        // Cuántos meses anteriores promedia el gasto "a la misma altura del mes" (asistente, D2).
+        public const int ToDateComparisonMonths = 6;
+
         private readonly ITransactionRepository _transactionRepository;
         private readonly IAssetRepository _assetRepository;
 
@@ -78,6 +81,21 @@ namespace JazFinanzasApp.API.Business.Services
             var asset = await GetCurrencyAssetAsync(assetId);
             var days = (await _transactionRepository.GetDailySpendingAsync(userId, asset, year)).ToList();
             return BuildCalendarDTO(year, days);
+        }
+
+        // Asistente (plan-devoluciones-llm.md, D2). El corte "a la misma altura del mes" por categoría es
+        // cálculo de la app y no del asistente: el termómetro de Inicio solo lo hace para el total.
+        public async Task<SpendingToDateDTO> GetSpendingToDateByCategoryAsync(int userId, int assetId, DateTime month, int cutoffDay)
+        {
+            if (cutoffDay < 1)
+                throw new BusinessRuleException("El día de corte debe ser 1 o mayor");
+
+            var asset = await GetCurrencyAssetAsync(assetId);
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var effectiveCutoffDay = Math.Min(cutoffDay, DateTime.DaysInMonth(monthStart.Year, monthStart.Month));
+
+            var rows = (await _transactionRepository.GetSpendingToDateByCategoryAsync(userId, asset, monthStart, effectiveCutoffDay, ToDateComparisonMonths)).ToList();
+            return BuildSpendingToDateDTO(monthStart, effectiveCutoffDay, ToDateComparisonMonths, rows);
         }
 
         // Ingresos (corrección 2026-09-04 sobre la Fase 13) — la principal: composición de UN mes
@@ -198,6 +216,34 @@ namespace JazFinanzasApp.API.Business.Services
                 .ToList();
 
             return dto;
+        }
+
+        // Pura — testeable sin mocks. Los totales son la suma de las categorías, ordenadas de mayor a
+        // menor gasto del tramo.
+        public static SpendingToDateDTO BuildSpendingToDateDTO(DateTime monthStart, int cutoffDay, int comparisonMonths, List<CategoryToDateSpendingResult> rows)
+        {
+            return new SpendingToDateDTO
+            {
+                Month = monthStart,
+                CutoffDay = cutoffDay,
+                ComparisonMonths = comparisonMonths,
+                TotalCurrent = Math.Round(rows.Sum(r => r.CurrentToDate), 2),
+                TotalPrevious = Math.Round(rows.Sum(r => r.PreviousToDate), 2),
+                TotalAverage = Math.Round(rows.Sum(r => r.AverageToDate), 2),
+                Categories = rows
+                    .Select(r => new SpendingToDateCategoryDTO
+                    {
+                        CategoryId = r.CategoryId,
+                        CategoryName = r.CategoryName,
+                        ParentName = r.ParentName,
+                        CurrentToDate = r.CurrentToDate,
+                        PreviousToDate = r.PreviousToDate,
+                        AverageToDate = r.AverageToDate
+                    })
+                    .OrderByDescending(c => c.CurrentToDate)
+                    .ThenBy(c => c.CategoryName)
+                    .ToList()
+            };
         }
 
         // Pura — testeable sin mocks. El promedio por día de semana divide por la cantidad de veces

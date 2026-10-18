@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Middleware;
+using JazFinanzasApp.API.Infrastructure;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Infrastructure.Repositories;
 using JazFinanzasApp.API.Business.Interfaces;
@@ -31,69 +32,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         sqlOptions => sqlOptions.CommandTimeout(120));
 });
 
-// Registrar los repositorios
-builder.Services.AddScoped<IUserRepository, UserRepository>();
-builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
-builder.Services.AddScoped<ITransactionClassRepository, TransactionClassRepository>();
-builder.Services.AddScoped<IAssetRepository, AssetRepository>();
-builder.Services.AddScoped<IAccountRepository, AccountRepository>();
-builder.Services.AddScoped<ICardRepository, CardRepository>();
-builder.Services.AddScoped<IAccount_AssetTypeRepository, Account_AssetTypeRepository>();
-builder.Services.AddScoped<IAssetTypeRepository, AssetTypeRepository>();
-builder.Services.AddScoped<IAsset_UserRepository, Asset_UserRepository>();
-builder.Services.AddScoped<ITransactionRepository, TransactionRepository>();
-builder.Services.AddScoped<IAssetQuoteRepository, AssetQuoteRepository>();
-builder.Services.AddScoped<ICardTransactionRepository, CardTransactionRepository>();
-builder.Services.AddScoped<ICardPaymentRepository, CardPaymentRepository>();
-builder.Services.AddScoped<IInvestmentTransactionRepository, InvestmentTransactionRepository>();
-builder.Services.AddScoped<IPortfolioRepository, PortfolioRepository>();
-builder.Services.AddScoped<IAssetSplitEventRepository, AssetSplitEventRepository>();
-builder.Services.AddScoped<IBondPaymentRepository, BondPaymentRepository>();
-builder.Services.AddScoped<IBondCollectionRepository, BondCollectionRepository>();
-builder.Services.AddScoped<IPersonRepository, PersonRepository>();
-builder.Services.AddScoped<ISharedExpenseRepository, SharedExpenseRepository>();
-builder.Services.AddScoped<ICardTransactionDiscountRepository, CardTransactionDiscountRepository>();
-builder.Services.AddScoped<ITripRepository, TripRepository>();
-builder.Services.AddScoped<ITripSuggestionDismissalRepository, TripSuggestionDismissalRepository>();
-builder.Services.AddScoped<ISharedEventRepository, SharedEventRepository>();
-builder.Services.AddScoped<ISharedEventMovementRepository, SharedEventMovementRepository>();
-builder.Services.AddScoped<ISharedEventPaymentRepository, SharedEventPaymentRepository>();
-builder.Services.AddScoped<ITagRepository, TagRepository>();
-builder.Services.AddScoped<IReportFavoriteRepository, ReportFavoriteRepository>();
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-
-// Registrar los servicios
-builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<ITransactionService, TransactionService>();
-builder.Services.AddScoped<IInvestmentTransactionService, InvestmentTransactionService>();
-builder.Services.AddScoped<IFiatCurrencyExchangeService, FiatCurrencyExchangeService>();
-builder.Services.AddScoped<ICardTransactionService, CardTransactionService>();
-builder.Services.AddScoped<IReportService, ReportService>();
-builder.Services.AddScoped<IAccountService, AccountService>();
-builder.Services.AddScoped<IAssetService, AssetService>();
-builder.Services.AddScoped<IPortfolioService, PortfolioService>();
-builder.Services.AddScoped<IUserService, UserService>();
-builder.Services.AddScoped<ITransactionClassService, TransactionClassService>();
-builder.Services.AddScoped<ICardService, CardService>();
-builder.Services.AddScoped<IAssetSplitEventService, AssetSplitEventService>();
-builder.Services.AddScoped<IBondCollectionService, BondCollectionService>();
-builder.Services.AddScoped<IPersonService, PersonService>();
-builder.Services.AddScoped<IQuotePriceResolver, QuotePriceResolver>();
-builder.Services.AddScoped<ISharedExpenseService, SharedExpenseService>();
-builder.Services.AddScoped<ICardTransactionDiscountService, CardTransactionDiscountService>();
-builder.Services.AddScoped<ITripService, TripService>();
-builder.Services.AddScoped<ISharedEventService, SharedEventService>();
-builder.Services.AddScoped<ISharedEventPaymentService, SharedEventPaymentService>();
-builder.Services.AddScoped<ISharedEventImportService, SharedEventImportService>();
-builder.Services.AddScoped<ITagService, TagService>();
-builder.Services.AddScoped<INetWorthReportService, NetWorthReportService>();
-builder.Services.AddScoped<IIncomeExpenseReportService, IncomeExpenseReportService>();
-builder.Services.AddScoped<ICardReportService, CardReportService>();
-builder.Services.AddScoped<IDashboardService, DashboardService>();
-builder.Services.AddScoped<IInvestmentReportService, InvestmentReportService>();
-builder.Services.AddScoped<ITripReportService, TripReportService>();
-builder.Services.AddScoped<ISharedEventReportService, SharedEventReportService>();
-builder.Services.AddScoped<IReportFavoriteService, ReportFavoriteService>();
+// Registrar los repositorios y los servicios (ver Infrastructure/ApplicationServiceRegistration.cs)
+builder.Services.AddApplicationServices(builder.Configuration);
 
 builder.Services.AddIdentityCore<User>()
     .AddRoles<IdentityRole<int>>()
