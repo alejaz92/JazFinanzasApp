@@ -116,7 +116,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             var from = new DateTime(today.Year, today.Month, 1).AddMonths(-_options.RequiredHistoryMonths);
             var movements = (await _transactionRepository.GetAlertMovementsAsync(userId, pesos, from)).ToList();
-            return AssistantAlertRules.Evaluate(movements, today, pesos.Symbol, _options);
+            return AssistantAlertRules.Evaluate(movements, today, _options);
         }
 
         // D8b: título y detalle son los del hallazgo; el link es la categoría, si la tiene. Desde la bandeja se puede
@@ -153,7 +153,8 @@ namespace JazFinanzasApp.API.Business.Assistant
                 Kind = QualityReviewDueKind,
                 Title = "Revisión de calidad del asistente",
                 Detail = $"Pasaron {result.DaysSince} días desde la última revisión y hay {result.NewReviews} " +
-                         (result.NewReviews == 1 ? "devolución nueva." : "devoluciones nuevas."),
+                         (result.NewReviews == 1 ? "devolución nueva. " : "devoluciones nuevas. ") +
+                         "Es una revisión que se hace en una sesión de trabajo con Claude, no la hace la app sola.",
                 Severity = "info"
             };
         }

@@ -52,18 +52,18 @@ namespace JazFinanzasApp.API.Business.Assistant
         // Todas las reglas, con el aviso de una categoría que ya tiene un egreso grande mostrado una sola vez:
         // si saltan los dos por la misma categoría, queda el del movimiento puntual, que es el más específico.
         public static List<DashboardPendingItemDTO> Evaluate(
-            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, string pesosSymbol, AssistantAlertsOptions options)
+            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, AssistantAlertsOptions options)
         {
-            var large = LargeMovements(movements, today, pesosSymbol, options);
+            var large = LargeMovements(movements, today, options);
             var largeCategories = large.Where(l => l.LinkId.HasValue).Select(l => l.LinkId!.Value).ToHashSet();
-            var spikes = CategorySpikes(movements, today, pesosSymbol, options)
+            var spikes = CategorySpikes(movements, today, options)
                 .Where(s => !(s.LinkId.HasValue && largeCategories.Contains(s.LinkId.Value)));
             var missing = MissingIncome(movements, today, options);
             return spikes.Concat(large).Concat(missing).ToList();
         }
 
         public static List<DashboardPendingItemDTO> CategorySpikes(
-            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, string pesosSymbol, AssistantAlertsOptions options)
+            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, AssistantAlertsOptions options)
         {
             var result = new List<DashboardPendingItemDTO>();
             var monthStart = new DateTime(today.Year, today.Month, 1);
@@ -84,9 +84,8 @@ namespace JazFinanzasApp.API.Business.Assistant
                     {
                         Kind = CategorySpikeKind,
                         Title = group.First().CategoryName,
-                        Detail = $"Llevás {Money(current)} este mes; tu promedio mensual de los últimos {history} meses es {Money(average)}.",
+                        Detail = $"Va por encima de su promedio mensual de los últimos {history} meses ({Money(average)}).",
                         Amount = Math.Round(current, 0),
-                        AssetSymbol = pesosSymbol,
                         Severity = "warning",
                         LinkId = group.Key
                     });
@@ -96,7 +95,7 @@ namespace JazFinanzasApp.API.Business.Assistant
         }
 
         public static List<DashboardPendingItemDTO> LargeMovements(
-            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, string pesosSymbol, AssistantAlertsOptions options)
+            IReadOnlyCollection<AlertMovementResult> movements, DateTime today, AssistantAlertsOptions options)
         {
             var result = new List<DashboardPendingItemDTO>();
             var recentFrom = today.Date.AddDays(-(options.LargeRecentDays - 1));
@@ -118,9 +117,8 @@ namespace JazFinanzasApp.API.Business.Assistant
                         {
                             Kind = LargeMovementKind,
                             Title = group.First().CategoryName,
-                            Detail = $"{what}: {Money(movement.AmountInPesos)}, el mayor de la categoría en {options.LargeLookbackMonths} meses (el anterior fue de {Money(largestBefore)}).",
+                            Detail = $"{what}: el mayor de la categoría en {options.LargeLookbackMonths} meses (el anterior fue de {Money(largestBefore)}).",
                             Amount = Math.Round(movement.AmountInPesos, 0),
-                            AssetSymbol = pesosSymbol,
                             Date = movement.Date,
                             Severity = "warning",
                             LinkId = group.Key

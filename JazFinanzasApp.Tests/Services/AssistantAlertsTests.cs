@@ -58,16 +58,16 @@ namespace JazFinanzasApp.Tests.Services
             var movements = SixMonthsOf(1, "Movilidad", 100_000m);
             movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 200_001m));
 
-            var alerts = AssistantAlertRules.CategorySpikes(movements, Today, "$", Options);
+            var alerts = AssistantAlertRules.CategorySpikes(movements, Today, Options);
 
             var alert = alerts.Should().ContainSingle().Subject;
             alert.Kind.Should().Be("CategorySpike");
             alert.Title.Should().Be("Movilidad");
             alert.LinkId.Should().Be(1);
             alert.Severity.Should().Be("warning");
-            alert.AssetSymbol.Should().Be("$");
+            alert.AssetSymbol.Should().BeNull(); // el monto sale en Amount, con el formato de la bandeja
             alert.Amount.Should().Be(200_001m);
-            alert.Detail.Should().Contain("$200.001").And.Contain("$100.000").And.Contain("6 meses");
+            alert.Detail.Should().Contain("$100.000").And.Contain("6 meses").And.NotContain("$200.001"); // el monto sale en Amount
         }
 
         [Fact]
@@ -77,7 +77,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = SixMonthsOf(1, "Movilidad", 100_000m);
             movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 200_000m));
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -86,7 +86,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = SixMonthsOf(1, "Ocio", 10_000m);
             movements.Add(Exp(1, "Ocio", new DateTime(2026, 10, 3), 149_999m)); // 15 veces el promedio, bajo el mínimo
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -94,7 +94,7 @@ namespace JazFinanzasApp.Tests.Services
         {
             var movements = new List<AlertMovementResult> { Exp(1, "Nueva", new DateTime(2026, 10, 3), 900_000m) };
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -105,10 +105,10 @@ namespace JazFinanzasApp.Tests.Services
             movements.Add(Exp(1, "Delivery", Today, 60_000m));                      // hoy cuenta: 130.000 en total, no llega al mínimo
             movements.Add(Exp(1, "Delivery", Today.AddDays(1), 500_000m));          // mañana no existe todavía
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
 
             movements.Add(Exp(1, "Delivery", new DateTime(2026, 10, 12), 30_000m)); // ahora 160.000 > 120.000 y >= 150.000
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().ContainSingle();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().ContainSingle();
         }
 
         [Fact]
@@ -119,7 +119,7 @@ namespace JazFinanzasApp.Tests.Services
             movements.AddRange(SixMonthsOf(2, "Otra", 100_000m));
             movements.Add(Exp(2, "Otra", new DateTime(2026, 10, 10), 120_000m));
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -130,7 +130,7 @@ namespace JazFinanzasApp.Tests.Services
             movements.Add(Exp(1, "A", new DateTime(2026, 10, 2), 200_000m));
             movements.Add(Exp(2, "B", new DateTime(2026, 10, 2), 400_000m));
 
-            AssistantAlertRules.CategorySpikes(movements, Today, "$", Options).Select(a => a.Title).Should().Equal("B", "A");
+            AssistantAlertRules.CategorySpikes(movements, Today, Options).Select(a => a.Title).Should().Equal("B", "A");
         }
 
         // ── LargeMovement ──────────────────────────────────────────────────────────────────────
@@ -144,14 +144,14 @@ namespace JazFinanzasApp.Tests.Services
             var movements = History(1, "Viajes", 40_000m, 100_000m, 160_000m);
             movements.Add(Exp(1, "Viajes", new DateTime(2026, 10, 15), 200_001m, "Pasajes"));
 
-            var alert = AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().ContainSingle().Subject;
+            var alert = AssistantAlertRules.LargeMovements(movements, Today, Options).Should().ContainSingle().Subject;
 
             alert.Kind.Should().Be("LargeMovement");
             alert.Title.Should().Be("Viajes");
             alert.LinkId.Should().Be(1);
             alert.Date.Should().Be(new DateTime(2026, 10, 15));
             alert.Amount.Should().Be(200_001m);
-            alert.Detail.Should().Contain("Pasajes").And.Contain("$200.001").And.Contain("$160.000");
+            alert.Detail.Should().Contain("Pasajes").And.Contain("$160.000").And.NotContain("$200.001"); // el monto sale en Amount
         }
 
         [Fact]
@@ -160,7 +160,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = History(1, "Viajes", 40_000m, 100_000m, 160_000m);
             movements.Add(Exp(1, "Viajes", new DateTime(2026, 10, 15), 200_000m)); // 1,25 x 160.000, justo en el límite
 
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -169,7 +169,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = History(1, "Café", 5_000m, 6_000m, 7_000m);
             movements.Add(Exp(1, "Café", new DateTime(2026, 10, 15), 150_000m)); // 21 veces el mayor, pero bajo el mínimo
 
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -178,7 +178,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = History(1, "Viajes", 10_000m, 20_000m); // solo dos previos
             movements.Add(Exp(1, "Viajes", new DateTime(2026, 10, 15), 900_000m));
 
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -186,11 +186,11 @@ namespace JazFinanzasApp.Tests.Services
         {
             var movements = History(1, "Viajes", 40_000m, 100_000m, 160_000m);
             movements.Add(Exp(1, "Viajes", Today.AddDays(-6), 400_000m)); // hace 6 días: el límite, entra
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().ContainSingle();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().ContainSingle();
 
             var older = History(1, "Viajes", 40_000m, 100_000m, 160_000m);
             older.Add(Exp(1, "Viajes", Today.AddDays(-7), 400_000m)); // hace 7 días: ya no
-            AssistantAlertRules.LargeMovements(older, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.LargeMovements(older, Today, Options).Should().BeEmpty();
         }
 
         [Fact]
@@ -206,11 +206,11 @@ namespace JazFinanzasApp.Tests.Services
             }
             movements.Add(Exp(1, "Impuestos y Servicios", new DateTime(2026, 10, 14), 520_000m, "Alquiler"));
 
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().BeEmpty();
 
             // Un alquiler que sube por encima del factor sí avisa.
             movements.Add(Exp(1, "Impuestos y Servicios", new DateTime(2026, 10, 15), 700_000m, "Alquiler nuevo"));
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().ContainSingle()
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().ContainSingle()
                 .Which.Detail.Should().Contain("Alquiler nuevo");
         }
 
@@ -226,7 +226,7 @@ namespace JazFinanzasApp.Tests.Services
                 Exp(1, "Viajes", new DateTime(2026, 10, 15), 300_000m)
             };
 
-            AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Should().ContainSingle();
+            AssistantAlertRules.LargeMovements(movements, Today, Options).Should().ContainSingle();
         }
 
         [Fact]
@@ -235,7 +235,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = History(1, "Viajes", 40_000m, 100_000m, 160_000m);
             movements.Add(Exp(1, "Viajes", new DateTime(2026, 10, 15), 400_000m, new string('x', 200)));
 
-            var alert = AssistantAlertRules.LargeMovements(movements, Today, "$", Options).Single();
+            var alert = AssistantAlertRules.LargeMovements(movements, Today, Options).Single();
             alert.Detail!.Length.Should().BeLessThan(200);
         }
 
@@ -329,7 +329,7 @@ namespace JazFinanzasApp.Tests.Services
             var movements = SixMonthsOf(1, "Gym y Deportes", 70_000m);
             movements.Add(Exp(1, "Gym y Deportes", new DateTime(2026, 10, 14), 632_323m, "Alquiler"));
 
-            var alerts = AssistantAlertRules.Evaluate(movements, Today, "$", Options);
+            var alerts = AssistantAlertRules.Evaluate(movements, Today, Options);
 
             alerts.Should().ContainSingle().Which.Kind.Should().Be("LargeMovement");
         }
@@ -343,14 +343,14 @@ namespace JazFinanzasApp.Tests.Services
             movements.Add(Exp(2, "Delivery", new DateTime(2026, 10, 9), 160_000m)); // pico sin un solo egreso grande
             movements.AddRange(IncomeOn(10, 1, 2, 3, 4, 5, 6));
 
-            AssistantAlertRules.Evaluate(movements, Today, "$", Options).Select(a => a.Kind)
+            AssistantAlertRules.Evaluate(movements, Today, Options).Select(a => a.Kind)
                 .Should().BeEquivalentTo("CategorySpike", "LargeMovement", "MissingIncome");
         }
 
         [Fact]
         public void Evaluate_WithoutMovementsReturnsNothing()
         {
-            AssistantAlertRules.Evaluate(new List<AlertMovementResult>(), Today, "$", Options).Should().BeEmpty();
+            AssistantAlertRules.Evaluate(new List<AlertMovementResult>(), Today, Options).Should().BeEmpty();
         }
     }
 
@@ -530,7 +530,7 @@ namespace JazFinanzasApp.Tests.Services
             var notice = items.Should().ContainSingle().Subject;
             notice.Kind.Should().Be("AssistantQualityReviewDue");
             notice.Severity.Should().Be("info");
-            notice.Detail.Should().Contain("41 días").And.Contain("2 devoluciones nuevas");
+            notice.Detail.Should().Contain("41 días").And.Contain("2 devoluciones nuevas").And.Contain("sesión de trabajo con Claude");
         }
 
         [Fact]

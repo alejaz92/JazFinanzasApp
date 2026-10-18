@@ -62,11 +62,11 @@ namespace JazFinanzasApp.Tests.Manual
             var pesos = await assets.GetAssetByNameAsync("Peso Argentino");
             var from = new DateTime(day.Year, day.Month, 1).AddMonths(-options.RequiredHistoryMonths);
             var movements = (await transactions.GetAlertMovementsAsync(userId, pesos, from)).ToList();
-            var direct = AssistantAlertRules.Evaluate(movements, day, pesos.Symbol, options);
+            var direct = AssistantAlertRules.Evaluate(movements, day, options);
             var report = new List<string>
             {
                 $"movimientos={movements.Count} desde={from:yyyy-MM-dd} min={movements.Min(m => m.Date):yyyy-MM-dd} max={movements.Max(m => m.Date):yyyy-MM-dd} gastos={movements.Count(m => m.MovementType == 'E'.ToString())} ingresos={movements.Count(m => m.MovementType == 'I'.ToString())}",
-                $"spike={AssistantAlertRules.CategorySpikes(movements, day, pesos.Symbol, options).Count} large={AssistantAlertRules.LargeMovements(movements, day, pesos.Symbol, options).Count} missing={AssistantAlertRules.MissingIncome(movements, day, options).Count} evaluate={direct.Count}"
+                $"spike={AssistantAlertRules.CategorySpikes(movements, day, options).Count} large={AssistantAlertRules.LargeMovements(movements, day, options).Count} missing={AssistantAlertRules.MissingIncome(movements, day, options).Count} evaluate={direct.Count}"
             };
             report.AddRange(direct.Select(d => $"{d.Kind} | {d.Title} | {d.Detail}"));
             File.WriteAllLines(Path.Combine(outDir, $"diag-{userId}-{day:yyyy-MM-dd}.txt"), report);
