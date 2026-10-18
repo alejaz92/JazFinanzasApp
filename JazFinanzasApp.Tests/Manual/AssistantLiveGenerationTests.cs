@@ -61,6 +61,7 @@ namespace JazFinanzasApp.Tests.Manual
 
             var services = new ServiceCollection();
             services.AddLogging();
+            services.AddSingleton<IConfiguration>(configuration); // el host real ya lo registra
             services.AddDbContext<ApplicationDbContext>(o => o
                 .UseSqlServer(connectionString, s => s.CommandTimeout(120))
                 .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
