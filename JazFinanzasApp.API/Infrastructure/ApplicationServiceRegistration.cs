@@ -74,6 +74,8 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<ITagService, TagService>();
         services.AddScoped<INetWorthReportService, NetWorthReportService>();
         services.AddScoped<IIncomeExpenseReportService, IncomeExpenseReportService>();
+        // Gasto por fecha de compra (plan-devoluciones-llm-v2.md, D1): no reemplaza a los reportes, que miden lo que salió de las cuentas.
+        services.AddScoped<IPurchaseSpendingService, PurchaseSpendingService>();
         services.AddScoped<ICardReportService, CardReportService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IInvestmentReportService, InvestmentReportService>();

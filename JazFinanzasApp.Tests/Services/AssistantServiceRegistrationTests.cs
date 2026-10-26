@@ -56,6 +56,7 @@ namespace JazFinanzasApp.Tests.Services
             scope.ServiceProvider.GetRequiredService<IAssistantUsageService>().Should().NotBeNull();
             scope.ServiceProvider.GetRequiredService<IAssistantReviewService>().Should().NotBeNull();
             scope.ServiceProvider.GetRequiredService<IAssistantFindingService>().Should().NotBeNull();
+            scope.ServiceProvider.GetRequiredService<JazFinanzasApp.API.Business.Interfaces.IPurchaseSpendingService>().Should().NotBeNull();
         }
 
         [Fact]
