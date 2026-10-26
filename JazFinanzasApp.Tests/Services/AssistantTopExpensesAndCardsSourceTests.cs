@@ -5,6 +5,7 @@ using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.CardReport;
 using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
+using JazFinanzasApp.API.Business.DTO.PurchaseSpending;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
@@ -13,15 +14,15 @@ using Moq;
 
 namespace JazFinanzasApp.Tests.Services
 {
-    // plan-devoluciones-llm.md, Fase 2 — las fuentes top-expenses y cards.
+    // plan-devoluciones-llm.md, Fase 2 — las fuentes top-expenses y cards. plan-devoluciones-llm-v2.md, Fase 3: las dos miden por
+    // fecha de compra y usan IPurchaseSpendingService.
     public class AssistantTopExpensesSourceTests
     {
         private const int UserId = 1;
         private const int ArsId = 1;
         private const int UsdId = 2;
 
-        private readonly Mock<ITransactionRepository> _transactions = new();
-        private readonly Mock<IIncomeExpenseReportService> _reports = new();
+        private readonly Mock<IPurchaseSpendingService> _spending = new();
         private readonly Mock<IAssistantCurrencyResolver> _currencies = new();
         private readonly TopExpensesContextSource _sut;
 
@@ -30,23 +31,37 @@ namespace JazFinanzasApp.Tests.Services
             _currencies.Setup(c => c.GetAsync()).ReturnsAsync(new AssistantCurrencySet(
                 new Asset { Id = ArsId, Name = "Peso Argentino", Symbol = "ARS" },
                 new Asset { Id = UsdId, Name = "Dolar Estadounidense", Symbol = "USD" }));
-            _sut = new TopExpensesContextSource(_transactions.Object, _reports.Object, _currencies.Object);
+            _sut = new TopExpensesContextSource(_spending.Object, _currencies.Object);
         }
 
-        private static ExpenseMovementResult Movement(int id, string category, string? detail, decimal ars, decimal usd, int day = 10) => new()
+        private static PurchaseSpendingRowResult Movement(int id, string category, string? detail, decimal ars, decimal usd, int day = 10, string kind = PurchaseSpendingKind.Direct) => new()
         {
-            TransactionId = id,
+            SourceId = id,
             Date = new DateTime(2026, 9, day),
+            Kind = kind,
             CategoryId = id,
             CategoryName = category,
             Detail = detail,
             AmountByAssetId = new Dictionary<int, decimal> { [ArsId] = ars, [UsdId] = usd }
         };
 
-        private static SpendingToDateDTO ToDate(params (int Id, string Name, decimal Current, decimal Average)[] categories) => new()
+        private static PurchaseSpendingWindowDTO Window(params (int Id, string Name, decimal Current, decimal Average)[] categories) => new()
         {
-            Categories = categories.Select(c => new SpendingToDateCategoryDTO { CategoryId = c.Id, CategoryName = c.Name, CurrentToDate = c.Current, AverageToDate = c.Average }).ToList()
+            ToDate = new SpendingToDateDTO
+            {
+                Categories = categories.Select(c => new SpendingToDateCategoryDTO { CategoryId = c.Id, CategoryName = c.Name, CurrentToDate = c.Current, AverageToDate = c.Average }).ToList()
+            }
         };
+
+        private void SetUpWindows(int cutoff, PurchaseSpendingWindowDTO ars) =>
+            _spending
+                .Setup(s => s.GetWindowsAsync(UserId, It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { ArsId, UsdId })), It.IsAny<DateTime>(), cutoff, It.IsAny<int>()))
+                .ReturnsAsync(new Dictionary<int, PurchaseSpendingWindowDTO> { [ArsId] = ars, [UsdId] = new PurchaseSpendingWindowDTO() });
+
+        private void SetUpLargest(DateTime from, DateTime toExclusive, int take, int? categoryId, params PurchaseSpendingRowResult[] rows) =>
+            _spending
+                .Setup(s => s.GetLargestAsync(UserId, It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { ArsId, UsdId })), from, toExclusive, take, categoryId))
+                .ReturnsAsync(rows.ToList());
 
         [Fact]
         public void SelectRisingCategories_KeepsOnlyTheOnesAboveTheirAverage_OrderedByHowMuchTheyRose()
@@ -71,14 +86,10 @@ namespace JazFinanzasApp.Tests.Services
         public async Task BuildAsync_SendsTheLargestExpensesAndTheMainMovementsOfTheCategoriesThatRoseMost()
         {
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 10, null))
-                .ReturnsAsync(new[] { Movement(1, "Mantenimiento auto", "service", 240_000.4m, 240.36m), Movement(2, "Supermercado", "Coto", 90_000m, 90m) });
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, ArsId, new DateTime(2026, 9, 1), 30))
-                .ReturnsAsync(ToDate((1, "Mantenimiento auto", 240_000m, 20_000m), (2, "Supermercado", 90_000m, 95_000m)));
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 3, 1))
-                .ReturnsAsync(new[] { Movement(1, "Mantenimiento auto", "service", 240_000m, 240m) });
+            SetUpLargest(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 10, null,
+                Movement(1, "Mantenimiento auto", "service", 240_000.4m, 240.36m), Movement(2, "Supermercado", "Coto", 90_000m, 90m));
+            SetUpWindows(31, Window((1, "Mantenimiento auto", 240_000m, 20_000m), (2, "Supermercado", 90_000m, 95_000m)));
+            SetUpLargest(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 3, 1, Movement(1, "Mantenimiento auto", "service", 240_000m, 240m));
 
             var data = (TopExpensesContextSource.TopExpensesData)(await _sut.BuildAsync(request))!;
 
@@ -94,42 +105,56 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task BuildAsync_SaysWhetherEachMovementCameFromAnAccountOrWasACardPurchase()
+        {
+            var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
+            SetUpLargest(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 10, null,
+                Movement(1, "Ropa", "Remeras y pantalón", 204_997m, 200m, kind: PurchaseSpendingKind.CardPurchase),
+                Movement(2, "Supermercado", "Coto", 90_000m, 90m, kind: PurchaseSpendingKind.Direct));
+            SetUpWindows(31, Window());
+
+            var data = (TopExpensesContextSource.TopExpensesData)(await _sut.BuildAsync(request))!;
+
+            data.Largest.Select(m => m.Origin).Should().Equal("card", "account");
+        }
+
+        [Fact]
         public async Task BuildAsync_ForAMidMonth_CutsTheRangeAtTheCutoffDay()
         {
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MidMonth, new DateTime(2026, 9, 1), new DateTime(2026, 9, 16));
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<int?>()))
-                .ReturnsAsync(new[] { Movement(1, "Delivery", "pizza", 8000m, 8m) });
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, ArsId, new DateTime(2026, 9, 1), 16)).ReturnsAsync(ToDate());
+            SetUpLargest(new DateTime(2026, 9, 1), new DateTime(2026, 9, 17), 10, null, Movement(1, "Delivery", "pizza", 8000m, 8m));
+            SetUpWindows(16, Window());
 
             var data = (TopExpensesContextSource.TopExpensesData)(await _sut.BuildAsync(request))!;
 
             data.To.Should().Be("2026-09-16");
-            _transactions.Verify(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), new DateTime(2026, 9, 1), new DateTime(2026, 9, 17), 10, null), Times.Once);
+            _spending.Verify(s => s.GetLargestAsync(UserId, It.IsAny<IReadOnlyList<int>>(), new DateTime(2026, 9, 1), new DateTime(2026, 9, 17), 10, null), Times.Once);
         }
 
         [Fact]
-        public async Task BuildAsync_RanksBothCurrenciesAndGivesThePesosFirst()
+        public async Task BuildAsync_AsksForBothCurrenciesWithThePesosFirst_AndSharesTheSameWindowAsIncomeExpense()
         {
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
-            IReadOnlyList<Asset>? received = null;
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), 10, null))
-                .Callback<int, IReadOnlyList<Asset>, DateTime, DateTime, int, int?>((_, assets, _, _, _, _) => received = assets)
-                .ReturnsAsync(new[] { Movement(1, "Delivery", "pizza", 8000m, 8m) });
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, ArsId, It.IsAny<DateTime>(), 30)).ReturnsAsync(ToDate());
+            IReadOnlyList<int>? received = null;
+            _spending
+                .Setup(s => s.GetLargestAsync(UserId, It.IsAny<IReadOnlyList<int>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), 10, null))
+                .Callback<int, IReadOnlyList<int>, DateTime, DateTime, int, int?>((_, ids, _, _, _, _) => received = ids)
+                .ReturnsAsync(new List<PurchaseSpendingRowResult> { Movement(1, "Delivery", "pizza", 8000m, 8m) });
+            SetUpWindows(31, Window());
 
             await _sut.BuildAsync(request);
 
-            received!.Select(a => a.Id).Should().Equal(ArsId, UsdId);
+            received!.Should().Equal(ArsId, UsdId);
+            // Un cierre compara meses completos (corte 31), igual que income-expense: así las dos fuentes comparten una sola consulta.
+            _spending.Verify(s => s.GetWindowsAsync(UserId, It.IsAny<IReadOnlyList<int>>(), new DateTime(2026, 9, 1), 31, It.IsAny<int>()), Times.Once);
         }
 
         [Fact]
         public async Task BuildAsync_WithoutExpensesInThePeriod_HasNothingToSay()
         {
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<int?>()))
-                .ReturnsAsync(Array.Empty<ExpenseMovementResult>());
+            _spending
+                .Setup(s => s.GetLargestAsync(UserId, It.IsAny<IReadOnlyList<int>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<int>(), It.IsAny<int?>()))
+                .ReturnsAsync(new List<PurchaseSpendingRowResult>());
 
             var data = await _sut.BuildAsync(new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30)));
 
@@ -139,15 +164,21 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task BuildAsync_ShortensLongDetails()
         {
-            _transactions
-                .Setup(r => r.GetLargestExpensesAsync(UserId, It.IsAny<IReadOnlyList<Asset>>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), 10, null))
-                .ReturnsAsync(new[] { Movement(1, "Delivery", new string('x', 200), 8000m, 8m) });
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, ArsId, It.IsAny<DateTime>(), 30)).ReturnsAsync(ToDate());
+            SetUpLargest(new DateTime(2026, 9, 1), new DateTime(2026, 10, 1), 10, null, Movement(1, "Delivery", new string('x', 200), 8000m, 8m));
+            SetUpWindows(31, Window());
 
             var data = (TopExpensesContextSource.TopExpensesData)(await _sut.BuildAsync(
                 new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30))))!;
 
             data.Largest[0].Detail.Length.Should().BeLessThanOrEqualTo(81);
+        }
+
+        [Fact]
+        public void Measures_SaysThatPurchasesCountOnTheirOwnDate_AndThatRecurringChargesAreNotListed()
+        {
+            _sut.Measures.Should().Contain("fecha de compra").And.Contain("origin").And.Contain("recurrentes");
+            _sut.Measures.Should().NotContain("la cuota que se pagó, no como la compra");
+            _sut.Key.Should().Be("top-expenses");
         }
     }
 
@@ -159,6 +190,7 @@ namespace JazFinanzasApp.Tests.Services
 
         private readonly Mock<ICardReportService> _cardReports = new();
         private readonly Mock<ICardService> _cardService = new();
+        private readonly Mock<IPurchaseSpendingService> _spending = new();
         private readonly Mock<IAssistantCurrencyResolver> _currencies = new();
         private readonly CardsContextSource _sut;
 
@@ -167,7 +199,10 @@ namespace JazFinanzasApp.Tests.Services
             _currencies.Setup(c => c.GetAsync()).ReturnsAsync(new AssistantCurrencySet(
                 new Asset { Id = ArsId, Name = "Peso Argentino", Symbol = "ARS" },
                 new Asset { Id = UsdId, Name = "Dolar Estadounidense", Symbol = "USD" }));
-            _sut = new CardsContextSource(_cardReports.Object, _cardService.Object, _currencies.Object);
+            // Por defecto, un mes sin cuotas por pagar.
+            _spending.Setup(s => s.GetInstallmentsDueAsync(UserId, It.IsAny<int>(), It.IsAny<DateTime>()))
+                .ReturnsAsync((int _, int _, DateTime month) => new InstallmentsDueDTO { Month = month });
+            _sut = new CardsContextSource(_cardReports.Object, _cardService.Object, _spending.Object, _currencies.Object);
         }
 
         private static CardMonthlySeriesPointDTO SeriesPoint(DateTime month, params (int CardId, string Name, decimal Pesos, decimal Dollars)[] cards) => new()
@@ -383,9 +418,46 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public void Measures_SaysThatItMeasuresPurchasesNotPayments_AndNotToAddItToIncomeExpense()
+        public async Task BuildAsync_SendsWhatFallsDueInInstallmentsThisMonth_InBothCurrencies_SeparateFromTheConsumption()
         {
-            _sut.Measures.Should().Contain("mes de la compra").And.Contain("No se suma con income-expense");
+            SetUpGeneral();
+            var month = new DateTime(2026, 9, 1);
+            _spending.Setup(s => s.GetInstallmentsDueAsync(UserId, ArsId, month)).ReturnsAsync(new InstallmentsDueDTO
+            {
+                Month = month, TotalInstallments = 40_356.15m, TotalRecurring = 143_483.22m, Total = 183_839.37m
+            });
+            _spending.Setup(s => s.GetInstallmentsDueAsync(UserId, UsdId, month)).ReturnsAsync(new InstallmentsDueDTO
+            {
+                Month = month, TotalInstallments = 0m, TotalRecurring = 32.94m, Total = 32.94m
+            });
+            _cardReports.Setup(r => r.GetFutureCommitmentAsync(UserId, It.IsAny<int>(), It.IsAny<bool>(), 0)).ReturnsAsync(Future());
+            var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, month, new DateTime(2026, 9, 30));
+
+            var data = (CardsContextSource.MonthCloseCardsData)(await _sut.BuildAsync(request))!;
+
+            data.InstallmentsDueThisMonth.Ars.Should().Be(new CardsContextSource.InstallmentsDueEntry(183_839m, 40_356m, 143_483m)); // pesos enteros
+            data.InstallmentsDueThisMonth.Usd.Should().Be(new CardsContextSource.InstallmentsDueEntry(32.94m, 0m, 32.94m));
+            data.Total.Should().NotBeNull(); // el consumo sigue viajando aparte
+        }
+
+        [Fact]
+        public async Task BuildAsync_ForAMidMonth_AlsoSendsWhatFallsDueInInstallmentsThisMonth()
+        {
+            SetUpGeneral();
+            var month = new DateTime(2026, 9, 1);
+            _spending.Setup(s => s.GetInstallmentsDueAsync(UserId, ArsId, month)).ReturnsAsync(new InstallmentsDueDTO { Month = month, Total = 50_000m, TotalInstallments = 50_000m });
+            var request = new AssistantContextRequest(UserId, AssistantReviewKind.MidMonth, month, new DateTime(2026, 9, 16));
+
+            var data = (CardsContextSource.MidMonthCardsData)(await _sut.BuildAsync(request))!;
+
+            data.InstallmentsDueThisMonth.Ars.Total.Should().Be(50_000m);
+        }
+
+        [Fact]
+        public void Measures_SaysItIsTheBreakdownOfTheCardPartOfIncomeExpense_AndThatTheInstallmentsDueIsAnotherReading()
+        {
+            _sut.Measures.Should().Contain("mes de la compra").And.Contain("income-expense").And.Contain("no se suma");
+            _sut.Measures.Should().Contain("installmentsDueThisMonth").And.Contain("no es lo comprado en el mes");
             _sut.Key.Should().Be("cards");
         }
     }

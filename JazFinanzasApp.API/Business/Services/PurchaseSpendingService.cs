@@ -97,10 +97,28 @@ namespace JazFinanzasApp.API.Business.Services
         private readonly ITransactionRepository _transactionRepository;
         private readonly IAssetRepository _assetRepository;
 
+        // Las filas ya traídas en este pedido, por usuario y monedas. El servicio es scoped (vive lo que dura un pedido o una
+        // pasada del asistente), así que las tres fuentes que lo usan comparten una sola consulta: si lo pedido cae dentro de un
+        // rango ya traído, se filtra en memoria. Los datos no pueden cambiar en medio de la generación de una devolución.
+        private readonly Dictionary<string, (DateTime From, DateTime To, List<PurchaseSpendingRowResult> Rows)> _rowsCache = new();
+
         public PurchaseSpendingService(ITransactionRepository transactionRepository, IAssetRepository assetRepository)
         {
             _transactionRepository = transactionRepository;
             _assetRepository = assetRepository;
+        }
+
+        private async Task<List<PurchaseSpendingRowResult>> GetRowsAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive)
+        {
+            var key = $"{userId}|{string.Join(',', assets.Select(a => a.Id).OrderBy(id => id))}";
+            if (_rowsCache.TryGetValue(key, out var cached) && cached.From <= from && cached.To >= toExclusive)
+                return cached.Rows.Where(r => r.Date >= from && r.Date < toExclusive).ToList();
+
+            var rows = (await _transactionRepository.GetPurchaseSpendingRowsAsync(userId, assets, from, toExclusive)).ToList();
+            // Se guarda el rango más ancho: lo que se pida después y quepa adentro no vuelve a la base.
+            if (!_rowsCache.TryGetValue(key, out var existing) || (from <= existing.From && toExclusive >= existing.To))
+                _rowsCache[key] = (from, toExclusive, rows);
+            return rows;
         }
 
         public async Task<SpendingToDateDTO> GetToDateByCategoryAsync(int userId, int assetId, DateTime month, int cutoffDay, int comparisonMonths = 6)
@@ -114,8 +132,7 @@ namespace JazFinanzasApp.API.Business.Services
             var monthStart = new DateTime(month.Year, month.Month, 1);
             var effectiveCutoff = Math.Min(cutoffDay, DateTime.DaysInMonth(monthStart.Year, monthStart.Month));
 
-            var rows = (await _transactionRepository.GetPurchaseSpendingRowsAsync(
-                userId, new[] { asset }, monthStart.AddMonths(-comparisonMonths), monthStart.AddMonths(1))).ToList();
+            var rows = await GetRowsAsync(userId, new[] { asset }, monthStart.AddMonths(-comparisonMonths), monthStart.AddMonths(1));
 
             return PurchaseSpendingCalculator.ToDateByCategory(rows, asset.Id, monthStart, effectiveCutoff, comparisonMonths);
         }
@@ -126,7 +143,7 @@ namespace JazFinanzasApp.API.Business.Services
                 throw new BusinessRuleException("El rango de fechas no es válido.");
 
             var asset = await GetAssetAsync(assetId);
-            var rows = await _transactionRepository.GetPurchaseSpendingRowsAsync(userId, new[] { asset }, from, toExclusive);
+            var rows = await GetRowsAsync(userId, new[] { asset }, from, toExclusive);
             return PurchaseSpendingCalculator.DailySeries(rows, asset.Id);
         }
 
@@ -141,8 +158,41 @@ namespace JazFinanzasApp.API.Business.Services
             foreach (var id in assetIds)
                 assets.Add(await GetAssetAsync(id));
 
-            var rows = await _transactionRepository.GetPurchaseSpendingRowsAsync(userId, assets, from, toExclusive);
+            var rows = await GetRowsAsync(userId, assets, from, toExclusive);
             return PurchaseSpendingCalculator.Largest(rows, assets[0].Id, take, categoryId);
+        }
+
+        public async Task<IReadOnlyDictionary<int, PurchaseSpendingWindowDTO>> GetWindowsAsync(int userId, IReadOnlyList<int> assetIds, DateTime month, int cutoffDay, int comparisonMonths = 6)
+        {
+            if (assetIds.Count == 0)
+                throw new BusinessRuleException("Se necesita al menos una moneda.");
+            if (cutoffDay < 1)
+                throw new BusinessRuleException("El día de corte tiene que ser 1 o mayor.");
+            if (comparisonMonths < 1)
+                throw new BusinessRuleException("Hay que comparar contra al menos un mes anterior.");
+
+            var assets = new List<Asset>();
+            foreach (var id in assetIds)
+                assets.Add(await GetAssetAsync(id));
+
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var effectiveCutoff = Math.Min(cutoffDay, DateTime.DaysInMonth(monthStart.Year, monthStart.Month));
+
+            // Una sola consulta para todas las monedas: cada fila trae su monto en cada una.
+            var rows = await GetRowsAsync(userId, assets, monthStart.AddMonths(-comparisonMonths), monthStart.AddMonths(1));
+            var daysFrom = monthStart.AddMonths(-1);
+
+            var result = new Dictionary<int, PurchaseSpendingWindowDTO>();
+            foreach (var asset in assets)
+            {
+                result[asset.Id] = new PurchaseSpendingWindowDTO
+                {
+                    ToDate = PurchaseSpendingCalculator.ToDateByCategory(rows, asset.Id, monthStart, effectiveCutoff, comparisonMonths),
+                    FullMonths = PurchaseSpendingCalculator.ToDateByCategory(rows, asset.Id, monthStart, 31, comparisonMonths),
+                    Days = PurchaseSpendingCalculator.DailySeries(rows.Where(r => r.Date >= daysFrom), asset.Id)
+                };
+            }
+            return result;
         }
 
         public async Task<InstallmentsDueDTO> GetInstallmentsDueAsync(int userId, int assetId, DateTime month)

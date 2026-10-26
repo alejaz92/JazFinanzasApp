@@ -5,8 +5,11 @@ using JazFinanzasApp.API.Business.Services;
 namespace JazFinanzasApp.API.Business.Assistant.Sources
 {
     // Tarjetas (plan-devoluciones-llm.md, D2 y D3). Mide el CONSUMO, en el mes de la compra: lo que se
-    // compró, no lo que se pagó. Es una medición distinta de la de income-expense (que cuenta la cuota
-    // cuando se paga) y por eso no se suman entre sí.
+    // compró, no lo que se pagó. Desde plan-devoluciones-llm-v2.md income-expense mide el gasto igual (por fecha de
+    // compra) y ya incluye esta parte: esta fuente es el desglose por tarjeta y no se suma con aquella.
+    //
+    // Además trae la segunda lectura de la tarjeta (v2, D1, decisión C): lo que toca pagar en cuotas en el mes, que no es
+    // lo mismo que lo comprado en el mes.
     //
     // Cierre de mes: consumo del mes por tarjeta contra el mes anterior y el promedio, y el compromiso
     // futuro de los 3 meses siguientes separando cuotas y recurrentes. Mitad de mes y revisión semanal:
@@ -19,20 +22,24 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
 
         private readonly ICardReportService _cardReports;
         private readonly ICardService _cardService;
+        private readonly IPurchaseSpendingService _spending;
         private readonly IAssistantCurrencyResolver _currencies;
 
-        public CardsContextSource(ICardReportService cardReports, ICardService cardService, IAssistantCurrencyResolver currencies)
+        public CardsContextSource(ICardReportService cardReports, ICardService cardService, IPurchaseSpendingService spending, IAssistantCurrencyResolver currencies)
         {
             _cardReports = cardReports;
             _cardService = cardService;
+            _spending = spending;
             _currencies = currencies;
         }
 
         public string Key => SourceKey;
 
         public string Measures =>
-            "Consumo de tarjeta en el mes de la compra: lo que se compró, no lo que se pagó. Un recurrente cuenta en cada mes que estuvo vigente. " +
-            "No se suma con income-expense, que cuenta las cuotas cuando se pagan. El cierre de mes compara cada tarjeta contra el mes anterior y el " +
+            "Consumo de tarjeta en el mes de la compra: lo que se compró, no lo que se pagó (una compra en cuotas cuenta entera en el mes de la compra). " +
+            "Un recurrente cuenta en cada mes que estuvo vigente. Es el desglose por tarjeta de la parte de tarjeta del gasto de income-expense, que ya la incluye: " +
+            "no se suma. 'installmentsDueThisMonth' es OTRA lectura, lo que toca pagar este mes en cuotas (cuotas de compras de este mes y de meses anteriores, " +
+            "más los recurrentes): no es lo comprado en el mes y no hay que compararlo ni sumarlo con el consumo. El cierre de mes compara cada tarjeta contra el mes anterior y el " +
             "promedio de los 6 anteriores (los meses sin consumo cuentan como cero) y trae el compromiso futuro de los 3 meses siguientes, separando " +
             "cuotas de compras y recurrentes. En la mitad de mes el consumo es del mes en curso hasta el día de corte y el mes anterior y el promedio " +
             "son meses completos: no son comparables entre sí. Los vencimientos van en pesos.";
@@ -50,6 +57,8 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
             if (cards.ByCard.Count == 0 && !request.IsMonthClose)
                 return null;
 
+            var installmentsDue = await BuildInstallmentsDueAsync(request, currencies);
+
             if (request.IsMonthClose)
             {
                 // El compromiso futuro se calcula con las cuotas vivas de hoy: para un cierre viejo (por
@@ -59,13 +68,30 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
                     ? await BuildFutureCommitmentAsync(request, currencies)
                     : Array.Empty<FutureMonth>();
 
-                return new MonthCloseCardsData(cards.ByCard, cards.Total, future);
+                return new MonthCloseCardsData(cards.ByCard, cards.Total, installmentsDue, future);
             }
 
             return new MidMonthCardsData(
                 cards.ByCard,
                 cards.Total,
+                installmentsDue,
                 await BuildDueSoonAsync(request));
+        }
+
+        // La segunda lectura: lo que toca pagar en cuotas en el mes pedido, en las dos monedas.
+        private async Task<PerCurrency<InstallmentsDueEntry>> BuildInstallmentsDueAsync(AssistantContextRequest request, AssistantCurrencySet currencies)
+        {
+            var ars = await _spending.GetInstallmentsDueAsync(request.UserId, currencies.Ars.Id, request.Month);
+            var usd = await _spending.GetInstallmentsDueAsync(request.UserId, currencies.Usd.Id, request.Month);
+            return new PerCurrency<InstallmentsDueEntry>(
+                new InstallmentsDueEntry(
+                    AssistantFigures.RoundMoney(ars.Total, isPesos: true),
+                    AssistantFigures.RoundMoney(ars.TotalInstallments, isPesos: true),
+                    AssistantFigures.RoundMoney(ars.TotalRecurring, isPesos: true)),
+                new InstallmentsDueEntry(
+                    AssistantFigures.RoundMoney(usd.Total, isPesos: false),
+                    AssistantFigures.RoundMoney(usd.TotalInstallments, isPesos: false),
+                    AssistantFigures.RoundMoney(usd.TotalRecurring, isPesos: false)));
         }
 
         private async Task<IReadOnlyList<FutureMonth>> BuildFutureCommitmentAsync(AssistantContextRequest request, AssistantCurrencySet currencies)
@@ -229,8 +255,10 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
 
         public record DueEntry(string Card, string DueDate, decimal AmountPesos);
 
-        public record MonthCloseCardsData(IReadOnlyList<CardEntry> ByCard, PerCurrency<object> Total, IReadOnlyList<FutureMonth> FutureCommitment);
+        public record InstallmentsDueEntry(decimal Total, decimal Installments, decimal Recurring);
 
-        public record MidMonthCardsData(IReadOnlyList<CardEntry> ByCard, PerCurrency<object> Total, IReadOnlyList<DueEntry> DueSoon);
+        public record MonthCloseCardsData(IReadOnlyList<CardEntry> ByCard, PerCurrency<object> Total, PerCurrency<InstallmentsDueEntry> InstallmentsDueThisMonth, IReadOnlyList<FutureMonth> FutureCommitment);
+
+        public record MidMonthCardsData(IReadOnlyList<CardEntry> ByCard, PerCurrency<object> Total, PerCurrency<InstallmentsDueEntry> InstallmentsDueThisMonth, IReadOnlyList<DueEntry> DueSoon);
     }
 }

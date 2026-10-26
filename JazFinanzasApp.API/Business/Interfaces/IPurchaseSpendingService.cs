@@ -24,6 +24,11 @@ namespace JazFinanzasApp.API.Business.Interfaces
         // movimiento puntual), rankeados por la primera moneda y con su monto en todas, opcionalmente de una sola categoría.
         Task<List<PurchaseSpendingRowResult>> GetLargestAsync(int userId, IReadOnlyList<int> assetIds, DateTime from, DateTime toExclusive, int take, int? categoryId = null);
 
+        // Lo que necesita una devolución de un mes, para varias monedas a la vez y con UNA sola consulta a la base: el tramo "del 1 al
+        // día de corte" con su comparación, los meses completos y la serie diaria de este mes y el anterior. Es lo que arma la ventana
+        // de las fuentes del asistente (la base es chica y las consultas en serie la ahogan). Devuelve una entrada por moneda pedida.
+        Task<IReadOnlyDictionary<int, PurchaseSpendingWindowDTO>> GetWindowsAsync(int userId, IReadOnlyList<int> assetIds, DateTime month, int cutoffDay, int comparisonMonths = 6);
+
         // La segunda lectura: lo que toca pagar en cuotas en el mes (no es lo comprado en el mes).
         Task<InstallmentsDueDTO> GetInstallmentsDueAsync(int userId, int assetId, DateTime month);
     }
