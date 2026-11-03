@@ -349,6 +349,22 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task WhileAReviewIsMissingItStillCarriesTheLastOneThereIs()
+        {
+            var f = Build();
+            f.AddActivityInSeptember();
+            var close = await f.Service.GenerateAsync(UserId, AssistantReviewServiceTests.Close());
+
+            // El 17 de octubre falta la mitad de mes: la tarjeta sigue mostrando el cierre de septiembre.
+            var latest = await f.Service.GetLatestAsync(UserId);
+
+            latest.State.Should().Be(AssistantLatestState.NotGenerated);
+            latest.MissingKind.Should().Be(AssistantReviewKind.MidMonth);
+            latest.Review.Should().NotBeNull();
+            latest.Review!.Id.Should().Be(close.Id);
+        }
+
+        [Fact]
         public async Task WithNothingRunningItIsNotPreparing()
         {
             var f = Build();

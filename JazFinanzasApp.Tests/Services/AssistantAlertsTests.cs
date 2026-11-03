@@ -513,22 +513,15 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task ActiveFindingsBecomeTrayItemsWithTheirIdAndCategoryLink()
+        public async Task ActiveFindingsDoNotGoThroughTheTrayAnymore()
         {
+            // plan-devoluciones-llm-v2.md, D9: los muestra la tarjeta del asistente, que los pide al servicio de hallazgos.
             _findings.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(new List<AssistantFindingDTO> { Finding(10, 5), Finding(11, null) });
 
             var items = await _sut.BuildAsync(UserId, Today);
 
-            items.Should().HaveCount(2);
-            var first = items[0];
-            first.Kind.Should().Be("AssistantFinding");
-            first.Title.Should().Be("Poco gasto en supermercado");
-            first.Detail.Should().Be("¿Falta cargar algo?");
-            first.FindingId.Should().Be(10);
-            first.LinkId.Should().Be(5);
-            first.Severity.Should().Be("info");
-            items[1].LinkId.Should().BeNull();
-            items[1].FindingId.Should().Be(11);
+            items.Should().BeEmpty();
+            _findings.Verify(f => f.GetAsync(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
@@ -573,14 +566,18 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task AFailureInTheRuleAlertsDoesNotTakeDownTheFindings()
+        public async Task AFailureInTheRuleAlertsDoesNotTakeDownTheQualityReviewNotice()
         {
             _transactions.Setup(t => t.GetAlertIncomesAsync(UserId, Pesos, It.IsAny<DateTime>())).ThrowsAsync(new InvalidOperationException("boom"));
-            _findings.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(new List<AssistantFindingDTO> { Finding() });
+            _reviews.Setup(r => r.GetLastQualityReviewsAsync(UserId, 2)).ReturnsAsync(new List<AssistantQualityReview>
+            {
+                new() { ReviewedAt = new DateTime(2026, 9, 1), PromptVersionBefore = "v1", PromptVersionAfter = "v2" }
+            });
+            _reviews.Setup(r => r.CountReadyReviewsSinceAsync(UserId, It.IsAny<DateTime>())).ReturnsAsync(3);
 
             var items = await _sut.BuildAsync(UserId, Today);
 
-            items.Should().ContainSingle().Which.Kind.Should().Be("AssistantFinding");
+            items.Should().ContainSingle().Which.Kind.Should().Be("AssistantQualityReviewDue");
         }
 
         [Fact]

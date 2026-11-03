@@ -12,7 +12,9 @@ namespace JazFinanzasApp.API.Business.Assistant
     {
         // Los avisos que el asistente le suma a la bandeja de pendientes (plan-devoluciones-llm.md, D8, D8b y D9):
         //  - las tres alertas por reglas, para todos los usuarios (no cuestan nada ni mandan datos a ningún lado);
-        //  - los hallazgos activos y el aviso de revisión de calidad, solo para quien tiene el asistente habilitado.
+        //  - el aviso de revisión de calidad, solo para quien tiene el asistente habilitado.
+        // Los hallazgos ya no pasan por la bandeja (plan-devoluciones-llm-v2.md, D9): los muestra la tarjeta del asistente, que los
+        // pide a IAssistantFindingService.
         // Nunca lanza: Inicio tiene que seguir funcionando aunque algo de esto falle.
         Task<List<DashboardPendingItemDTO>> BuildAsync(int userId, DateTime today);
     }
@@ -101,7 +103,6 @@ namespace JazFinanzasApp.API.Business.Assistant
                 var status = await _usage.GetStatusAsync(userId);
                 if (status.Enabled)
                 {
-                    items.AddRange(await BuildFindingItemsAsync(userId));
                     var due = await BuildQualityReviewDueAsync(userId);
                     if (due != null) items.Add(due);
                 }
@@ -136,23 +137,6 @@ namespace JazFinanzasApp.API.Business.Assistant
                 IsRecurring = e.Kind == PurchaseSpendingKind.CardRecurring
             }));
             return AssistantAlertRules.Evaluate(movements, today, _options);
-        }
-
-        // D8b: título y detalle son los del hallazgo; el link es la categoría, si la tiene. Desde la bandeja se puede
-        // descartar y calificar, para lo cual el frontend necesita el id del hallazgo.
-        private async Task<List<DashboardPendingItemDTO>> BuildFindingItemsAsync(int userId)
-        {
-            var findings = await _findings.GetAsync(userId, includeAll: false);
-            return findings.Select(f => new DashboardPendingItemDTO
-            {
-                Kind = FindingKind,
-                Title = f.Title,
-                Detail = f.Detail,
-                Severity = "info",
-                LinkId = f.TransactionClassId,
-                FindingId = f.Id,
-                Date = f.CreatedAt
-            }).ToList();
         }
 
         private async Task<DashboardPendingItemDTO?> BuildQualityReviewDueAsync(int userId)

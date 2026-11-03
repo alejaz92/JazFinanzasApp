@@ -600,6 +600,10 @@ namespace JazFinanzasApp.API.Business.Assistant
                 Outlook = AssistantLatestOutlook.Scheduled
             };
 
+            // Mientras la devolución que falta se prepara, la tarjeta sigue mostrando la última que hay.
+            var lastReady = await _repository.GetLatestReadyAsync(userId);
+            if (lastReady != null) dto.Review = await ToDtoAsync(lastReady);
+
             if (kind == AssistantReviewKind.MonthClose && _readiness != null)
             {
                 var readiness = await _readiness.CheckAsync(userId, periodStart, Today);
