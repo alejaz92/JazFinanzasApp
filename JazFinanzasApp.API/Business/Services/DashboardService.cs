@@ -4,6 +4,7 @@ using JazFinanzasApp.API.Business.DTO.Card;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
 using JazFinanzasApp.API.Business.DTO.NetWorth;
+using JazFinanzasApp.API.Business.DTO.PurchaseSpending;
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
 using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.DTO.Trip;
@@ -32,6 +33,7 @@ namespace JazFinanzasApp.API.Business.Services
 
         private readonly INetWorthReportService _netWorthReportService;
         private readonly IIncomeExpenseReportService _incomeExpenseReportService;
+        private readonly IPurchaseSpendingService _purchaseSpending;
         private readonly ICardReportService _cardReportService;
         private readonly ICardService _cardService;
         private readonly ISharedEventService _sharedEventService;
@@ -45,6 +47,7 @@ namespace JazFinanzasApp.API.Business.Services
         public DashboardService(
             INetWorthReportService netWorthReportService,
             IIncomeExpenseReportService incomeExpenseReportService,
+            IPurchaseSpendingService purchaseSpending,
             ICardReportService cardReportService,
             ICardService cardService,
             ISharedEventService sharedEventService,
@@ -57,6 +60,7 @@ namespace JazFinanzasApp.API.Business.Services
         {
             _netWorthReportService = netWorthReportService;
             _incomeExpenseReportService = incomeExpenseReportService;
+            _purchaseSpending = purchaseSpending;
             _cardReportService = cardReportService;
             _cardService = cardService;
             _sharedEventService = sharedEventService;
@@ -77,15 +81,20 @@ namespace JazFinanzasApp.API.Business.Services
             // divergir, y cada usuario ve solo lo suyo porque GetGeneralAsync ya es por usuario.
             var netWorthGeneral = await _netWorthReportService.GetGeneralAsync(userId);
 
+            // El gasto por fecha de compra se pide una sola vez (plan-devoluciones-llm-v2.md, D2): lo comparten el termómetro, el resultado
+            // del mes y el gasto del mes, para que no se contradigan. El corte en 31 trae el mes completo.
+            var currentMonth = new DateTime(today.Year, today.Month, 1);
+            var spending = (await _purchaseSpending.GetWindowsAsync(userId, new[] { asset.Id }, currentMonth, 31))[asset.Id];
+
             return new DashboardDTO
             {
-                Indicators = await BuildIndicatorsAsync(userId, asset, today, netWorthGeneral),
-                Thermometer = await BuildThermometerAsync(userId, asset, today),
+                Indicators = await BuildIndicatorsAsync(userId, asset, today, netWorthGeneral, spending),
+                Thermometer = BuildThermometer(spending.Days, today),
                 Pending = await BuildPendingAsync(userId, asset, today, netWorthGeneral)
             };
         }
 
-        private async Task<DashboardIndicatorsDTO> BuildIndicatorsAsync(int userId, Asset asset, DateTime today, NetWorthGeneralDTO netWorthGeneral)
+        private async Task<DashboardIndicatorsDTO> BuildIndicatorsAsync(int userId, Asset asset, DateTime today, NetWorthGeneralDTO netWorthGeneral, PurchaseSpendingWindowDTO spending)
         {
             var currentMonth = new DateTime(today.Year, today.Month, 1);
 
@@ -117,26 +126,14 @@ namespace JazFinanzasApp.API.Business.Services
                 NetWorthGross = total?.GrossBalance ?? 0m,
                 NetWorthNet = total?.NetBalance ?? 0m,
                 NetWorthChangeVsPreviousMonth = netWorthChange,
-                MonthResult = waterfall.Result,
-                MonthResultPreviousMonth = waterfall.PreviousMonthResult,
+                MonthResult = Math.Round(waterfall.TotalIncome - spending.FullMonths.TotalCurrent, 2),
+                MonthResultPreviousMonth = Math.Round(waterfall.PreviousTotalIncome - spending.FullMonths.TotalPrevious, 2),
+                MonthExpense = spending.FullMonths.TotalCurrent,
+                MonthExpenseAverage = spending.FullMonths.TotalAverage,
                 CardsDueAmountInPesos = cardsDueAmount,
                 CardsNextDueDate = cardsNextDueDate,
                 SharedBalances = BuildSharedBalances(debts)
             };
-        }
-
-        private async Task<DashboardThermometerDTO> BuildThermometerAsync(int userId, Asset asset, DateTime today)
-        {
-            var previousMonthYear = new DateTime(today.Year, today.Month, 1).AddMonths(-1).Year;
-
-            var days = (await _incomeExpenseReportService.GetCalendarAsync(userId, asset.Id, today.Year)).Days.ToList();
-            if (previousMonthYear != today.Year)
-            {
-                var previousYearDays = (await _incomeExpenseReportService.GetCalendarAsync(userId, asset.Id, previousMonthYear)).Days;
-                days.AddRange(previousYearDays);
-            }
-
-            return BuildThermometer(days, today);
         }
 
         private async Task<List<DashboardPendingItemDTO>> BuildPendingAsync(int userId, Asset asset, DateTime today, NetWorthGeneralDTO netWorthGeneral)

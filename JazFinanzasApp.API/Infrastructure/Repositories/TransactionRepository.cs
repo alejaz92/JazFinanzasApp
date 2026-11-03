@@ -716,7 +716,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 ExpenseSteps = steps,
                 TotalExpense = totalExpense,
                 Result = Math.Round(totalIncome - totalExpense, 2),
-                PreviousMonthResult = Math.Round(prevIncome - prevExpense, 2)
+                PreviousMonthResult = Math.Round(prevIncome - prevExpense, 2),
+                PreviousTotalIncome = prevIncome
             };
         }
 
@@ -1188,7 +1189,13 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result;
         }
 
-        public async Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from)
+        public Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from) =>
+            LoadAlertMovementsAsync(userId, pesosAsset, from, includeExpenses: true);
+
+        public Task<IEnumerable<AlertMovementResult>> GetAlertIncomesAsync(int userId, Asset pesosAsset, DateTime from) =>
+            LoadAlertMovementsAsync(userId, pesosAsset, from, includeExpenses: false);
+
+        private async Task<IEnumerable<AlertMovementResult>> LoadAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from, bool includeExpenses)
         {
             var convert = await BuildCurrencyConverterAsync(pesosAsset);
 
@@ -1196,7 +1203,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(t => t.UserId == userId &&
                             t.TransactionClassId != null &&
-                            (t.MovementType == MOV_EXPENSE || t.MovementType == MOV_INCOME) &&
+                            (t.MovementType == MOV_INCOME || (includeExpenses && t.MovementType == MOV_EXPENSE)) &&
                             t.Date >= from &&
                             t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new

@@ -14,6 +14,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal TotalExpense { get; set; }
         public decimal Result { get; set; }
         public decimal PreviousMonthResult { get; set; }
+
+        // Los ingresos del mes anterior: con el gasto por fecha de compra, el resultado del mes anterior se arma afuera.
+        public decimal PreviousTotalIncome { get; set; }
     }
 
     public class IncExpEvolutionPointResult
@@ -124,6 +127,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public string CategoryName { get; set; }
         public string? Detail { get; set; }
         public decimal AmountInPesos { get; set; }
+
+        // Un cargo recurrente de tarjeta (cae el día 1 de cada mes activo): cuenta para el total del mes pero no es un movimiento puntual.
+        public bool IsRecurring { get; set; }
     }
 
     // Los tres orígenes del gasto por fecha de compra (plan-devoluciones-llm-v2.md, D1).

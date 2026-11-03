@@ -16,5 +16,8 @@ namespace JazFinanzasApp.API.Business.DTO.IncomeExpenseReport
 
         // Comparación siempre presente (sección 7): el resultado del mes anterior, sin abrir sus pasos.
         public decimal PreviousMonthResult { get; set; }
+
+        // Los ingresos del mes anterior (para armar el resultado con otra medición del gasto).
+        public decimal PreviousTotalIncome { get; set; }
     }
 }

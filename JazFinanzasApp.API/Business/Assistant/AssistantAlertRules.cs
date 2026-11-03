@@ -14,7 +14,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
         // CategorySpike: gasto del mes en la categoría > Factor x su promedio mensual de los HistoryMonths
         // anteriores (los meses sin gasto cuentan como cero) y >= MinAmount.
-        public decimal SpikeFactor { get; set; } = 2.0m;
+        public decimal SpikeFactor { get; set; } = 2.5m;
         public decimal SpikeMinAmount { get; set; } = 150_000m;
         public int SpikeHistoryMonths { get; set; } = 6;
 
@@ -103,10 +103,10 @@ namespace JazFinanzasApp.API.Business.Assistant
             foreach (var group in movements.Where(m => m.MovementType == "E").GroupBy(m => m.CategoryId))
             {
                 var ordered = group.OrderBy(m => m.Date).ToList();
-                foreach (var movement in ordered.Where(m => m.Date.Date >= recentFrom && m.Date.Date <= today.Date))
+                foreach (var movement in ordered.Where(m => !m.IsRecurring && m.Date.Date >= recentFrom && m.Date.Date <= today.Date))
                 {
                     var lookbackStart = new DateTime(movement.Date.Year, movement.Date.Month, 1).AddMonths(-options.LargeLookbackMonths);
-                    var previous = ordered.Where(p => p.Date >= lookbackStart && p.Date < movement.Date).Select(p => p.AmountInPesos).ToList();
+                    var previous = ordered.Where(p => !p.IsRecurring && p.Date >= lookbackStart && p.Date < movement.Date).Select(p => p.AmountInPesos).ToList();
                     if (previous.Count < options.LargeMinPreviousCount) continue;
 
                     var largestBefore = previous.Max();

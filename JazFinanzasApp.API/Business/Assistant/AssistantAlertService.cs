@@ -1,5 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.Dashboard;
+using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Domain;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -50,6 +52,7 @@ namespace JazFinanzasApp.API.Business.Assistant
         private const string PesoAssetName = "Peso Argentino";
 
         private readonly ITransactionRepository _transactionRepository;
+        private readonly IPurchaseSpendingService _spending;
         private readonly IAssetRepository _assetRepository;
         private readonly IAssistantUsageService _usage;
         private readonly IAssistantFindingService _findings;
@@ -60,6 +63,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
         public AssistantAlertService(
             ITransactionRepository transactionRepository,
+            IPurchaseSpendingService spending,
             IAssetRepository assetRepository,
             IAssistantUsageService usage,
             IAssistantFindingService findings,
@@ -69,6 +73,7 @@ namespace JazFinanzasApp.API.Business.Assistant
             ILogger<AssistantAlertService> logger)
         {
             _transactionRepository = transactionRepository;
+            _spending = spending;
             _assetRepository = assetRepository;
             _usage = usage;
             _findings = findings;
@@ -115,7 +120,21 @@ namespace JazFinanzasApp.API.Business.Assistant
             if (pesos == null) return new List<DashboardPendingItemDTO>();
 
             var from = new DateTime(today.Year, today.Month, 1).AddMonths(-_options.RequiredHistoryMonths);
-            var movements = (await _transactionRepository.GetAlertMovementsAsync(userId, pesos, from)).ToList();
+
+            // Los ingresos, como entran a las cuentas; el gasto, por fecha de compra (plan-devoluciones-llm-v2.md, D2): una compra con
+            // tarjeta cuenta el día en que se hizo, no cuando se paga el resumen.
+            var movements = (await _transactionRepository.GetAlertIncomesAsync(userId, pesos, from)).ToList();
+            var expenses = await _spending.GetExpenseRowsAsync(userId, pesos.Id, from, today.Date.AddDays(1));
+            movements.AddRange(expenses.Select(e => new AlertMovementResult
+            {
+                Date = e.Date,
+                MovementType = "E",
+                CategoryId = e.CategoryId,
+                CategoryName = e.CategoryName,
+                Detail = e.Detail,
+                AmountInPesos = e.AmountByAssetId[pesos.Id],
+                IsRecurring = e.Kind == PurchaseSpendingKind.CardRecurring
+            }));
             return AssistantAlertRules.Evaluate(movements, today, _options);
         }
 

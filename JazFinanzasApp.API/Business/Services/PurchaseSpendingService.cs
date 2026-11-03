@@ -195,6 +195,15 @@ namespace JazFinanzasApp.API.Business.Services
             return result;
         }
 
+        public async Task<List<PurchaseSpendingRowResult>> GetExpenseRowsAsync(int userId, int assetId, DateTime from, DateTime toExclusive)
+        {
+            if (toExclusive <= from)
+                throw new BusinessRuleException("El rango de fechas no es válido.");
+
+            var asset = await GetAssetAsync(assetId);
+            return await GetRowsAsync(userId, new[] { asset }, from, toExclusive);
+        }
+
         public async Task<InstallmentsDueDTO> GetInstallmentsDueAsync(int userId, int assetId, DateTime month)
         {
             var asset = await GetAssetAsync(assetId);

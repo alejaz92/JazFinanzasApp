@@ -24,9 +24,14 @@ namespace JazFinanzasApp.API.Business.DTO.Dashboard
         public decimal NetWorthNet { get; set; }
         public decimal NetWorthChangeVsPreviousMonth { get; set; }
 
-        // Mismos números que Ingresos y Egresos → Resumen del mes (IncExpWaterfallDTO).
+        // Ingresos menos gasto del mes, con el gasto medido por fecha de compra (plan-devoluciones-llm-v2.md, D2 y D3): ya no coincide con
+        // Ingresos y Egresos → Resumen del mes, que sigue mostrando lo que salió de las cuentas.
         public decimal MonthResult { get; set; }
         public decimal MonthResultPreviousMonth { get; set; }
+
+        // El gasto del mes en curso por fecha de compra y su promedio de los 6 meses anteriores (el tile "Gasto del mes" de Panorama).
+        public decimal MonthExpense { get; set; }
+        public decimal MonthExpenseAverage { get; set; }
 
         // Siempre en pesos, no en ReferenceAssetSymbol — mismo criterio que
         // CardTransactionPaymentListDTO.ValueInPesos (Tarjetas → General, tabla de resumen del mes),

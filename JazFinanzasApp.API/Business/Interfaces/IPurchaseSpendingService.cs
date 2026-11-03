@@ -29,6 +29,10 @@ namespace JazFinanzasApp.API.Business.Interfaces
         // de las fuentes del asistente (la base es chica y las consultas en serie la ahogan). Devuelve una entrada por moneda pedida.
         Task<IReadOnlyDictionary<int, PurchaseSpendingWindowDTO>> GetWindowsAsync(int userId, IReadOnlyList<int> assetIds, DateTime month, int cutoffDay, int comparisonMonths = 6);
 
+        // Todas las filas de gasto del rango en la moneda pedida (directos, compras con tarjeta y recurrentes): la materia prima de las
+        // alertas por reglas, que arman sus propias comparaciones.
+        Task<List<PurchaseSpendingRowResult>> GetExpenseRowsAsync(int userId, int assetId, DateTime from, DateTime toExclusive);
+
         // La segunda lectura: lo que toca pagar en cuotas en el mes (no es lo comprado en el mes).
         Task<InstallmentsDueDTO> GetInstallmentsDueAsync(int userId, int assetId, DateTime month);
     }
