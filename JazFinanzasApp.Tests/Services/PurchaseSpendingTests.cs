@@ -546,6 +546,29 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
+        public async Task TheWindowsNeedAtLeastOneCurrencyAndACutoffDay()
+        {
+            var (service, context, ars) = Build();
+            using var _ = context;
+
+            await FluentActions.Awaiting(() => service.GetWindowsAsync(1, Array.Empty<int>(), new DateTime(2026, 10, 1), 15)).Should().ThrowAsync<BusinessRuleException>();
+            await FluentActions.Awaiting(() => service.GetWindowsAsync(1, new[] { ars.Id }, new DateTime(2026, 10, 1), 0)).Should().ThrowAsync<BusinessRuleException>();
+        }
+
+        [Fact]
+        public async Task TheWindowsReturnOneEntryPerCurrencyAndAnEmptyMonthIsAllZeros()
+        {
+            var (service, context, ars) = Build();
+            using var _ = context;
+
+            var windows = await service.GetWindowsAsync(1, new[] { ars.Id }, new DateTime(2026, 10, 1), 15);
+
+            windows.Keys.Should().Equal(ars.Id);
+            windows[ars.Id].ToDate.TotalCurrent.Should().Be(0m);
+            windows[ars.Id].FullMonths.TotalCurrent.Should().Be(0m);
+        }
+
+        [Fact]
         public async Task TheInstallmentsDueOfAMonthWithNothingIsEmpty()
         {
             var (service, context, ars) = Build();

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JazFinanzasApp.API.Business.Assistant;
 using JazFinanzasApp.API.Business.Assistant.Sources;
+using JazFinanzasApp.API.Business.DTO.Assistant;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.InvestmentReport;
 using JazFinanzasApp.API.Business.DTO.NetWorth;
@@ -24,6 +25,15 @@ namespace JazFinanzasApp.Tests.Services
             mock.Setup(c => c.GetAsync()).ReturnsAsync(new AssistantCurrencySet(
                 new Asset { Id = ArsId, Name = "Peso Argentino", Symbol = "ARS" },
                 new Asset { Id = UsdId, Name = "Dolar Estadounidense", Symbol = "USD" }));
+            return mock;
+        }
+
+        public static Mock<IAssistantFindingService> NoFindings() => Findings();
+
+        public static Mock<IAssistantFindingService> Findings(params AssistantFindingDTO[] findings)
+        {
+            var mock = new Mock<IAssistantFindingService>();
+            mock.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(findings.ToList());
             return mock;
         }
 
@@ -509,7 +519,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task BuildAsync_ForAMidMonth_SendsTodaysPendings()
         {
-            var sut = new AlertsContextSource(Dashboard(Item("CardDue", "Visa"), Item("StaleQuote", "Bonos")).Object, AssistantSourceTestHelpers.Currencies().Object);
+            var sut = new AlertsContextSource(Dashboard(Item("CardDue", "Visa"), Item("StaleQuote", "Bonos")).Object, AssistantSourceTestHelpers.NoFindings().Object, AssistantSourceTestHelpers.Currencies().Object);
 
             var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
 
@@ -520,7 +530,7 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task BuildAsync_ForTheLastClosedMonth_SendsTodaysPendings()
         {
-            var sut = new AlertsContextSource(Dashboard(Item("CardDue", "Visa")).Object, AssistantSourceTestHelpers.Currencies().Object);
+            var sut = new AlertsContextSource(Dashboard(Item("CardDue", "Visa")).Object, AssistantSourceTestHelpers.NoFindings().Object, AssistantSourceTestHelpers.Currencies().Object);
 
             (await sut.BuildAsync(AssistantSourceTestHelpers.Close(AssistantSourceTestHelpers.LastMonth))).Should().NotBeNull();
         }
@@ -529,7 +539,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task BuildAsync_ForAnOldClose_SendsNothing_BecauseTheTrayIsTodaysState()
         {
             var dashboard = Dashboard(Item("CardDue", "Visa"));
-            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.Currencies().Object);
+            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.NoFindings().Object, AssistantSourceTestHelpers.Currencies().Object);
 
             var data = await sut.BuildAsync(AssistantSourceTestHelpers.Close(AssistantSourceTestHelpers.ThisMonth.AddMonths(-4)));
 
@@ -540,15 +550,49 @@ namespace JazFinanzasApp.Tests.Services
         [Fact]
         public async Task BuildAsync_WithAnEmptyTray_HasNothingToSay()
         {
-            var sut = new AlertsContextSource(Dashboard().Object, AssistantSourceTestHelpers.Currencies().Object);
+            var sut = new AlertsContextSource(Dashboard().Object, AssistantSourceTestHelpers.NoFindings().Object, AssistantSourceTestHelpers.Currencies().Object);
 
             (await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16))).Should().BeNull();
         }
 
         [Fact]
+        public async Task BuildAsync_SendsTheActiveFindingsEvenWhenTheTrayHasNone()
+        {
+            var finding = new AssistantFindingDTO { Title = "Poco gasto en supermercado", Detail = "Detalle", CreatedAt = new DateTime(2026, 10, 5) };
+            var sut = new AlertsContextSource(Dashboard().Object, AssistantSourceTestHelpers.Findings(finding).Object, AssistantSourceTestHelpers.Currencies().Object);
+
+            var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
+
+            data.Pending.Should().ContainSingle().Which.Title.Should().Be("Poco gasto en supermercado");
+        }
+
+        [Fact]
+        public async Task BuildAsync_DoesNotDuplicateFindingsThatAlsoComeThroughTheTray()
+        {
+            var finding = new AssistantFindingDTO { Title = "Hallazgo", Detail = "d", CreatedAt = new DateTime(2026, 10, 5) };
+            var sut = new AlertsContextSource(Dashboard(Item("AssistantFinding", "Hallazgo")).Object, AssistantSourceTestHelpers.Findings(finding).Object, AssistantSourceTestHelpers.Currencies().Object);
+
+            var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
+
+            data.Pending.Should().ContainSingle();
+        }
+
+        [Fact]
+        public async Task BuildAsync_ToleratesTheAssistantNotBeingEnabled()
+        {
+            var findings = new Mock<IAssistantFindingService>();
+            findings.Setup(f => f.GetAsync(It.IsAny<int>(), It.IsAny<bool>())).ThrowsAsync(new JazFinanzasApp.API.Business.Exceptions.BusinessRuleException("no"));
+            var sut = new AlertsContextSource(Dashboard(Item("CardDue", "Visa")).Object, findings.Object, AssistantSourceTestHelpers.Currencies().Object);
+
+            var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
+
+            data.Pending.Should().ContainSingle();
+        }
+
+        [Fact]
         public void Measures_SaysTheTrayIsTodaysState()
         {
-            var sut = new AlertsContextSource(Mock.Of<IDashboardService>(), AssistantSourceTestHelpers.Currencies().Object);
+            var sut = new AlertsContextSource(Mock.Of<IDashboardService>(), AssistantSourceTestHelpers.NoFindings().Object, AssistantSourceTestHelpers.Currencies().Object);
             sut.Measures.Should().Contain("al día de hoy");
         }
     }

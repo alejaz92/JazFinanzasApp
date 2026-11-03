@@ -613,7 +613,8 @@ namespace JazFinanzasApp.Tests.Services
                     new() { Kind = "AssistantQualityReviewDue", Title = "Revisión de calidad del asistente", Severity = "info" }
                 }
             });
-            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.Currencies().Object);
+            var finding = new JazFinanzasApp.API.Business.DTO.Assistant.AssistantFindingDTO { Title = "Poco gasto en supermercado", Detail = "d", CreatedAt = new DateTime(2026, 10, 5) };
+            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.Findings(finding).Object, AssistantSourceTestHelpers.Currencies().Object);
 
             var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
 
