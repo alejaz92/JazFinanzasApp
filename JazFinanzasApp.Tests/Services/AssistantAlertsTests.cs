@@ -66,8 +66,8 @@ namespace JazFinanzasApp.Tests.Services
             alert.LinkId.Should().Be(1);
             alert.Severity.Should().Be("warning");
             alert.AssetSymbol.Should().BeNull(); // el monto sale en Amount, con el formato de la bandeja
-            alert.Amount.Should().Be(250_001m);
-            alert.Detail.Should().Contain("$100.000").And.Contain("6 meses").And.NotContain("$250.001"); // el monto sale en Amount
+            alert.Amount.Should().BeNull(); // el monto va en el detalle, con la moneda explícita
+            alert.Detail.Should().Contain("ARS 250.001").And.Contain("ARS 100.000").And.Contain("6 meses").And.NotContain("$");
         }
 
         [Fact]
@@ -150,8 +150,8 @@ namespace JazFinanzasApp.Tests.Services
             alert.Title.Should().Be("Viajes");
             alert.LinkId.Should().Be(1);
             alert.Date.Should().Be(new DateTime(2026, 10, 15));
-            alert.Amount.Should().Be(200_001m);
-            alert.Detail.Should().Contain("Pasajes").And.Contain("$160.000").And.NotContain("$200.001"); // el monto sale en Amount
+            alert.Amount.Should().BeNull();
+            alert.Detail.Should().Contain("Pasajes").And.Contain("ARS 200.001").And.Contain("ARS 160.000").And.NotContain("$");
         }
 
         [Fact]

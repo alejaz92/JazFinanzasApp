@@ -65,10 +65,10 @@ namespace JazFinanzasApp.API.Business.Assistant
         public static List<DashboardPendingItemDTO> CategorySpikes(
             IReadOnlyCollection<AlertMovementResult> movements, DateTime today, AssistantAlertsOptions options)
         {
-            var result = new List<DashboardPendingItemDTO>();
+            var result = new List<(decimal Amount, DashboardPendingItemDTO Item)>();
             var monthStart = new DateTime(today.Year, today.Month, 1);
             var history = options.SpikeHistoryMonths;
-            if (history <= 0) return result;
+            if (history <= 0) return new List<DashboardPendingItemDTO>();
             var historyStart = monthStart.AddMonths(-history);
 
             foreach (var group in movements.Where(m => m.MovementType == "E" && m.Date >= historyStart && m.Date.Date <= today.Date).GroupBy(m => m.CategoryId))
@@ -80,24 +80,23 @@ namespace JazFinanzasApp.API.Business.Assistant
                 if (average <= 0m) continue;
                 if (current > options.SpikeFactor * average && current >= options.SpikeMinAmount)
                 {
-                    result.Add(new DashboardPendingItemDTO
+                    result.Add((current, new DashboardPendingItemDTO
                     {
                         Kind = CategorySpikeKind,
                         Title = group.First().CategoryName,
-                        Detail = $"Va por encima de su promedio mensual de los últimos {history} meses ({Money(average)}).",
-                        Amount = Math.Round(current, 0),
+                        Detail = $"Llevás {Money(current)} este mes; su promedio mensual de los últimos {history} meses es {Money(average)}.",
                         Severity = "warning",
                         LinkId = group.Key
-                    });
+                    }));
                 }
             }
-            return result.OrderByDescending(r => r.Amount).ToList();
+            return result.OrderByDescending(r => r.Amount).Select(r => r.Item).ToList();
         }
 
         public static List<DashboardPendingItemDTO> LargeMovements(
             IReadOnlyCollection<AlertMovementResult> movements, DateTime today, AssistantAlertsOptions options)
         {
-            var result = new List<DashboardPendingItemDTO>();
+            var result = new List<(decimal Amount, DashboardPendingItemDTO Item)>();
             var recentFrom = today.Date.AddDays(-(options.LargeRecentDays - 1));
 
             foreach (var group in movements.Where(m => m.MovementType == "E").GroupBy(m => m.CategoryId))
@@ -113,20 +112,19 @@ namespace JazFinanzasApp.API.Business.Assistant
                     if (movement.AmountInPesos > options.LargeFactor * largestBefore && movement.AmountInPesos >= options.LargeMinAmount)
                     {
                         var what = string.IsNullOrWhiteSpace(movement.Detail) ? "Un egreso" : Shorten(movement.Detail!.Trim(), 50);
-                        result.Add(new DashboardPendingItemDTO
+                        result.Add((movement.AmountInPesos, new DashboardPendingItemDTO
                         {
                             Kind = LargeMovementKind,
                             Title = group.First().CategoryName,
-                            Detail = $"{what}: el mayor de la categoría en {options.LargeLookbackMonths} meses (el anterior fue de {Money(largestBefore)}).",
-                            Amount = Math.Round(movement.AmountInPesos, 0),
+                            Detail = $"{what}: {Money(movement.AmountInPesos)}, el mayor de la categoría en {options.LargeLookbackMonths} meses (el anterior fue de {Money(largestBefore)}).",
                             Date = movement.Date,
                             Severity = "warning",
                             LinkId = group.Key
-                        });
+                        }));
                     }
                 }
             }
-            return result.OrderByDescending(r => r.Amount).ToList();
+            return result.OrderByDescending(r => r.Amount).Select(r => r.Item).ToList();
         }
 
         public static List<DashboardPendingItemDTO> MissingIncome(
@@ -178,8 +176,8 @@ namespace JazFinanzasApp.API.Business.Assistant
             return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2.0;
         }
 
-        // "$1.234.567", con punto de miles y sin decimales.
-        private static string Money(decimal value) => "$" + Math.Round(value, 0).ToString("N0", Spanish);
+        // "ARS 1.234.567", con la moneda explícita, punto de miles y sin decimales (plan-devoluciones-llm-v2.md, D8).
+        private static string Money(decimal value) => "ARS " + Math.Round(value, 0).ToString("N0", Spanish);
 
         private static string Shorten(string text, int max) => text.Length <= max ? text : text[..(max - 1)].TrimEnd() + "…";
     }
