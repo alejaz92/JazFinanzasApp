@@ -105,6 +105,10 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantFindingRepository, AssistantFindingRepository>();
         services.AddScoped<IAssistantFindingService, AssistantFindingService>();
         services.AddScoped<IAssistantReviewService, AssistantReviewService>();
+        // La preparación de madrugada (plan-devoluciones-llm-v2.md, D6): la llama la Function App.
+        services.Configure<AssistantSchedulerOptions>(configuration.GetSection(AssistantSchedulerOptions.SectionName));
+        services.AddScoped<IAssistantSchedulerRunRepository, AssistantSchedulerRunRepository>();
+        services.AddScoped<IAssistantSchedulerService, AssistantSchedulerService>();
         services.Configure<AssistantAlertsOptions>(configuration.GetSection(AssistantAlertsOptions.SectionName));
         services.AddScoped<IAssistantAlertService, AssistantAlertService>();
 

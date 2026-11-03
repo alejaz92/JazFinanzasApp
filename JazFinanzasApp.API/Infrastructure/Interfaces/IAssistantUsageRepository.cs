@@ -10,6 +10,9 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Suma CostUsd de las llamadas creadas en [from, to), sin contar las de evaluación (D11).
         Task<decimal> SumCostExcludingEvalAsync(int userId, DateTime from, DateTime to);
 
+        // Los usuarios con el asistente habilitado: a quienes les prepara las devoluciones la corrida de madrugada.
+        Task<List<int>> GetEnabledUserIdsAsync();
+
         // Guarda de inmediato: el registro tiene que sobrevivir a una falla posterior de la pasada.
         Task AddApiCallAsync(AssistantApiCall call);
     }

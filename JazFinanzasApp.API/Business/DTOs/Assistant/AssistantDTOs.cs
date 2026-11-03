@@ -71,6 +71,20 @@ namespace JazFinanzasApp.API.Business.DTO.Assistant
         public const string Empty = "Empty";
     }
 
+    // Por qué todavía no está la devolución que falta (plan-devoluciones-llm-v2.md, D7). El frontend nuevo lo muestra en vez de
+    // disparar la generación solo; el botón de generar ahora sigue disponible.
+    public static class AssistantLatestOutlook
+    {
+        // Se prepara en la próxima corrida de madrugada.
+        public const string Scheduled = "Scheduled";
+        // Es un cierre y al mes le falta algo (OutlookNotes dice qué): se prepara solo cuando esté completo o el día 7.
+        public const string WaitingForData = "WaitingForData";
+        // La última corrida de la preparación falló.
+        public const string LastRunFailed = "LastRunFailed";
+        // No hay una corrida reciente: la preparación de madrugada no está corriendo.
+        public const string SchedulerNotRun = "SchedulerNotRun";
+    }
+
     // GET reviews/latest (D6): la última devolución, o cuál falta generar.
     public class AssistantLatestDTO
     {
@@ -81,7 +95,17 @@ namespace JazFinanzasApp.API.Business.DTO.Assistant
         // Solo cuando no falta ninguna devolución (D6, paso 3): conviene hacer la revisión semanal. El frontend la
         // dispara en segundo plano con POST reviews/generate (kind WeeklyScan), sin indicador.
         public bool WeeklyScanDue { get; set; }
+        // Hay una pasada generándose ahora (a pedido o de la preparación de madrugada): la pantalla dice "Preparando…" y consulta
+        // de nuevo en unos segundos.
+        public bool Preparing { get; set; }
+        // Solo cuando State es NotGenerated: por qué todavía no está (AssistantLatestOutlook).
+        public string? Outlook { get; set; }
+        // Con Outlook WaitingForData: lo que le falta al mes.
+        public List<string> OutlookNotes { get; set; } = new();
     }
+
+    // Una pasada que toca preparar, ya sea porque falta o porque conviene (la revisión semanal).
+    public record AssistantDuePass(string Kind, DateTime PeriodStart);
 
     // Un hallazgo del asistente, para la bandeja y para el historial de hallazgos.
     public class AssistantFindingDTO

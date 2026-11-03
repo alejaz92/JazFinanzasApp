@@ -5,6 +5,7 @@ using JazFinanzasApp.API.Business.DTO.Assistant;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Data;
+using JazFinanzasApp.API.Infrastructure.Interfaces;
 using JazFinanzasApp.API.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -75,7 +76,7 @@ namespace JazFinanzasApp.Tests.Services
             public AssistantUsageService Usage { get; }
 
             public Fixture(string? dbName = null, FakeModelClient? client = null, MutableTimeProvider? time = null,
-                bool enabled = true, decimal budget = 3m, IAssistantMonthReadinessService? readiness = null)
+                bool enabled = true, decimal budget = 3m, IAssistantMonthReadinessService? readiness = null, IAssistantSchedulerRunRepository? runs = null)
             {
                 dbName ??= Guid.NewGuid().ToString();
                 Client = client ?? new FakeModelClient();
@@ -103,7 +104,7 @@ namespace JazFinanzasApp.Tests.Services
                 Service = new AssistantReviewService(
                     new AssistantReviewRepository(Context), usage,
                     new AssistantContextBuilder(new IAssistantContextSource[] { new FakeSource() }, readiness),
-                    Findings, Time, NullLogger<AssistantReviewService>.Instance);
+                    Findings, Time, NullLogger<AssistantReviewService>.Instance, readiness, runs);
             }
 
             // Un movimiento del usuario en una fecha, para que el período no cuente como "sin movimientos".
