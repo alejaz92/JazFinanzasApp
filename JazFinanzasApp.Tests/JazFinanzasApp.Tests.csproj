@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\JazFinanzasApp.API\JazFinanzasApp.API.csproj" />
+    <ProjectReference Include="..\JazFinanzasApp.Functions\JazFinanzasApp.Functions.csproj" />
   </ItemGroup>
 
 </Project>

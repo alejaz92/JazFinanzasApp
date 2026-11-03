@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>JazFinanzasApp.Functions</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\JazFinanzasApp.API\JazFinanzasApp.API.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- La configuración del asistente (modelo, precios, umbrales de alertas) es la misma de la API: viaja con la función. -->
+    <None Include="..\JazFinanzasApp.API\appsettings.json" Link="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Update="host.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="local.settings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="2.52.0" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Timer" Version="4.3.1" />
+    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.1.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.8" />
+  </ItemGroup>
+
+  <!-- El appsettings.Development.json de la API trae la connection string y las claves JWT: no tiene que viajar con la función. -->
+  <Target Name="KeepApiDevelopmentSettingsOut" AfterTargets="ComputeResolvedFilesToPublishList">
+    <ItemGroup>
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'appsettings.Development.json'" />
+    </ItemGroup>
+  </Target>
+  <Target Name="DeleteApiDevelopmentSettingsFromOutput" AfterTargets="Build">
+    <Delete Files="$(OutDir)appsettings.Development.json" />
+  </Target>
+
+</Project>

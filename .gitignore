@@ -365,3 +365,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /.vscode/tasks.json
+
+## Function App: configuración local (puede traer connection strings)
+JazFinanzasApp.Functions/local.settings.json
