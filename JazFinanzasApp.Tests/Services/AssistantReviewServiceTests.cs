@@ -75,7 +75,7 @@ namespace JazFinanzasApp.Tests.Services
             public AssistantUsageService Usage { get; }
 
             public Fixture(string? dbName = null, FakeModelClient? client = null, MutableTimeProvider? time = null,
-                bool enabled = true, decimal budget = 3m)
+                bool enabled = true, decimal budget = 3m, IAssistantMonthReadinessService? readiness = null)
             {
                 dbName ??= Guid.NewGuid().ToString();
                 Client = client ?? new FakeModelClient();
@@ -102,7 +102,7 @@ namespace JazFinanzasApp.Tests.Services
 
                 Service = new AssistantReviewService(
                     new AssistantReviewRepository(Context), usage,
-                    new AssistantContextBuilder(new IAssistantContextSource[] { new FakeSource() }),
+                    new AssistantContextBuilder(new IAssistantContextSource[] { new FakeSource() }, readiness),
                     Findings, Time, NullLogger<AssistantReviewService>.Instance);
             }
 

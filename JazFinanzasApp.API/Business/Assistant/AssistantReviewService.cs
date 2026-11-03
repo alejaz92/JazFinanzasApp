@@ -203,6 +203,7 @@ namespace JazFinanzasApp.API.Business.Assistant
             {
                 var context = await _contextBuilder.BuildAsync(new AssistantContextRequest(userId, request.Kind, periodStart, cutoff));
                 contextJson = AssistantContextBuilder.Serialize(context);
+                review.DataNotesJson = context.DataNotes is { Count: > 0 } ? JsonSerializer.Serialize(context.DataNotes) : null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -238,6 +239,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             var review = NewReview(userId, source.Kind, source.PeriodStart, source.CutoffDate, AssistantReviewPurpose.Eval, AssistantReviewStatus.Pending);
             review.ContextJson = source.ContextJson;
+            review.DataNotesJson = source.DataNotesJson;
             await AddPendingAsync(review);
 
             await ExecuteAsync(review, source.ContextJson, version, AssistantApiCallPurpose.Eval, cancellationToken);
@@ -563,6 +565,7 @@ namespace JazFinanzasApp.API.Business.Assistant
                 Highlights = ReadList(review.HighlightsJson),
                 Body = review.Body,
                 UnverifiedFigures = ReadList(review.UnverifiedFiguresJson),
+                DataNotes = ReadList(review.DataNotesJson),
                 ErrorMessage = review.ErrorMessage,
                 PromptVersion = review.PromptVersion,
                 Model = review.Model,

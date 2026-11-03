@@ -56,6 +56,10 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
         Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);
         Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);
+        // Los activos que el usuario tenía en cartera al final de `heldAt` cuya última cotización es anterior a esa fecha (o sea, que
+        // todavía no tienen cotización de ese día ni posterior). QuoteDate es la última que tienen. Es el chequeo de "mes listo"
+        // del cierre del asistente (plan-devoluciones-llm-v2.md, D4); mismo criterio de cotización que GetStaleAssetsAsync.
+        Task<IEnumerable<StaleAssetResult>> GetHeldAssetsWithoutQuoteAsync(int userId, DateTime heldAt);
         Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
         Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
 

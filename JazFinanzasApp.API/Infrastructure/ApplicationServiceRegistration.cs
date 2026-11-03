@@ -92,6 +92,7 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantContextSource, InvestmentsContextSource>();
         services.AddScoped<IAssistantContextSource, TripsContextSource>();
         services.AddScoped<IAssistantContextSource, AlertsContextSource>();
+        services.AddScoped<IAssistantMonthReadinessService, AssistantMonthReadinessService>();
         services.AddScoped<AssistantContextBuilder>();
         // Cliente del modelo y registro de gasto (plan-devoluciones-llm.md, D4 y D11). El cliente es singleton
         // porque guarda el cliente HTTP del SDK; crea la conexión recién en el primer uso, así que sin clave

@@ -30,6 +30,8 @@ namespace JazFinanzasApp.API.Business.DTO.Assistant
         public string? Body { get; set; }
         // Las cifras del texto que no se encontraron en los datos ("cifras a revisar").
         public List<string> UnverifiedFigures { get; set; } = new();
+        // Lo que faltaba en los datos al prepararla ("armada sin…"); vacío si estaba todo.
+        public List<string> DataNotes { get; set; } = new();
         public string? ErrorMessage { get; set; }
         public string? PromptVersion { get; set; }
         public string? Model { get; set; }

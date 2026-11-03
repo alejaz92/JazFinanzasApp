@@ -490,6 +490,9 @@ namespace JazFinanzasApp.API.Migrations
                     b.Property<DateTime>("CutoffDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("DataNotesJson")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("ErrorMessage")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
@@ -549,6 +552,51 @@ namespace JazFinanzasApp.API.Migrations
                     b.HasIndex("UserId", "Purpose", "Kind", "PeriodStart");
 
                     b.ToTable("AssistantReviews");
+                });
+
+            modelBuilder.Entity("JazFinanzasApp.API.Domain.AssistantSchedulerRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Failed")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int>("Prepared")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Skipped")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(12)
+                        .HasColumnType("nvarchar(12)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StartedAt");
+
+                    b.ToTable("AssistantSchedulerRuns");
                 });
 
             modelBuilder.Entity("JazFinanzasApp.API.Domain.AssistantUserSettings", b =>

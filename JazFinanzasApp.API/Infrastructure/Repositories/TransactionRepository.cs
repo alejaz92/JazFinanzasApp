@@ -252,12 +252,31 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         public async Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold)
         {
-            var transactions = await _context.Transactions
-                .Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId)
+            var cutoff = DateTime.Today.AddDays(-staleDaysThreshold);
+            return (await LoadHeldAssetsWithLatestQuoteAsync(userId, heldAt: null)).Where(r => r.QuoteDate < cutoff).ToList();
+        }
+
+        public async Task<IEnumerable<StaleAssetResult>> GetHeldAssetsWithoutQuoteAsync(int userId, DateTime heldAt)
+        {
+            return (await LoadHeldAssetsWithLatestQuoteAsync(userId, heldAt.Date)).Where(r => r.QuoteDate < heldAt.Date).ToList();
+        }
+
+        // Los activos en cartera (hoy, o al final de `heldAt`) que tienen alguna cotización, con la fecha de la última, de más vieja a
+        // más nueva. Los que no tienen ninguna no figuran.
+        private async Task<List<StaleAssetResult>> LoadHeldAssetsWithLatestQuoteAsync(int userId, DateTime? heldAt)
+        {
+            var transactionsQuery = _context.Transactions.Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId);
+            if (heldAt.HasValue)
+            {
+                var end = heldAt.Value.Date.AddDays(1);
+                transactionsQuery = transactionsQuery.Where(t => t.Date < end);
+            }
+
+            var transactions = await transactionsQuery
                 .Select(t => new { t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, AssetTypeName = t.Asset.AssetType.Name, t.Amount, t.Date })
                 .ToListAsync();
 
-            if (transactions.Count == 0) return Enumerable.Empty<StaleAssetResult>();
+            if (transactions.Count == 0) return new List<StaleAssetResult>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
             var splits = await _context.AssetSplitEvents
@@ -267,7 +286,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            // Solo interesa lo que hoy sigue en cartera — un activo ya vendido del todo no debería
+            // Solo interesa lo que sigue en cartera — un activo ya vendido del todo no debería
             // avisar por una cotización vieja que ya no valúa nada.
             var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => new { g.First().AssetName, g.First().AssetSymbol, g.First().AssetTypeName, Rows = g.ToList() });
             var heldAssetIds = byAsset
@@ -275,7 +294,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(kv => kv.Key)
                 .ToList();
 
-            if (heldAssetIds.Count == 0) return Enumerable.Empty<StaleAssetResult>();
+            if (heldAssetIds.Count == 0) return new List<StaleAssetResult>();
 
             var latestQuoteByAsset = (await _context.AssetQuotes
                     .Where(q => heldAssetIds.Contains(q.AssetId))
@@ -285,10 +304,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .GroupBy(q => q.AssetId)
                 .ToDictionary(g => g.Key, g => g.Max(x => x.Date));
 
-            var cutoff = DateTime.Today.AddDays(-staleDaysThreshold);
-
             return heldAssetIds
-                .Where(id => latestQuoteByAsset.TryGetValue(id, out var date) && date < cutoff)
+                .Where(id => latestQuoteByAsset.ContainsKey(id))
                 .Select(id => new StaleAssetResult
                 {
                     AssetName = byAsset[id].AssetName,

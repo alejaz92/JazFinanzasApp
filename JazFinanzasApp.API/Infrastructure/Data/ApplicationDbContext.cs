@@ -53,6 +53,7 @@ namespace JazFinanzasApp.API.Infrastructure.Data
         public DbSet<ReportFavorite> ReportFavorites { get; set; }
         public DbSet<AssistantUserSettings> AssistantUserSettings { get; set; }
         public DbSet<AssistantReview> AssistantReviews { get; set; }
+        public DbSet<AssistantSchedulerRun> AssistantSchedulerRuns { get; set; }
         public DbSet<AssistantApiCall> AssistantApiCalls { get; set; }
         public DbSet<AssistantFeedback> AssistantFeedbacks { get; set; }
         public DbSet<AssistantFinding> AssistantFindings { get; set; }
@@ -218,6 +219,10 @@ namespace JazFinanzasApp.API.Infrastructure.Data
 
             modelBuilder.Entity<AssistantReview>()
                 .HasIndex(r => new { r.UserId, r.Purpose, r.Kind, r.PeriodStart });
+
+            // Para encontrar la última corrida de la preparación.
+            modelBuilder.Entity<AssistantSchedulerRun>()
+                .HasIndex(r => r.StartedAt);
 
             modelBuilder.Entity<AssistantApiCall>()
                 .HasOne(c => c.User)
