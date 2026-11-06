@@ -686,6 +686,37 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return best >= 0 ? series[best].Value : series[0].Value;
         }
 
+        private const string DollarAssetName = "Dolar Estadounidense";
+
+        // Convierte un monto de tarjeta al activo destino pasando por el dólar (origen -> dólar -> destino) con la serie "BLUE", que guarda
+        // "unidades del activo por 1 USD" bajo el activo (el peso: unos 1.500). El dólar vale 1 y no tiene serie propia. Sin cotización
+        // devuelve 0. Es la misma cotización con la que el resto de la app convierte un gasto (Ingresos y Egresos, gastos directos), así un
+        // gasto vale lo mismo pague como pague; el reporte de Tarjetas usa en cambio la cotización "TARJETA", y por eso las cifras en
+        // otra moneda de las tarjetas pueden diferir de ese reporte (decisión del usuario, 2026-11-06; a revisar, ver docs/ideas.md).
+        // plan-devoluciones-llm-v2.md, Fase 13: antes se buscaba una serie TARJETA del dólar que no existe y un recurrente en dólares
+        // quedaba en 0 pesos.
+        private static decimal ConvertCardAmount(decimal amount, int sourceId, string sourceName, int targetId, string targetName,
+            Dictionary<int, List<(DateTime Date, decimal Value)>> series, DateTime date)
+        {
+            if (sourceId == targetId) return amount;
+
+            decimal inDollars;
+            if (sourceName == DollarAssetName)
+            {
+                inDollars = amount;
+            }
+            else
+            {
+                var sourceQuote = LookupQuote(series.GetValueOrDefault(sourceId, new()), date);
+                if (sourceQuote <= 0m) return 0m;
+                inDollars = amount / sourceQuote;
+            }
+
+            if (targetName == DollarAssetName) return inDollars;
+            var targetQuote = LookupQuote(series.GetValueOrDefault(targetId, new()), date);
+            return targetQuote <= 0m ? 0m : inDollars * targetQuote;
+        }
+
         // Resumen del mes en cascada: ingresos del mes, un escalón por categoría de egreso (mayor a
         // menor) y el resultado del mes anterior, para la comparación siempre presente (sección 7).
         public async Task<IncExpWaterfallResult> GetIncExpWaterfallAsync(int userId, DateTime month, Asset asset)
@@ -1080,6 +1111,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     ct.FirstInstallment,
                     ct.LastInstallment,
                     ct.AssetId,
+                    AssetName = ct.Asset.Name,
                     ct.TotalAmount,
                     ct.InstallmentAmount,
                     ct.Detail,
@@ -1090,14 +1122,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 })
                 .ToListAsync();
 
-            // CardTransaction no guarda su cotización: se resuelve con la serie "TARJETA" del activo de origen, igual que
-            // GetSpendingByTagAsync.
-            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId), "TARJETA");
-            Dictionary<int, decimal> CardAmounts(int assetId, decimal amount, DateTime date)
-            {
-                var quote = LookupQuote(cardQuoteSeries.GetValueOrDefault(assetId, new()), date);
-                return assets.ToDictionary(a => a.Id, a => Math.Abs(converters[a.Id](assetId, amount, quote, date)));
-            }
+            // CardTransaction no guarda su cotización: se convierte con la serie "BLUE" (ver ConvertCardAmount). La serie hace falta del
+            // activo de origen y de cada moneda pedida.
+            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId).Concat(assets.Select(a => a.Id)), "BLUE");
+            Dictionary<int, decimal> CardAmounts(int assetId, string assetName, decimal amount, DateTime date) =>
+                assets.ToDictionary(a => a.Id, a => Math.Abs(ConvertCardAmount(amount, assetId, assetName, a.Id, a.Name, cardQuoteSeries, date)));
 
             var firstMonth = new DateTime(from.Year, from.Month, 1);
             var lastMonth = new DateTime(toExclusive.AddDays(-1).Year, toExclusive.AddDays(-1).Month, 1);
@@ -1115,7 +1144,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         ParentId = c.ParentId,
                         ParentName = c.ParentName,
                         Detail = c.Detail,
-                        AmountByAssetId = CardAmounts(c.AssetId, c.TotalAmount, c.Date)
+                        AmountByAssetId = CardAmounts(c.AssetId, c.AssetName, c.TotalAmount, c.Date)
                     });
                     continue;
                 }
@@ -1134,7 +1163,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         ParentId = c.ParentId,
                         ParentName = c.ParentName,
                         Detail = c.Detail,
-                        AmountByAssetId = CardAmounts(c.AssetId, c.InstallmentAmount, month)
+                        AmountByAssetId = CardAmounts(c.AssetId, c.AssetName, c.InstallmentAmount, month)
                     });
                 }
             }
@@ -1162,6 +1191,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     ct.LastInstallment,
                     ct.Installments,
                     ct.AssetId,
+                    AssetName = ct.Asset.Name,
                     ct.InstallmentAmount,
                     ct.Detail,
                     ClassId = ct.TransactionClassId,
@@ -1169,7 +1199,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 })
                 .ToListAsync();
 
-            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId), "TARJETA");
+            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId).Append(asset.Id), "BLUE");
 
             var result = new List<CardInstallmentDueResult>();
             foreach (var c in cards)
@@ -1192,7 +1222,6 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 }
                 if (!dueThisMonth) continue;
 
-                var quote = LookupQuote(cardQuoteSeries.GetValueOrDefault(c.AssetId, new()), monthStart);
                 result.Add(new CardInstallmentDueResult
                 {
                     CardTransactionId = c.Id,
@@ -1200,7 +1229,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                     CategoryName = c.ClassName,
                     Detail = c.Detail,
                     IsRecurring = recurring,
-                    Amount = Math.Abs(convert(c.AssetId, c.InstallmentAmount, quote, monthStart))
+                    Amount = Math.Abs(ConvertCardAmount(c.InstallmentAmount, c.AssetId, c.AssetName, asset.Id, asset.Name, cardQuoteSeries, monthStart))
                 });
             }
             return result;
