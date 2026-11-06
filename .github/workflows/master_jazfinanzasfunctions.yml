@@ -52,6 +52,9 @@ jobs:
         with:
           name: functionapp
           path: ${{ github.workspace }}/functionapp
+          # La publicación de una función en modelo aislado trae la carpeta oculta .azurefunctions (las extensiones). upload-artifact@v4
+          # no sube archivos ocultos por defecto: sin esto el host arranca sin encontrar ninguna función.
+          include-hidden-files: true
 
   deploy:
     if: ${{ vars.FUNCTIONS_DEPLOY_ENABLED == 'true' }}
