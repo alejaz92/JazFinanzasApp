@@ -14,6 +14,9 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public decimal TotalExpense { get; set; }
         public decimal Result { get; set; }
         public decimal PreviousMonthResult { get; set; }
+
+        // Los ingresos del mes anterior: con el gasto por fecha de compra, el resultado del mes anterior se arma afuera.
+        public decimal PreviousTotalIncome { get; set; }
     }
 
     public class IncExpEvolutionPointResult
@@ -124,6 +127,46 @@ namespace JazFinanzasApp.API.Infrastructure.Data.QueryResults
         public string CategoryName { get; set; }
         public string? Detail { get; set; }
         public decimal AmountInPesos { get; set; }
+
+        // Un cargo recurrente de tarjeta (cae el día 1 de cada mes activo): cuenta para el total del mes pero no es un movimiento puntual.
+        public bool IsRecurring { get; set; }
+    }
+
+    // Los tres orígenes del gasto por fecha de compra (plan-devoluciones-llm-v2.md, D1).
+    public static class PurchaseSpendingKind
+    {
+        // Un egreso pagado directo desde una cuenta, en su fecha.
+        public const string Direct = "Direct";
+        // Una compra con tarjeta (de una vez o en cuotas), entera, en su fecha de compra.
+        public const string CardPurchase = "CardPurchase";
+        // Un cargo recurrente de tarjeta, su monto en cada mes en que estuvo activo, el día 1 del mes.
+        public const string CardRecurring = "CardRecurring";
+    }
+
+    // Una fila del gasto por fecha de compra, con su monto expresado en cada moneda pedida (positivo, sin redondear).
+    public class PurchaseSpendingRowResult
+    {
+        public DateTime Date { get; set; }
+        public string Kind { get; set; } = PurchaseSpendingKind.Direct;
+        // Id del movimiento (Direct) o del consumo de tarjeta (CardPurchase y CardRecurring).
+        public int SourceId { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public int? ParentId { get; set; }
+        public string? ParentName { get; set; }
+        public string? Detail { get; set; }
+        public Dictionary<int, decimal> AmountByAssetId { get; set; } = new();
+    }
+
+    // La cuota de un consumo de tarjeta que cae en un mes (la segunda lectura, plan-devoluciones-llm-v2.md, D1).
+    public class CardInstallmentDueResult
+    {
+        public int CardTransactionId { get; set; }
+        public int CategoryId { get; set; }
+        public string CategoryName { get; set; }
+        public string? Detail { get; set; }
+        public bool IsRecurring { get; set; }
+        public decimal Amount { get; set; }
     }
 
     public class IncomeCategoryDayResult

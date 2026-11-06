@@ -16,6 +16,10 @@ namespace JazFinanzasApp.API.Controllers
         private readonly IAssistantReviewService _reviewService;
         private readonly IAssistantFindingService _findingService;
 
+        // Generar no se cancela si el usuario cierra o recarga la página (plan-devoluciones-llm-v2.md, D7): una pasada cortada a la
+        // mitad igual se paga y se pierde. Tiene su propio límite, por debajo de los 230 s del pedido del App Service.
+        private static readonly TimeSpan GenerationTimeout = TimeSpan.FromSeconds(210);
+
         public AssistantController(IAssistantReviewService reviewService, IAssistantFindingService findingService)
         {
             _reviewService = reviewService;
@@ -49,9 +53,10 @@ namespace JazFinanzasApp.API.Controllers
         }
 
         [HttpPost("reviews/generate")]
-        public async Task<IActionResult> Generate(GenerateAssistantReviewDTO dto, CancellationToken cancellationToken)
+        public async Task<IActionResult> Generate(GenerateAssistantReviewDTO dto)
         {
-            return Ok(await _reviewService.GenerateAsync(GetUserId(), dto, cancellationToken));
+            using var timeout = new CancellationTokenSource(GenerationTimeout);
+            return Ok(await _reviewService.GenerateAsync(GetUserId(), dto, timeout.Token));
         }
 
         [HttpPut("reviews/{id:int}/feedback")]
@@ -77,9 +82,10 @@ namespace JazFinanzasApp.API.Controllers
         // D10: regenera con otra versión de instrucciones sobre el mismo contexto guardado. Solo Admin.
         [Authorize(Roles = "Admin")]
         [HttpPost("reviews/{id:int}/preview")]
-        public async Task<IActionResult> Preview(int id, [FromQuery] string promptVersion, CancellationToken cancellationToken)
+        public async Task<IActionResult> Preview(int id, [FromQuery] string promptVersion)
         {
-            return Ok(await _reviewService.PreviewAsync(GetUserId(), id, promptVersion, cancellationToken));
+            using var timeout = new CancellationTokenSource(GenerationTimeout);
+            return Ok(await _reviewService.PreviewAsync(GetUserId(), id, promptVersion, timeout.Token));
         }
     }
 }

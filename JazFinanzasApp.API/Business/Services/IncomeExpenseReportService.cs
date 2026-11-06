@@ -41,7 +41,8 @@ namespace JazFinanzasApp.API.Business.Services
                 ExpenseSteps = result.ExpenseSteps.Select(s => new WaterfallStepDTO { CategoryName = s.CategoryName, Amount = s.Amount }).ToList(),
                 TotalExpense = result.TotalExpense,
                 Result = result.Result,
-                PreviousMonthResult = result.PreviousMonthResult
+                PreviousMonthResult = result.PreviousMonthResult,
+                PreviousTotalIncome = result.PreviousTotalIncome
             };
         }
 

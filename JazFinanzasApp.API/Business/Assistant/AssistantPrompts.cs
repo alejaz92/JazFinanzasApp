@@ -10,9 +10,9 @@ namespace JazFinanzasApp.API.Business.Assistant
     // deploy. Cada generación guarda la versión que usó, en el formato "month-close.v1".
     public static class AssistantPrompts
     {
-        public const string MonthCloseCurrent = "month-close.v1";
-        public const string MidMonthCurrent = "mid-month.v1";
-        public const string WeeklyScanCurrent = "weekly-scan.v1";
+        public const string MonthCloseCurrent = "month-close.v2";
+        public const string MidMonthCurrent = "mid-month.v2";
+        public const string WeeklyScanCurrent = "weekly-scan.v2";
 
         private const string ResourcePrefix = "JazFinanzasApp.API.Business.Assistant.Prompts.";
 

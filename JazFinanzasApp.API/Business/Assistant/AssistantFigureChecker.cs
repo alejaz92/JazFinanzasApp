@@ -9,7 +9,7 @@ namespace JazFinanzasApp.API.Business.Assistant
     // "cifras a revisar". No bloquea nada: es la red de seguridad de la regla de fondo (el asistente nunca
     // calcula).
     //
-    // Qué revisa: montos ($85.000, US$ 32,94), porcentajes (18 %) y números de dos o más dígitos, en formato
+    // Qué revisa: montos (ARS 85.000, USD 32,94; también $85.000 y US$ 32,94), porcentajes (18 %) y números de dos o más dígitos, en formato
     // argentino (punto de miles, coma decimal), con tolerancia de redondeo.
     // Qué no revisa: años, fechas ("16/10", "15 de octubre", "2026-09"), cantidades de tiempo ("6 meses")
     // ni expresiones como "el doble".
@@ -19,7 +19,7 @@ namespace JazFinanzasApp.API.Business.Assistant
             @"(?<![\p{L}\d.,])(?<int>\d{1,3}(?:\.\d{3})+|\d+)(?:,(?<dec>\d+))?(?![\p{L}\d])",
             RegexOptions.Compiled);
 
-        private static readonly Regex MoneyPrefix = new(@"(?:US\$|u\$s|USD|\$)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly Regex MoneyPrefix = new(@"(?:US\$|u\$s|USD|ARS|\$)\s*$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex PercentSuffix = new(@"^\s*(?:%|puntos?\s+porcentuales?|p\.?\s?p\.?(?![\p{L}]))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex ScaleSuffix = new(@"^\s+(?<word>millones|mill[oó]n|mil)(?![\p{L}])", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex TimeUnitSuffix = new(@"^\s+(?:meses|mes|d[ií]as|d[ií]a|semanas|semana|a[nñ]os|a[nñ]o)(?![\p{L}])", RegexOptions.Compiled | RegexOptions.IgnoreCase);

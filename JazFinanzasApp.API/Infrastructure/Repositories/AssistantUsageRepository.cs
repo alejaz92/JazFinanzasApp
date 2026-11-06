@@ -32,6 +32,11 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return costs.Sum();
         }
 
+        public async Task<List<int>> GetEnabledUserIdsAsync()
+        {
+            return await _context.AssistantUserSettings.AsNoTracking().Where(s => s.Enabled).Select(s => s.UserId).OrderBy(id => id).ToListAsync();
+        }
+
         public async Task AddApiCallAsync(AssistantApiCall call)
         {
             await _context.AssistantApiCalls.AddAsync(call);

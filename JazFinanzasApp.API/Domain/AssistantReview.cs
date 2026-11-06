@@ -66,6 +66,10 @@ namespace JazFinanzasApp.API.Domain
 
         [MaxLength(1000)]
         public string? ErrorMessage { get; set; }
+
+        // Lo que faltaba en los datos cuando se preparó (una cotización de fin de mes atrasada, un cobro de bono sin registrar),
+        // como una lista de textos en JSON (plan-devoluciones-llm-v2.md, D5). Null si estaba todo.
+        public string? DataNotesJson { get; set; }
     }
 
     public static class AssistantReviewKind

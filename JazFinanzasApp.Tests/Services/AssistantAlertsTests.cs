@@ -34,9 +34,9 @@ namespace JazFinanzasApp.Tests.Services
             Enumerable.Range(1, 6).Select(k => Exp(category, name, new DateTime(2026, 10, 1).AddMonths(-k).AddDays(9), perMonth)).ToList();
 
         [Fact]
-        public void TheDefaultThresholdsAreTheOnesApprovedInPhase9()
+        public void TheDefaultThresholdsAreTheOnesRecalibratedInV2Phase2()
         {
-            Options.SpikeFactor.Should().Be(2.0m);
+            Options.SpikeFactor.Should().Be(2.5m); // plan-devoluciones-llm-v2.md, Fase 2: recalibrado para la medición por fecha de compra
             Options.SpikeMinAmount.Should().Be(150_000m);
             Options.SpikeHistoryMonths.Should().Be(6);
             Options.LargeFactor.Should().Be(1.25m);
@@ -53,10 +53,10 @@ namespace JazFinanzasApp.Tests.Services
         // ── CategorySpike ──────────────────────────────────────────────────────────────────────
 
         [Fact]
-        public void CategorySpike_FiresAboveTwiceTheAverageAndTheMinimum()
+        public void CategorySpike_FiresAboveTwiceAndAHalfTheAverageAndTheMinimum()
         {
             var movements = SixMonthsOf(1, "Movilidad", 100_000m);
-            movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 200_001m));
+            movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 250_001m));
 
             var alerts = AssistantAlertRules.CategorySpikes(movements, Today, Options);
 
@@ -66,16 +66,16 @@ namespace JazFinanzasApp.Tests.Services
             alert.LinkId.Should().Be(1);
             alert.Severity.Should().Be("warning");
             alert.AssetSymbol.Should().BeNull(); // el monto sale en Amount, con el formato de la bandeja
-            alert.Amount.Should().Be(200_001m);
-            alert.Detail.Should().Contain("$100.000").And.Contain("6 meses").And.NotContain("$200.001"); // el monto sale en Amount
+            alert.Amount.Should().BeNull(); // el monto va en el detalle, con la moneda explícita
+            alert.Detail.Should().Contain("ARS 250.001").And.Contain("ARS 100.000").And.Contain("6 meses").And.NotContain("$");
         }
 
         [Fact]
-        public void CategorySpike_DoesNotFireExactlyAtTwiceTheAverage()
+        public void CategorySpike_DoesNotFireExactlyAtTwoAndAHalfTimesTheAverage()
         {
-            // 100.000 de promedio: el límite es estrictamente mayor que 2 veces (y además no llega al mínimo de 150.000).
+            // 100.000 de promedio: el límite es estrictamente mayor que 2,5 veces.
             var movements = SixMonthsOf(1, "Movilidad", 100_000m);
-            movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 200_000m));
+            movements.Add(Exp(1, "Movilidad", new DateTime(2026, 10, 10), 250_000m));
 
             AssistantAlertRules.CategorySpikes(movements, Today, Options).Should().BeEmpty();
         }
@@ -150,8 +150,8 @@ namespace JazFinanzasApp.Tests.Services
             alert.Title.Should().Be("Viajes");
             alert.LinkId.Should().Be(1);
             alert.Date.Should().Be(new DateTime(2026, 10, 15));
-            alert.Amount.Should().Be(200_001m);
-            alert.Detail.Should().Contain("Pasajes").And.Contain("$160.000").And.NotContain("$200.001"); // el monto sale en Amount
+            alert.Amount.Should().BeNull();
+            alert.Detail.Should().Contain("Pasajes").And.Contain("ARS 200.001").And.Contain("ARS 160.000").And.NotContain("$");
         }
 
         [Fact]
@@ -434,6 +434,7 @@ namespace JazFinanzasApp.Tests.Services
         private static readonly DateTime Today = new(2026, 10, 17);
 
         private readonly Mock<ITransactionRepository> _transactions = new();
+        private readonly Mock<IPurchaseSpendingService> _spending = new();
         private readonly Mock<IAssetRepository> _assets = new();
         private readonly Mock<IAssistantUsageService> _usage = new();
         private readonly Mock<IAssistantFindingService> _findings = new();
@@ -445,8 +446,8 @@ namespace JazFinanzasApp.Tests.Services
         public AssistantAlertServiceTests()
         {
             _assets.Setup(a => a.GetAssetByNameAsync("Peso Argentino")).ReturnsAsync(Pesos);
-            _transactions.Setup(t => t.GetAlertMovementsAsync(UserId, Pesos, It.IsAny<DateTime>()))
-                .ReturnsAsync(new List<AlertMovementResult>());
+            SetupIncomes(new List<AlertMovementResult>());
+            SetupExpenses();
             _usage.Setup(u => u.GetStatusAsync(UserId)).ReturnsAsync(Status(enabled: true));
             _findings.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(new List<AssistantFindingDTO>());
             _reviews.Setup(r => r.GetLastQualityReviewsAsync(UserId, 2)).ReturnsAsync(new List<AssistantQualityReview>());
@@ -455,11 +456,25 @@ namespace JazFinanzasApp.Tests.Services
             var time = new Mock<TimeProvider>();
             time.Setup(t => t.GetUtcNow()).Returns(new DateTimeOffset(2026, 11, 20, 12, 0, 0, TimeSpan.Zero));
             _sut = new AssistantAlertService(
-                _transactions.Object, _assets.Object, _usage.Object, _findings.Object, _reviews.Object,
+                _transactions.Object, _spending.Object, _assets.Object, _usage.Object, _findings.Object, _reviews.Object,
                 Options.Create(new AssistantAlertsOptions()), time.Object, NullLogger<AssistantAlertService>.Instance);
         }
 
         private static AssistantUsageStatus Status(bool enabled) => new(enabled, enabled ? 3m : 0m, 0m, new DateTime(2026, 11, 1));
+
+        private void SetupIncomes(List<AlertMovementResult> incomes) =>
+            _transactions.Setup(t => t.GetAlertIncomesAsync(UserId, Pesos, It.IsAny<DateTime>())).ReturnsAsync(incomes);
+
+        private void SetupExpenses(params PurchaseSpendingRowResult[] rows) =>
+            _spending.Setup(s => s.GetExpenseRowsAsync(UserId, Pesos.Id, It.IsAny<DateTime>(), It.IsAny<DateTime>())).ReturnsAsync(rows.ToList());
+
+        private static PurchaseSpendingRowResult Expense(DateTime date, decimal amount, string kind = PurchaseSpendingKind.Direct) => new()
+        {
+            Date = date, Kind = kind, CategoryId = 5, CategoryName = "Delivery", AmountByAssetId = new Dictionary<int, decimal> { [Pesos.Id] = amount }
+        };
+
+        private static PurchaseSpendingRowResult[] SpikeExpenses() =>
+            SpikeMovements().Select(m => Expense(m.Date, m.AmountInPesos)).ToArray();
 
         private static List<AlertMovementResult> SpikeMovements()
         {
@@ -478,7 +493,7 @@ namespace JazFinanzasApp.Tests.Services
         public async Task RuleAlertsAreBuiltForEveryUser_EvenWithoutTheAssistant()
         {
             _usage.Setup(u => u.GetStatusAsync(UserId)).ReturnsAsync(Status(enabled: false));
-            _transactions.Setup(t => t.GetAlertMovementsAsync(UserId, Pesos, It.IsAny<DateTime>())).ReturnsAsync(SpikeMovements());
+            SetupExpenses(SpikeExpenses());
 
             var items = await _sut.BuildAsync(UserId, Today);
 
@@ -498,22 +513,15 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task ActiveFindingsBecomeTrayItemsWithTheirIdAndCategoryLink()
+        public async Task ActiveFindingsDoNotGoThroughTheTrayAnymore()
         {
+            // plan-devoluciones-llm-v2.md, D9: los muestra la tarjeta del asistente, que los pide al servicio de hallazgos.
             _findings.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(new List<AssistantFindingDTO> { Finding(10, 5), Finding(11, null) });
 
             var items = await _sut.BuildAsync(UserId, Today);
 
-            items.Should().HaveCount(2);
-            var first = items[0];
-            first.Kind.Should().Be("AssistantFinding");
-            first.Title.Should().Be("Poco gasto en supermercado");
-            first.Detail.Should().Be("¿Falta cargar algo?");
-            first.FindingId.Should().Be(10);
-            first.LinkId.Should().Be(5);
-            first.Severity.Should().Be("info");
-            items[1].LinkId.Should().BeNull();
-            items[1].FindingId.Should().Be(11);
+            items.Should().BeEmpty();
+            _findings.Verify(f => f.GetAsync(It.IsAny<int>(), It.IsAny<bool>()), Times.Never);
         }
 
         [Fact]
@@ -558,20 +566,50 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task AFailureInTheRuleAlertsDoesNotTakeDownTheFindings()
+        public async Task AFailureInTheRuleAlertsDoesNotTakeDownTheQualityReviewNotice()
         {
-            _transactions.Setup(t => t.GetAlertMovementsAsync(UserId, Pesos, It.IsAny<DateTime>())).ThrowsAsync(new InvalidOperationException("boom"));
-            _findings.Setup(f => f.GetAsync(UserId, false)).ReturnsAsync(new List<AssistantFindingDTO> { Finding() });
+            _transactions.Setup(t => t.GetAlertIncomesAsync(UserId, Pesos, It.IsAny<DateTime>())).ThrowsAsync(new InvalidOperationException("boom"));
+            _reviews.Setup(r => r.GetLastQualityReviewsAsync(UserId, 2)).ReturnsAsync(new List<AssistantQualityReview>
+            {
+                new() { ReviewedAt = new DateTime(2026, 9, 1), PromptVersionBefore = "v1", PromptVersionAfter = "v2" }
+            });
+            _reviews.Setup(r => r.CountReadyReviewsSinceAsync(UserId, It.IsAny<DateTime>())).ReturnsAsync(3);
 
             var items = await _sut.BuildAsync(UserId, Today);
 
-            items.Should().ContainSingle().Which.Kind.Should().Be("AssistantFinding");
+            items.Should().ContainSingle().Which.Kind.Should().Be("AssistantQualityReviewDue");
+        }
+
+        [Fact]
+        public async Task ACardPurchaseCountsOnTheDayItWasMade_NotWhenTheStatementIsPaid()
+        {
+            // Mismo caso que SpikeExpenses pero el gasto del mes es una compra con tarjeta: la alerta salta igual.
+            var rows = SpikeExpenses().Where(r => r.Date.Month != 10).ToList();
+            rows.Add(Expense(new DateTime(2026, 10, 9), 160_000m, PurchaseSpendingKind.CardPurchase));
+            SetupExpenses(rows.ToArray());
+
+            var items = await _sut.BuildAsync(UserId, Today);
+
+            items.Should().ContainSingle().Which.Kind.Should().Be("CategorySpike");
+        }
+
+        [Fact]
+        public async Task ARecurringCardChargeIsNotAnIndividualMovement()
+        {
+            // Seis meses de 20.000 y este mes un recurrente nuevo de 300.000: cuenta para el mes pero no es un "movimiento grande".
+            var rows = Enumerable.Range(1, 6).Select(k => Expense(new DateTime(2026, 10, 1).AddMonths(-k).AddDays(9), 20_000m)).ToList();
+            rows.Add(Expense(new DateTime(2026, 10, 1), 300_000m, PurchaseSpendingKind.CardRecurring));
+            SetupExpenses(rows.ToArray());
+
+            var items = await _sut.BuildAsync(UserId, Today);
+
+            items.Select(i => i.Kind).Should().NotContain("LargeMovement");
         }
 
         [Fact]
         public async Task AFailureInTheAssistantPartDoesNotTakeDownTheRuleAlerts()
         {
-            _transactions.Setup(t => t.GetAlertMovementsAsync(UserId, Pesos, It.IsAny<DateTime>())).ReturnsAsync(SpikeMovements());
+            SetupExpenses(SpikeExpenses());
             _findings.Setup(f => f.GetAsync(UserId, false)).ThrowsAsync(new InvalidOperationException("boom"));
 
             var items = await _sut.BuildAsync(UserId, Today);
@@ -593,7 +631,8 @@ namespace JazFinanzasApp.Tests.Services
             await _sut.BuildAsync(UserId, Today);
 
             // 13 meses antes del primero del mes en curso: 12 de egresos previos más el mes en curso.
-            _transactions.Verify(t => t.GetAlertMovementsAsync(UserId, Pesos, new DateTime(2025, 9, 1)), Times.Once);
+            _transactions.Verify(t => t.GetAlertIncomesAsync(UserId, Pesos, new DateTime(2025, 9, 1)), Times.Once);
+            _spending.Verify(s => s.GetExpenseRowsAsync(UserId, Pesos.Id, new DateTime(2025, 9, 1), Today.AddDays(1)), Times.Once);
         }
     }
 
@@ -613,7 +652,8 @@ namespace JazFinanzasApp.Tests.Services
                     new() { Kind = "AssistantQualityReviewDue", Title = "Revisión de calidad del asistente", Severity = "info" }
                 }
             });
-            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.Currencies().Object);
+            var finding = new JazFinanzasApp.API.Business.DTO.Assistant.AssistantFindingDTO { Title = "Poco gasto en supermercado", Detail = "d", CreatedAt = new DateTime(2026, 10, 5) };
+            var sut = new AlertsContextSource(dashboard.Object, AssistantSourceTestHelpers.Findings(finding).Object, AssistantSourceTestHelpers.Currencies().Object);
 
             var data = (AlertsContextSource.AlertsData)(await sut.BuildAsync(AssistantSourceTestHelpers.Mid(AssistantSourceTestHelpers.ThisMonth, 16)))!;
 

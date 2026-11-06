@@ -1,4 +1,5 @@
 using JazFinanzasApp.API.Business.DTO.Dashboard;
+using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
 
 namespace JazFinanzasApp.API.Business.Assistant.Sources
@@ -14,11 +15,13 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
         public const string SourceKey = "alerts";
 
         private readonly IDashboardService _dashboard;
+        private readonly IAssistantFindingService _findings;
         private readonly IAssistantCurrencyResolver _currencies;
 
-        public AlertsContextSource(IDashboardService dashboard, IAssistantCurrencyResolver currencies)
+        public AlertsContextSource(IDashboardService dashboard, IAssistantFindingService findings, IAssistantCurrencyResolver currencies)
         {
             _dashboard = dashboard;
+            _findings = findings;
             _currencies = currencies;
         }
 
@@ -40,8 +43,35 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
             var currencies = await _currencies.GetAsync();
             var dashboard = await _dashboard.GetDashboardAsync(request.UserId, currencies.Ars.Id);
 
-            var items = dashboard.Pending.Where(p => p.Kind != AssistantAlertService.QualityReviewDueKind).Select(ToEntry).ToList();
+            // Los hallazgos activos se piden directamente y no a través de la bandeja (plan-devoluciones-llm-v2.md, D9): cuando los
+            // hallazgos salgan de la bandeja de Inicio, el asistente tiene que seguir viéndolos para no repetirlos (D15 del v1). Si alguno
+            // llegara también por la bandeja, se descarta acá para que no viaje dos veces.
+            var items = dashboard.Pending
+                .Where(p => p.Kind != AssistantAlertService.QualityReviewDueKind && p.Kind != AssistantAlertService.FindingKind)
+                .Select(ToEntry)
+                .ToList();
+            items.AddRange(await LoadActiveFindingsAsync(request.UserId));
             return items.Count == 0 ? null : new AlertsData(DateTime.Today.ToString("yyyy-MM-dd"), items);
+        }
+
+        private async Task<IEnumerable<PendingEntry>> LoadActiveFindingsAsync(int userId)
+        {
+            try
+            {
+                return (await _findings.GetAsync(userId, includeAll: false)).Select(f => new PendingEntry(
+                    AssistantAlertService.FindingKind,
+                    f.Title,
+                    AssistantFigures.ShortenDetail(f.Detail, 120),
+                    null,
+                    null,
+                    f.CreatedAt.ToString("yyyy-MM-dd"),
+                    "info")).ToList();
+            }
+            catch (BusinessRuleException)
+            {
+                // Sin el asistente habilitado no hay hallazgos que mostrar.
+                return Array.Empty<PendingEntry>();
+            }
         }
 
         // ── Pura: testeable sin mocks ─────────────────────────────────────────────────────────

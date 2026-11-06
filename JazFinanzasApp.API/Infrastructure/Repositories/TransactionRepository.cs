@@ -1,4 +1,5 @@
 ﻿using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
+using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Infrastructure.Data;
 using JazFinanzasApp.API.Domain;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
@@ -251,12 +252,31 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
 
         public async Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold)
         {
-            var transactions = await _context.Transactions
-                .Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId)
+            var cutoff = DateTime.Today.AddDays(-staleDaysThreshold);
+            return (await LoadHeldAssetsWithLatestQuoteAsync(userId, heldAt: null)).Where(r => r.QuoteDate < cutoff).ToList();
+        }
+
+        public async Task<IEnumerable<StaleAssetResult>> GetHeldAssetsWithoutQuoteAsync(int userId, DateTime heldAt)
+        {
+            return (await LoadHeldAssetsWithLatestQuoteAsync(userId, heldAt.Date)).Where(r => r.QuoteDate < heldAt.Date).ToList();
+        }
+
+        // Los activos en cartera (hoy, o al final de `heldAt`) que tienen alguna cotización, con la fecha de la última, de más vieja a
+        // más nueva. Los que no tienen ninguna no figuran.
+        private async Task<List<StaleAssetResult>> LoadHeldAssetsWithLatestQuoteAsync(int userId, DateTime? heldAt)
+        {
+            var transactionsQuery = _context.Transactions.Where(t => t.UserId == userId && t.AssetId != NetWorthDollarPivotAssetId);
+            if (heldAt.HasValue)
+            {
+                var end = heldAt.Value.Date.AddDays(1);
+                transactionsQuery = transactionsQuery.Where(t => t.Date < end);
+            }
+
+            var transactions = await transactionsQuery
                 .Select(t => new { t.AssetId, AssetName = t.Asset.Name, AssetSymbol = t.Asset.Symbol, AssetTypeName = t.Asset.AssetType.Name, t.Amount, t.Date })
                 .ToListAsync();
 
-            if (transactions.Count == 0) return Enumerable.Empty<StaleAssetResult>();
+            if (transactions.Count == 0) return new List<StaleAssetResult>();
 
             var assetIds = transactions.Select(t => t.AssetId).Distinct().ToList();
             var splits = await _context.AssetSplitEvents
@@ -266,7 +286,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             decimal GetSplitFactor(int assetId, DateTime date) =>
                 splits.Where(s => s.AssetId == assetId && s.Date > date).Aggregate(1m, (acc, s) => acc * s.SplitRatio);
 
-            // Solo interesa lo que hoy sigue en cartera — un activo ya vendido del todo no debería
+            // Solo interesa lo que sigue en cartera — un activo ya vendido del todo no debería
             // avisar por una cotización vieja que ya no valúa nada.
             var byAsset = transactions.GroupBy(t => t.AssetId).ToDictionary(g => g.Key, g => new { g.First().AssetName, g.First().AssetSymbol, g.First().AssetTypeName, Rows = g.ToList() });
             var heldAssetIds = byAsset
@@ -274,7 +294,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .Select(kv => kv.Key)
                 .ToList();
 
-            if (heldAssetIds.Count == 0) return Enumerable.Empty<StaleAssetResult>();
+            if (heldAssetIds.Count == 0) return new List<StaleAssetResult>();
 
             var latestQuoteByAsset = (await _context.AssetQuotes
                     .Where(q => heldAssetIds.Contains(q.AssetId))
@@ -284,10 +304,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .GroupBy(q => q.AssetId)
                 .ToDictionary(g => g.Key, g => g.Max(x => x.Date));
 
-            var cutoff = DateTime.Today.AddDays(-staleDaysThreshold);
-
             return heldAssetIds
-                .Where(id => latestQuoteByAsset.TryGetValue(id, out var date) && date < cutoff)
+                .Where(id => latestQuoteByAsset.ContainsKey(id))
                 .Select(id => new StaleAssetResult
                 {
                     AssetName = byAsset[id].AssetName,
@@ -715,7 +733,8 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 ExpenseSteps = steps,
                 TotalExpense = totalExpense,
                 Result = Math.Round(totalIncome - totalExpense, 2),
-                PreviousMonthResult = Math.Round(prevIncome - prevExpense, 2)
+                PreviousMonthResult = Math.Round(prevIncome - prevExpense, 2),
+                PreviousTotalIncome = prevIncome
             };
         }
 
@@ -996,7 +1015,204 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return result.Where(r => r.CurrentToDate != 0m || r.PreviousToDate != 0m || r.AverageToDate != 0m).ToList();
         }
 
-        public async Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from)
+        public async Task<IEnumerable<PurchaseSpendingRowResult>> GetPurchaseSpendingRowsAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive)
+        {
+            if (assets.Count == 0)
+                throw new ArgumentException("Se necesita al menos una moneda.", nameof(assets));
+
+            var converters = new Dictionary<int, Func<int, decimal, decimal?, DateTime, decimal>>();
+            foreach (var asset in assets)
+                converters[asset.Id] = await BuildCurrencyConverterAsync(asset);
+
+            var rows = new List<PurchaseSpendingRowResult>();
+
+            // 1) Egresos directos de cuenta. Las cuotas de tarjeta pagadas (CardTransactionId) NO suman: son el pago de una
+            // compra que ya contó en su fecha, y sumarlas la contaría dos veces.
+            var direct = await _context.Transactions
+                .AsNoTracking()
+                .Where(t => t.UserId == userId &&
+                            t.TransactionClassId != null &&
+                            t.MovementType == MOV_EXPENSE &&
+                            t.CardTransactionId == null &&
+                            t.Date >= from && t.Date < toExclusive &&
+                            t.TransactionClass.CountsAsIncomeExpense)
+                .Select(t => new
+                {
+                    t.Id,
+                    t.Date,
+                    ClassId = t.TransactionClassId!.Value,
+                    ClassName = t.TransactionClass.Description,
+                    ParentId = t.TransactionClass.ParentId,
+                    ParentName = t.TransactionClass.Parent != null ? t.TransactionClass.Parent.Description : null,
+                    t.Detail,
+                    t.AssetId,
+                    t.Amount,
+                    t.QuotePrice
+                })
+                .ToListAsync();
+
+            rows.AddRange(direct.Select(x => new PurchaseSpendingRowResult
+            {
+                Date = x.Date,
+                Kind = PurchaseSpendingKind.Direct,
+                SourceId = x.Id,
+                CategoryId = x.ClassId,
+                CategoryName = x.ClassName,
+                ParentId = x.ParentId,
+                ParentName = x.ParentName,
+                Detail = x.Detail,
+                AmountByAssetId = assets.ToDictionary(a => a.Id, a => Math.Abs(converters[a.Id](x.AssetId, x.Amount, x.QuotePrice, x.Date)))
+            }));
+
+            // 2) Consumos de tarjeta: las compras ("NO", de una vez o en cuotas fijas) en su fecha de compra por su total, y los
+            // recurrentes ("YES" y "CLOSED") en cada mes activo. Misma regla de qué mes cuenta que el reporte de Tarjetas.
+            var cards = await _context.CardTransactions
+                .AsNoTracking()
+                .Where(ct => ct.UserId == userId &&
+                             ct.TransactionClass.CountsAsIncomeExpense &&
+                             ((ct.Repeat != "YES" && ct.Repeat != "CLOSED" && ct.Date >= from && ct.Date < toExclusive) ||
+                              ((ct.Repeat == "YES" || ct.Repeat == "CLOSED") && ct.FirstInstallment < toExclusive)))
+                .Select(ct => new
+                {
+                    ct.Id,
+                    ct.Date,
+                    ct.Repeat,
+                    ct.FirstInstallment,
+                    ct.LastInstallment,
+                    ct.AssetId,
+                    ct.TotalAmount,
+                    ct.InstallmentAmount,
+                    ct.Detail,
+                    ClassId = ct.TransactionClassId,
+                    ClassName = ct.TransactionClass.Description,
+                    ParentId = ct.TransactionClass.ParentId,
+                    ParentName = ct.TransactionClass.Parent != null ? ct.TransactionClass.Parent.Description : null
+                })
+                .ToListAsync();
+
+            // CardTransaction no guarda su cotización: se resuelve con la serie "TARJETA" del activo de origen, igual que
+            // GetSpendingByTagAsync.
+            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId), "TARJETA");
+            Dictionary<int, decimal> CardAmounts(int assetId, decimal amount, DateTime date)
+            {
+                var quote = LookupQuote(cardQuoteSeries.GetValueOrDefault(assetId, new()), date);
+                return assets.ToDictionary(a => a.Id, a => Math.Abs(converters[a.Id](assetId, amount, quote, date)));
+            }
+
+            var firstMonth = new DateTime(from.Year, from.Month, 1);
+            var lastMonth = new DateTime(toExclusive.AddDays(-1).Year, toExclusive.AddDays(-1).Month, 1);
+            foreach (var c in cards)
+            {
+                if (c.Repeat != "YES" && c.Repeat != "CLOSED")
+                {
+                    rows.Add(new PurchaseSpendingRowResult
+                    {
+                        Date = c.Date,
+                        Kind = PurchaseSpendingKind.CardPurchase,
+                        SourceId = c.Id,
+                        CategoryId = c.ClassId,
+                        CategoryName = c.ClassName,
+                        ParentId = c.ParentId,
+                        ParentName = c.ParentName,
+                        Detail = c.Detail,
+                        AmountByAssetId = CardAmounts(c.AssetId, c.TotalAmount, c.Date)
+                    });
+                    continue;
+                }
+
+                var probe = new CardTransaction { Repeat = c.Repeat, FirstInstallment = c.FirstInstallment, LastInstallment = c.LastInstallment };
+                for (var month = firstMonth; month <= lastMonth; month = month.AddMonths(1))
+                {
+                    if (month < from || month >= toExclusive || !CardTransactionRecurrence.IsActiveIn(probe, month)) continue;
+                    rows.Add(new PurchaseSpendingRowResult
+                    {
+                        Date = month,
+                        Kind = PurchaseSpendingKind.CardRecurring,
+                        SourceId = c.Id,
+                        CategoryId = c.ClassId,
+                        CategoryName = c.ClassName,
+                        ParentId = c.ParentId,
+                        ParentName = c.ParentName,
+                        Detail = c.Detail,
+                        AmountByAssetId = CardAmounts(c.AssetId, c.InstallmentAmount, month)
+                    });
+                }
+            }
+
+            return rows;
+        }
+
+        // La segunda lectura de la tarjeta (plan-devoluciones-llm-v2.md, D1): lo que toca pagar en cuotas en un mes. Una
+        // compra con cuotas tiene una por mes entre su primera y su última cuota; un recurrente, una por mes activo.
+        public async Task<IEnumerable<CardInstallmentDueResult>> GetCardInstallmentsDueAsync(int userId, Asset asset, DateTime month)
+        {
+            var monthStart = new DateTime(month.Year, month.Month, 1);
+            var convert = await BuildCurrencyConverterAsync(asset);
+
+            var cards = await _context.CardTransactions
+                .AsNoTracking()
+                .Where(ct => ct.UserId == userId &&
+                             ct.TransactionClass.CountsAsIncomeExpense &&
+                             ct.FirstInstallment <= monthStart)
+                .Select(ct => new
+                {
+                    ct.Id,
+                    ct.Repeat,
+                    ct.FirstInstallment,
+                    ct.LastInstallment,
+                    ct.Installments,
+                    ct.AssetId,
+                    ct.InstallmentAmount,
+                    ct.Detail,
+                    ClassId = ct.TransactionClassId,
+                    ClassName = ct.TransactionClass.Description
+                })
+                .ToListAsync();
+
+            var cardQuoteSeries = await LoadQuoteSeriesByAssetAsync(cards.Select(x => x.AssetId), "TARJETA");
+
+            var result = new List<CardInstallmentDueResult>();
+            foreach (var c in cards)
+            {
+                var recurring = c.Repeat == "YES" || c.Repeat == "CLOSED";
+                bool dueThisMonth;
+                if (recurring)
+                {
+                    dueThisMonth = CardTransactionRecurrence.IsActiveIn(
+                        new CardTransaction { Repeat = c.Repeat, FirstInstallment = c.FirstInstallment, LastInstallment = c.LastInstallment }, monthStart);
+                }
+                else
+                {
+                    // Sin fecha de última cuota, se deduce de la cantidad de cuotas.
+                    var firstM = new DateTime(c.FirstInstallment.Year, c.FirstInstallment.Month, 1);
+                    var lastM = c.LastInstallment.HasValue && c.LastInstallment.Value.Year > 1 && c.LastInstallment.Value >= firstM
+                        ? new DateTime(c.LastInstallment.Value.Year, c.LastInstallment.Value.Month, 1)
+                        : firstM.AddMonths(Math.Max(c.Installments, 1) - 1);
+                    dueThisMonth = monthStart >= firstM && monthStart <= lastM;
+                }
+                if (!dueThisMonth) continue;
+
+                var quote = LookupQuote(cardQuoteSeries.GetValueOrDefault(c.AssetId, new()), monthStart);
+                result.Add(new CardInstallmentDueResult
+                {
+                    CardTransactionId = c.Id,
+                    CategoryId = c.ClassId,
+                    CategoryName = c.ClassName,
+                    Detail = c.Detail,
+                    IsRecurring = recurring,
+                    Amount = Math.Abs(convert(c.AssetId, c.InstallmentAmount, quote, monthStart))
+                });
+            }
+            return result;
+        }
+
+        public Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from) =>
+            LoadAlertMovementsAsync(userId, pesosAsset, from, includeExpenses: true);
+
+        public Task<IEnumerable<AlertMovementResult>> GetAlertIncomesAsync(int userId, Asset pesosAsset, DateTime from) =>
+            LoadAlertMovementsAsync(userId, pesosAsset, from, includeExpenses: false);
+
+        private async Task<IEnumerable<AlertMovementResult>> LoadAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from, bool includeExpenses)
         {
             var convert = await BuildCurrencyConverterAsync(pesosAsset);
 
@@ -1004,7 +1220,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(t => t.UserId == userId &&
                             t.TransactionClassId != null &&
-                            (t.MovementType == MOV_EXPENSE || t.MovementType == MOV_INCOME) &&
+                            (t.MovementType == MOV_INCOME || (includeExpenses && t.MovementType == MOV_EXPENSE)) &&
                             t.Date >= from &&
                             t.TransactionClass.CountsAsIncomeExpense)
                 .Select(t => new

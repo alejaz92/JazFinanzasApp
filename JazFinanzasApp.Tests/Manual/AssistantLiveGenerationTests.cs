@@ -30,6 +30,7 @@ namespace JazFinanzasApp.Tests.Manual
     //   ASSISTANT_LIVE_USER_ID=<id>            usuario (por defecto 2, ajazmatie)
     //   ASSISTANT_LIVE_KIND=MonthClose|MidMonth|WeeklyScan  tipo de pasada (por defecto MonthClose)
     //   ASSISTANT_LIVE_MONTH=yyyy-MM           mes del cierre (por defecto el mes anterior)
+    //   ASSISTANT_LIVE_VERSION=v1|v2           versión de instrucciones ("v2" o "month-close.v2"); por defecto la vigente
     public class AssistantLiveGenerationTests
     {
         [ManualFact("RUN_ASSISTANT_LIVE")]
@@ -94,7 +95,10 @@ namespace JazFinanzasApp.Tests.Manual
             }
 
             var contextJson = AssistantContextBuilder.Serialize(await builder.BuildAsync(request));
-            var promptVersion = AssistantPrompts.CurrentVersion(kind);
+            var requestedVersion = Environment.GetEnvironmentVariable("ASSISTANT_LIVE_VERSION");
+            var promptVersion = string.IsNullOrWhiteSpace(requestedVersion)
+                ? AssistantPrompts.CurrentVersion(kind)
+                : AssistantPrompts.ResolveVersion(kind, requestedVersion);
             var effort = kind == AssistantReviewKind.WeeklyScan ? AssistantEffort.Medium : AssistantEffort.High;
             var modelRequest = new AssistantModelRequest(
                 AssistantPrompts.Load(promptVersion), contextJson, AssistantPrompts.OutputSchema(kind), effort);
@@ -123,7 +127,7 @@ namespace JazFinanzasApp.Tests.Manual
                 ? new List<string>()
                 : FiguresOf(response.Text, contextJson);
 
-            var label = $"{kind}-{request.PeriodStart:yyyy-MM}";
+            var label = $"{kind}-{request.PeriodStart:yyyy-MM}-{promptVersion.Split('.').Last()}";
             File.WriteAllText(Path.Combine(outDir, $"live-{label}.context.json"), contextJson, new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(outDir, $"live-{label}.response.json"), response.Text ?? "", new UTF8Encoding(false));
             File.WriteAllText(Path.Combine(outDir, $"live-{label}.summary.json"), JsonSerializer.Serialize(new

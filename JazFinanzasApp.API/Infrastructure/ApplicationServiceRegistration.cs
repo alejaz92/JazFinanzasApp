@@ -74,6 +74,8 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<ITagService, TagService>();
         services.AddScoped<INetWorthReportService, NetWorthReportService>();
         services.AddScoped<IIncomeExpenseReportService, IncomeExpenseReportService>();
+        // Gasto por fecha de compra (plan-devoluciones-llm-v2.md, D1): no reemplaza a los reportes, que miden lo que salió de las cuentas.
+        services.AddScoped<IPurchaseSpendingService, PurchaseSpendingService>();
         services.AddScoped<ICardReportService, CardReportService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IInvestmentReportService, InvestmentReportService>();
@@ -90,6 +92,7 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantContextSource, InvestmentsContextSource>();
         services.AddScoped<IAssistantContextSource, TripsContextSource>();
         services.AddScoped<IAssistantContextSource, AlertsContextSource>();
+        services.AddScoped<IAssistantMonthReadinessService, AssistantMonthReadinessService>();
         services.AddScoped<AssistantContextBuilder>();
         // Cliente del modelo y registro de gasto (plan-devoluciones-llm.md, D4 y D11). El cliente es singleton
         // porque guarda el cliente HTTP del SDK; crea la conexión recién en el primer uso, así que sin clave
@@ -102,6 +105,10 @@ namespace JazFinanzasApp.API.Infrastructure
         services.AddScoped<IAssistantFindingRepository, AssistantFindingRepository>();
         services.AddScoped<IAssistantFindingService, AssistantFindingService>();
         services.AddScoped<IAssistantReviewService, AssistantReviewService>();
+        // La preparación de madrugada (plan-devoluciones-llm-v2.md, D6): la llama la Function App.
+        services.Configure<AssistantSchedulerOptions>(configuration.GetSection(AssistantSchedulerOptions.SectionName));
+        services.AddScoped<IAssistantSchedulerRunRepository, AssistantSchedulerRunRepository>();
+        services.AddScoped<IAssistantSchedulerService, AssistantSchedulerService>();
         services.Configure<AssistantAlertsOptions>(configuration.GetSection(AssistantAlertsOptions.SectionName));
         services.AddScoped<IAssistantAlertService, AssistantAlertService>();
 

@@ -1,0 +1,77 @@
+# Deploy de la Function App de la preparación de madrugada del asistente (plan-devoluciones-llm-v2.md, D6 y Fase 10).
+#
+# NO CORRE hasta que se activa a propósito: todos los jobs exigen la variable de repositorio FUNCTIONS_DEPLOY_ENABLED = true
+# (Settings > Secrets and variables > Actions > Variables). Se activa en la Fase 10, cuando ya existen la Function App en Azure y
+# el secreto de publicación. Mientras tanto, un push a master no hace nada acá.
+#
+# Qué necesita de GitHub (los carga el usuario, Fase 10):
+#   - Variable  FUNCTIONS_DEPLOY_ENABLED     = true
+#   - Variable  AZURE_FUNCTIONAPP_NAME       = el nombre de la Function App en Azure
+#   - Secreto   AZURE_FUNCTIONAPP_PUBLISH_PROFILE = el perfil de publicación descargado del portal de Azure
+#
+# Además de la API, deploya la función cuando cambia algo del backend que ella usa (comparte el código del asistente con la API).
+
+name: Build and deploy Azure Function App - asistente (preparación de madrugada)
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'JazFinanzasApp.API/**'
+      - 'JazFinanzasApp.Functions/**'
+      - '.github/workflows/master_jazfinanzasfunctions.yml'
+  workflow_dispatch:
+
+env:
+  FUNCTIONS_PROJECT: JazFinanzasApp.Functions/JazFinanzasApp.Functions.csproj
+
+jobs:
+  build:
+    if: ${{ vars.FUNCTIONS_DEPLOY_ENABLED == 'true' }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
+
+      - name: Build
+        run: dotnet build ${{ env.FUNCTIONS_PROJECT }} --configuration Release
+
+      - name: dotnet publish
+        run: dotnet publish ${{ env.FUNCTIONS_PROJECT }} -c Release -o "${{ github.workspace }}/functionapp"
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: functionapp
+          path: ${{ github.workspace }}/functionapp
+
+  deploy:
+    if: ${{ vars.FUNCTIONS_DEPLOY_ENABLED == 'true' }}
+    runs-on: windows-latest
+    needs: build
+    environment:
+      name: 'Production'
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: functionapp
+          path: functionapp
+
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
+          package: functionapp
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}

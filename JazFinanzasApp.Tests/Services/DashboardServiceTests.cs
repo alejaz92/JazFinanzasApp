@@ -5,6 +5,7 @@ using JazFinanzasApp.API.Business.DTO.CardTransaction;
 using JazFinanzasApp.API.Business.DTO.Dashboard;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
 using JazFinanzasApp.API.Business.DTO.NetWorth;
+using JazFinanzasApp.API.Business.DTO.PurchaseSpending;
 using JazFinanzasApp.API.Business.DTO.SharedEvent;
 using JazFinanzasApp.API.Business.DTO.SharedExpense;
 using JazFinanzasApp.API.Business.DTO.Trip;
@@ -29,6 +30,7 @@ namespace JazFinanzasApp.Tests.Services
 
         private readonly Mock<INetWorthReportService> _netWorthReportServiceMock = new();
         private readonly Mock<IIncomeExpenseReportService> _incomeExpenseReportServiceMock = new();
+        private readonly Mock<IPurchaseSpendingService> _purchaseSpendingMock = new();
         private readonly Mock<ICardReportService> _cardReportServiceMock = new();
         private readonly Mock<ICardService> _cardServiceMock = new();
         private readonly Mock<ISharedEventService> _sharedEventServiceMock = new();
@@ -54,9 +56,13 @@ namespace JazFinanzasApp.Tests.Services
             // plan-devoluciones-llm, Fase 10: los avisos del asistente tienen sus propios tests; acá no suman nada.
             _assistantAlertsMock.Setup(a => a.BuildAsync(It.IsAny<int>(), It.IsAny<DateTime>())).ReturnsAsync(new List<DashboardPendingItemDTO>());
 
+            // plan-devoluciones-llm-v2.md, Fase 4: el gasto sale de la medición por fecha de compra. Por defecto, un mes sin gasto.
+            SetupSpending(new PurchaseSpendingWindowDTO());
+
             _sut = new DashboardService(
                 _netWorthReportServiceMock.Object,
                 _incomeExpenseReportServiceMock.Object,
+                _purchaseSpendingMock.Object,
                 _cardReportServiceMock.Object,
                 _cardServiceMock.Object,
                 _sharedEventServiceMock.Object,
@@ -67,6 +73,11 @@ namespace JazFinanzasApp.Tests.Services
                 _bondCollectionServiceMock.Object,
                 _assistantAlertsMock.Object);
         }
+
+        private void SetupSpending(PurchaseSpendingWindowDTO window) =>
+            _purchaseSpendingMock
+                .Setup(s => s.GetWindowsAsync(UserId, It.IsAny<IReadOnlyList<int>>(), It.IsAny<DateTime>(), 31, It.IsAny<int>()))
+                .ReturnsAsync(new Dictionary<int, PurchaseSpendingWindowDTO> { [PesoAsset.Id] = window });
 
         // ── GetCardDueStatus: puerto de card-due-status.util.ts ─────────────────────────────────
 
@@ -441,7 +452,12 @@ namespace JazFinanzasApp.Tests.Services
                 });
 
             _incomeExpenseReportServiceMock.Setup(s => s.GetWaterfallAsync(UserId, It.IsAny<DateTime>(), PesoAsset.Id))
-                .ReturnsAsync(new IncExpWaterfallDTO { Result = 300m, PreviousMonthResult = 100m });
+                .ReturnsAsync(new IncExpWaterfallDTO { TotalIncome = 1000m, PreviousTotalIncome = 400m, Result = 999m, PreviousMonthResult = 999m });
+            SetupSpending(new PurchaseSpendingWindowDTO
+            {
+                FullMonths = new SpendingToDateDTO { TotalCurrent = 700m, TotalPrevious = 300m, TotalAverage = 500m },
+                Days = new List<DaySpendingDTO> { new() { Date = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1), Amount = 70m } }
+            });
             _incomeExpenseReportServiceMock.Setup(s => s.GetCalendarAsync(UserId, PesoAsset.Id, It.IsAny<int>()))
                 .ReturnsAsync(new SpendingCalendarDTO());
 
@@ -460,8 +476,12 @@ namespace JazFinanzasApp.Tests.Services
             result.Indicators.NetWorthGross.Should().Be(5000m);
             result.Indicators.NetWorthNet.Should().Be(4200m);
             result.Indicators.NetWorthChangeVsPreviousMonth.Should().Be(1000m);
+            // El resultado sale de los ingresos menos el gasto por fecha de compra, no del resumen de Ingresos y Egresos.
             result.Indicators.MonthResult.Should().Be(300m);
             result.Indicators.MonthResultPreviousMonth.Should().Be(100m);
+            result.Indicators.MonthExpense.Should().Be(700m);
+            result.Indicators.MonthExpenseAverage.Should().Be(500m);
+            result.Thermometer.MonthToDateAmount.Should().Be(70m);
             result.Pending.Should().BeEmpty();
         }
 

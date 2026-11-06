@@ -1,18 +1,21 @@
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
+using JazFinanzasApp.API.Business.DTO.PurchaseSpending;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
 using JazFinanzasApp.API.Domain;
 
 namespace JazFinanzasApp.API.Business.Assistant.Sources
 {
-    // Ingresos y egresos de la cuenta (plan-devoluciones-llm.md, D2 y D3). Todo sale de
-    // IIncomeExpenseReportService: la fuente solo elige qué mandar y arma las comparaciones, no
-    // recalcula nada que el reporte ya calcule.
+    // Ingresos y gasto del mes (plan-devoluciones-llm.md, D2 y D3; plan-devoluciones-llm-v2.md, D1 y D3).
     //
-    // Cierre de mes: totales del mes (ingresos, egresos, resultado y tasa de ahorro) contra el mes
-    // anterior y el promedio de los 6 anteriores, egresos por categoría y composición de ingresos.
-    // Mitad de mes y revisión semanal: gasto del día 1 al día de corte contra el mismo tramo del mes
-    // anterior y del promedio, por categoría, y la proyección de cierre del termómetro de Inicio.
+    // El GASTO se mide por fecha de compra (IPurchaseSpendingService): lo pagado directo desde las cuentas, las compras con
+    // tarjeta en el día en que se hicieron y los recurrentes de tarjeta en cada mes activo. El pago del resumen no suma: ya
+    // contó en la compra. Así una devolución no depende de cuándo se cargó el pago de la tarjeta. Los INGRESOS siguen saliendo de
+    // IIncomeExpenseReportService, como entraron a las cuentas. La fuente solo elige qué mandar y arma las comparaciones.
+    //
+    // Cierre de mes: totales del mes (ingresos, gasto, resultado y tasa de ahorro) contra el mes anterior y el promedio de los 6
+    // anteriores, gasto por categoría y composición de ingresos. Mitad de mes y revisión semanal: gasto del día 1 al día de corte
+    // contra el mismo tramo del mes anterior y del promedio, por categoría, y la proyección de cierre.
     public class IncomeExpenseContextSource : IAssistantContextSource
     {
         public const string SourceKey = "income-expense";
@@ -20,23 +23,31 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
         private const int MaxExpenseCategories = 10;
         private const int MaxIncomeCategories = 8;
 
+        // Un cierre compara meses completos: el corte en 31 se acota solo a los días de cada mes.
+        private const int FullMonthCutoff = 31;
+
         private readonly IIncomeExpenseReportService _reports;
+        private readonly IPurchaseSpendingService _spending;
         private readonly IAssistantCurrencyResolver _currencies;
 
-        public IncomeExpenseContextSource(IIncomeExpenseReportService reports, IAssistantCurrencyResolver currencies)
+        public IncomeExpenseContextSource(IIncomeExpenseReportService reports, IPurchaseSpendingService spending, IAssistantCurrencyResolver currencies)
         {
             _reports = reports;
+            _spending = spending;
             _currencies = currencies;
         }
 
         public string Key => SourceKey;
 
         public string Measures =>
-            "Ingresos y egresos de las cuentas. Un gasto de tarjeta cuenta cuando se paga la cuota, es decir lo que salió de las cuentas, " +
-            "no lo que se compró: no se suma con la fuente de tarjetas. Cada monto trae su variación contra el mes anterior y contra el " +
-            "promedio de los 6 meses anteriores, en pesos y en dólares por separado (los meses sin movimiento cuentan como cero en el promedio). " +
-            "En la mitad de mes y en la revisión semanal el gasto es del día 1 al día de corte y se compara con el mismo tramo de los otros meses; " +
-            "la proyección de cierre es lineal al ritmo actual. Pesos sin decimales y dólares con dos.";
+            "Ingresos y gasto. El GASTO se mide por fecha de compra: lo que se pagó directo desde las cuentas, más las compras con tarjeta en el " +
+            "día en que se hicieron (una compra en cuotas cuenta entera ese día) y los cargos recurrentes de tarjeta en cada mes que estuvieron activos. " +
+            "El pago del resumen de la tarjeta y sus cuotas NO suman, porque ya contaron en la compra: por eso el gasto de un mes no depende de cuándo se " +
+            "cargó ese pago. Los ingresos se miden como entraron a las cuentas. El resultado es ingresos menos gasto y la tasa de ahorro sale de ese resultado. " +
+            "El gasto ya incluye lo de la tarjeta: la fuente cards es solo el desglose de esa parte por tarjeta y no se suma. " +
+            "Cada monto trae su variación contra el mes anterior y contra el promedio de los 6 meses anteriores, en pesos y en dólares por separado " +
+            "(los meses sin movimiento cuentan como cero en el promedio). En la mitad de mes y en la revisión semanal el gasto es del día 1 al día de corte y se " +
+            "compara con el mismo tramo de los otros meses; la proyección de cierre es lineal al ritmo actual. Pesos sin decimales y dólares con dos.";
 
         public string PrimaryCurrency => "ARS";
 
@@ -44,13 +55,17 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
         {
             var currencies = await _currencies.GetAsync();
 
+            // Una sola consulta de gasto para las dos monedas. En un cierre se comparan meses completos.
+            var cutoff = request.IsMonthClose ? FullMonthCutoff : request.CutoffDay;
+            var windows = await _spending.GetWindowsAsync(request.UserId, new[] { currencies.Ars.Id, currencies.Usd.Id }, request.Month, cutoff);
+
             var monthsFromToday = Math.Max(0, (DateTime.Today.Year - request.Month.Year) * 12 + DateTime.Today.Month - request.Month.Month);
             var evolutionMonths = monthsFromToday + 1 + IncomeExpenseReportService.ToDateComparisonMonths;
 
-            var ars = await LoadAsync(request, currencies.Ars, evolutionMonths);
-            var usd = await LoadAsync(request, currencies.Usd, evolutionMonths);
+            var ars = await LoadAsync(request, currencies.Ars, windows[currencies.Ars.Id], evolutionMonths);
+            var usd = await LoadAsync(request, currencies.Usd, windows[currencies.Usd.Id], evolutionMonths);
 
-            var categoryCut = BuildExpenseCategoryCut(ars.ToDate, usd.ToDate, MaxExpenseCategories);
+            var categoryCut = BuildExpenseCategoryCut(ars.Spending.ToDate, usd.Spending.ToDate, MaxExpenseCategories);
 
             if (request.IsMonthClose)
             {
@@ -64,42 +79,30 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
                 request.CutoffDay,
                 request.DaysInMonth,
                 new PerCurrency<Comparison>(
-                    AssistantFigures.Compare(ars.ToDate.TotalCurrent, ars.ToDate.TotalPrevious, ars.ToDate.TotalAverage, isPesos: true),
-                    AssistantFigures.Compare(usd.ToDate.TotalCurrent, usd.ToDate.TotalPrevious, usd.ToDate.TotalAverage, isPesos: false)),
+                    AssistantFigures.Compare(ars.Spending.ToDate.TotalCurrent, ars.Spending.ToDate.TotalPrevious, ars.Spending.ToDate.TotalAverage, isPesos: true),
+                    AssistantFigures.Compare(usd.Spending.ToDate.TotalCurrent, usd.Spending.ToDate.TotalPrevious, usd.Spending.ToDate.TotalAverage, isPesos: false)),
                 categoryCut,
                 new PerCurrency<Projection>(
                     BuildProjection(ars.ProjectedMonthEnd, ars.Window, isPesos: true),
                     BuildProjection(usd.ProjectedMonthEnd, usd.Window, isPesos: false)));
         }
 
-        private async Task<CurrencyData> LoadAsync(AssistantContextRequest request, Asset asset, int evolutionMonths)
+        private async Task<CurrencyData> LoadAsync(AssistantContextRequest request, Asset asset, PurchaseSpendingWindowDTO spending, int evolutionMonths)
         {
-            var toDate = await _reports.GetSpendingToDateByCategoryAsync(request.UserId, asset.Id, request.Month, request.CutoffDay);
+            // De la evolución solo se usan los ingresos: el gasto sale de la medición por fecha de compra.
             var evolution = (await _reports.GetEvolutionAsync(request.UserId, asset.Id, evolutionMonths)).ToList();
-            var window = ExtractWindow(evolution, request.Month, IncomeExpenseReportService.ToDateComparisonMonths);
+            var window = CombineExpense(ExtractWindow(evolution, request.Month, IncomeExpenseReportService.ToDateComparisonMonths), spending.FullMonths);
 
             IncomeCompositionDTO? income = null;
             decimal projected = 0m;
             if (request.IsMonthClose)
                 income = await _reports.GetIncomeCompositionAsync(request.UserId, request.Month, asset.Id);
             else
-                projected = await GetProjectedMonthEndAsync(request, asset);
+                // Mismo cálculo que el termómetro de la app, tomando el día de corte como "hoy": la proyección es la que ya se ve, no
+                // una cuenta nueva. Parte de la serie diaria por fecha de compra.
+                projected = DashboardService.BuildThermometer(spending.Days, request.CutoffDate.Date).ProjectedMonthEndAmount;
 
-            return new CurrencyData(toDate, window, income, projected);
-        }
-
-        // Mismo cálculo que el termómetro de Inicio (DashboardService.BuildThermometer), tomando el día
-        // de corte como "hoy": la proyección es la que ya se ve en la app, no una cuenta nueva.
-        private async Task<decimal> GetProjectedMonthEndAsync(AssistantContextRequest request, Asset asset)
-        {
-            var cutoff = request.CutoffDate.Date;
-            var days = (await _reports.GetCalendarAsync(request.UserId, asset.Id, cutoff.Year)).Days.ToList();
-
-            var previousMonthYear = new DateTime(cutoff.Year, cutoff.Month, 1).AddMonths(-1).Year;
-            if (previousMonthYear != cutoff.Year)
-                days.AddRange((await _reports.GetCalendarAsync(request.UserId, asset.Id, previousMonthYear)).Days);
-
-            return DashboardService.BuildThermometer(days, cutoff).ProjectedMonthEndAmount;
+            return new CurrencyData(spending, window, income, projected);
         }
 
         // ── Pura: testeable sin mocks ─────────────────────────────────────────────────────────
@@ -129,6 +132,14 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
 
             return new MonthWindow(At(month), At(month.AddMonths(-1)), average);
         }
+
+        // Arma la ventana del mes con los ingresos de la evolución y el gasto por fecha de compra, de modo que el resultado y la
+        // tasa de ahorro salgan de las dos cosas medidas igual (D3). `fullMonths` es la ventana con meses completos: su total
+        // actual, el del mes anterior y el promedio de los anteriores.
+        public static MonthWindow CombineExpense(MonthWindow incomeWindow, SpendingToDateDTO fullMonths) => new(
+            new MonthTotals(incomeWindow.Current.Income, fullMonths.TotalCurrent),
+            new MonthTotals(incomeWindow.Previous.Income, fullMonths.TotalPrevious),
+            new MonthTotals(incomeWindow.Average.Income, fullMonths.TotalAverage));
 
         public static MoneyTotals BuildTotals(MonthWindow w, bool isPesos) => new(
             AssistantFigures.Compare(w.Current.Income, w.Previous.Income, w.Average.Income, isPesos),
@@ -230,7 +241,7 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
 
         // ── Tipos de la fuente ────────────────────────────────────────────────────────────────
 
-        private record CurrencyData(SpendingToDateDTO ToDate, MonthWindow Window, IncomeCompositionDTO? IncomeComposition, decimal ProjectedMonthEnd);
+        private record CurrencyData(PurchaseSpendingWindowDTO Spending, MonthWindow Window, IncomeCompositionDTO? IncomeComposition, decimal ProjectedMonthEnd);
 
         private record CategoryRow(string Name, string? Rubro, decimal ArsCurrent, decimal ArsPrevious, decimal ArsAverage, decimal UsdCurrent, decimal UsdPrevious, decimal UsdAverage);
 

@@ -56,6 +56,10 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Patrimonio (Fase 10) — no tocan GetTotalsBalanceByUserAsync (T7).
         Task<(decimal Rate, DateTime? QuoteDate)> GetReferenceAssetRateAsync(Asset asset);
         Task<IEnumerable<StaleAssetResult>> GetStaleAssetsAsync(int userId, int staleDaysThreshold);
+        // Los activos que el usuario tenía en cartera al final de `heldAt` cuya última cotización es anterior a esa fecha (o sea, que
+        // todavía no tienen cotización de ese día ni posterior). QuoteDate es la última que tienen. Es el chequeo de "mes listo"
+        // del cierre del asistente (plan-devoluciones-llm-v2.md, D4); mismo criterio de cotización que GetStaleAssetsAsync.
+        Task<IEnumerable<StaleAssetResult>> GetHeldAssetsWithoutQuoteAsync(int userId, DateTime heldAt);
         Task<IEnumerable<NetWorthMonthlyPointResult>> GetNetWorthMonthlySeriesAsync(int userId, Asset referenceAsset, int months);
         Task<IEnumerable<AccountBalanceResult>> GetAccountBalancesAsync(int userId, Asset referenceAsset, int evolutionMonths);
 
@@ -74,6 +78,16 @@ namespace JazFinanzasApp.API.Infrastructure.Interfaces
         // Ingresos y egresos del usuario desde `from`, en pesos, con las guardas T1/T2 de Ingresos y Egresos. Es la
         // materia prima de las alertas por reglas (D8); las reglas se calculan en la capa de negocio.
         Task<IEnumerable<AlertMovementResult>> GetAlertMovementsAsync(int userId, Asset pesosAsset, DateTime from);
+        // Solo los ingresos de lo anterior. Desde plan-devoluciones-llm-v2.md los egresos de las alertas salen del gasto por fecha de compra
+        // (GetPurchaseSpendingRowsAsync); los ingresos se siguen midiendo como entran a las cuentas.
+        Task<IEnumerable<AlertMovementResult>> GetAlertIncomesAsync(int userId, Asset pesosAsset, DateTime from);
+        // Gasto por fecha de compra (plan-devoluciones-llm-v2.md, D1), en [from, toExclusive): egresos directos de cuenta
+        // (sin las cuotas de tarjeta pagadas, que ya contaron en la compra), compras con tarjeta en su fecha por su total y
+        // recurrentes de tarjeta en cada mes activo. Mismas guardas T1/T2. Cada fila trae su monto en todas las monedas.
+        Task<IEnumerable<PurchaseSpendingRowResult>> GetPurchaseSpendingRowsAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive);
+
+        // Las cuotas de tarjeta que caen en el mes (compras en cuotas con una cuota ese mes y recurrentes activos), en `asset`.
+        Task<IEnumerable<CardInstallmentDueResult>> GetCardInstallmentsDueAsync(int userId, Asset asset, DateTime month);
         Task<IEnumerable<ExpenseMovementResult>> GetLargestExpensesAsync(int userId, IReadOnlyList<Asset> assets, DateTime from, DateTime toExclusive, int take, int? categoryId = null);
 
         // Ingresos (corrección 2026-09-04 sobre la Fase 13). GetIncomeByCategoryMonthlySeriesAsync

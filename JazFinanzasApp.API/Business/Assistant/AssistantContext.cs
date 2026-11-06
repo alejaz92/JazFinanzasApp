@@ -52,7 +52,9 @@ namespace JazFinanzasApp.API.Business.Assistant
 
     public record AssistantContextSection(string Key, string Measures, string PrimaryCurrency, object Data);
 
-    public record AssistantContext(AssistantPeriod Period, IReadOnlyList<AssistantContextSection> Sources);
+    // DataNotes: lo que faltaba en los datos al armar un cierre (plan-devoluciones-llm-v2.md, D5). Null si estaba todo; el asistente lo
+    // nombra en el texto en vez de contar el mes como si estuviera completo.
+    public record AssistantContext(AssistantPeriod Period, IReadOnlyList<AssistantContextSection> Sources, IReadOnlyList<string>? DataNotes = null);
 
     // Junta las fuentes registradas en un solo contexto. Si una fuente falla, el error sube: un
     // contexto con una fuente faltante haría que el asistente cuente el mes con un agujero sin saberlo.
@@ -68,10 +70,12 @@ namespace JazFinanzasApp.API.Business.Assistant
         };
 
         private readonly IReadOnlyList<IAssistantContextSource> _sources;
+        private readonly IAssistantMonthReadinessService? _readiness;
 
-        public AssistantContextBuilder(IEnumerable<IAssistantContextSource> sources)
+        public AssistantContextBuilder(IEnumerable<IAssistantContextSource> sources, IAssistantMonthReadinessService? readiness = null)
         {
             _sources = sources.ToList();
+            _readiness = readiness;
         }
 
         public async Task<AssistantContext> BuildAsync(AssistantContextRequest request)
@@ -92,7 +96,15 @@ namespace JazFinanzasApp.API.Business.Assistant
                 request.CutoffDay,
                 request.IsMonthClose);
 
-            return new AssistantContext(period, sections);
+            // Solo el cierre espera a que el mes esté completo; la mitad de mes y la revisión semanal son parciales por naturaleza.
+            IReadOnlyList<string>? dataNotes = null;
+            if (request.IsMonthClose && _readiness != null)
+            {
+                var readiness = await _readiness.CheckAsync(request.UserId, request.Month, DateTime.Today);
+                if (readiness.Missing.Count > 0) dataNotes = readiness.Missing;
+            }
+
+            return new AssistantContext(period, sections, dataNotes);
         }
 
         public static string Serialize(AssistantContext context) => JsonSerializer.Serialize(context, JsonOptions);

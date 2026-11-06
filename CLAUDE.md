@@ -121,6 +121,15 @@ xUnit + Moq + FluentAssertions, en `JazFinanzasApp.Tests/Services/`. Cubren los 
 
 Se aplican automáticamente al iniciar la app (`db.Database.MigrateAsync()` en `Program.cs`, dentro de un try/catch que solo loguea el error — no rompe el arranque si falla). Al crear una migración nueva, correr `dotnet ef database update` contra la base de dev antes de dar el cambio por terminado, para no dejar migraciones pendientes sin aplicar.
 
+## Function App del asistente (`JazFinanzasApp.Functions`)
+
+Proyecto aparte (.NET 8, modelo aislado) que prepara de madrugada las devoluciones del asistente: un disparador de tiempo (08:00 y 08:30 UTC) que llama a `IAssistantSchedulerService`. **No tiene lógica propia**: referencia al proyecto de la API y arma el grafo con el mismo `AddApplicationServices` (más la base, Identity y el contexto HTTP que la API registra en `Program.cs`), así lo preparado de madrugada y lo generado a pedido salen del mismo código. No corre migraciones.
+
+- **Está fuera de `JazFinanzasApp.sln` a propósito.** El workflow de la API publica solo `JazFinanzasApp.API.csproj`; si la solución se publicara entera, los archivos de la función (`host.json`, `worker.config.json`) terminarían en el paquete de la API. Los tests lo referencian directamente.
+- Su deploy es un workflow propio (`master_jazfinanzasfunctions.yml`) que **no corre** hasta que exista la variable de repositorio `FUNCTIONS_DEPLOY_ENABLED = true`.
+- La configuración viaja en variables de entorno de la Function App (`ConnectionStrings__JazFinanzasAppConnectionString`, `Anthropic__ApiKey`) y en el `appsettings.json` de la API, que se enlaza al proyecto. El `appsettings.Development.json` no se publica con la función.
+- Probar en local: copiar `local.settings.example.json` a `local.settings.json` (ignorado por git), levantar Azurite y `func start`; la función se dispara a mano con `POST /admin/functions/AssistantNightlyPreparation` y cuerpo `{}`. **Siempre contra LocalDB, nunca contra la base de producción.**
+
 ## Deploy
 
 GitHub Actions, workflow `master_jazfinanzasappapi*.yml` (trigger en push a `master`), deploya a Azure App Service.

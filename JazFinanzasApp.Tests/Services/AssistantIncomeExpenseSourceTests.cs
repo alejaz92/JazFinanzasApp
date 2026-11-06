@@ -2,6 +2,7 @@ using FluentAssertions;
 using JazFinanzasApp.API.Business.Assistant;
 using JazFinanzasApp.API.Business.Assistant.Sources;
 using JazFinanzasApp.API.Business.DTO.IncomeExpenseReport;
+using JazFinanzasApp.API.Business.DTO.PurchaseSpending;
 using JazFinanzasApp.API.Business.Exceptions;
 using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Business.Services;
@@ -88,6 +89,7 @@ namespace JazFinanzasApp.Tests.Services
         private const int UsdId = 2;
 
         private readonly Mock<IIncomeExpenseReportService> _reports = new();
+        private readonly Mock<IPurchaseSpendingService> _spending = new();
         private readonly Mock<IAssistantCurrencyResolver> _currencies = new();
         private readonly IncomeExpenseContextSource _sut;
 
@@ -96,7 +98,7 @@ namespace JazFinanzasApp.Tests.Services
             _currencies.Setup(c => c.GetAsync()).ReturnsAsync(new AssistantCurrencySet(
                 new Asset { Id = ArsId, Name = "Peso Argentino", Symbol = "ARS" },
                 new Asset { Id = UsdId, Name = "Dolar Estadounidense", Symbol = "USD" }));
-            _sut = new IncomeExpenseContextSource(_reports.Object, _currencies.Object);
+            _sut = new IncomeExpenseContextSource(_reports.Object, _spending.Object, _currencies.Object);
         }
 
         private static IncExpEvolutionPointDTO Point(int year, int month, decimal income, decimal expense) =>
@@ -266,20 +268,44 @@ namespace JazFinanzasApp.Tests.Services
 
         // ── BuildAsync ────────────────────────────────────────────────────────────────────────
 
+        // Lo que devuelve el servicio de gasto por fecha de compra para una moneda: el tramo, los meses completos y la serie diaria.
+        private static PurchaseSpendingWindowDTO Window(SpendingToDateDTO toDate, SpendingToDateDTO fullMonths, params DaySpendingDTO[] days) => new()
+        {
+            ToDate = toDate,
+            FullMonths = fullMonths,
+            Days = days.ToList()
+        };
+
+        // Mismas monedas que el resolutor: la fuente pide las dos en una sola llamada.
+        private void SetUpWindows(DateTime month, int cutoff, PurchaseSpendingWindowDTO ars, PurchaseSpendingWindowDTO usd) =>
+            _spending
+                .Setup(s => s.GetWindowsAsync(UserId, It.Is<IReadOnlyList<int>>(ids => ids.SequenceEqual(new[] { ArsId, UsdId })), month, cutoff, It.IsAny<int>()))
+                .ReturnsAsync(new Dictionary<int, PurchaseSpendingWindowDTO> { [ArsId] = ars, [UsdId] = usd });
+
+        private static SpendingToDateDTO Totals(decimal current, decimal previous, decimal average) => new()
+        {
+            TotalCurrent = current, TotalPrevious = previous, TotalAverage = average
+        };
+
         private void SetUpMonthClose()
         {
-            foreach (var (assetId, scale, isPesos) in new[] { (ArsId, 1m, true), (UsdId, 0.001m, false) })
+            // El gasto del mes completo, por fecha de compra: 800.000 contra 700.000 el mes anterior y 700.000 de promedio.
+            SetUpWindows(new DateTime(2026, 9, 1), 31,
+                Window(ToDate(30, Cat(1, "Supermercado", 500_000m, 450_000m, 440_000m, "Comida"), Cat(2, "Delivery", 300_000m, 250_000m, 243_333m)),
+                    Totals(800_000m, 700_000m, 700_000m)),
+                Window(ToDate(30, Cat(1, "Supermercado", 500m, 450m, 440m, "Comida"), Cat(2, "Delivery", 300m, 250m, 243.33m)),
+                    Totals(800m, 700m, 700m)));
+
+            foreach (var (assetId, scale) in new[] { (ArsId, 1m), (UsdId, 0.001m) })
             {
+                // De la evolución solo importan los ingresos (el "gasto" de la evolución es el de las cuentas y NO se usa).
                 var points = new[]
                 {
-                    Point(2026, 3, 800_000m * scale, 600_000m * scale), Point(2026, 4, 850_000m * scale, 650_000m * scale),
-                    Point(2026, 5, 900_000m * scale, 700_000m * scale), Point(2026, 6, 900_000m * scale, 700_000m * scale),
-                    Point(2026, 7, 950_000m * scale, 750_000m * scale), Point(2026, 8, 900_000m * scale, 700_000m * scale),
-                    Point(2026, 9, 1_000_000m * scale, 800_000m * scale)
+                    Point(2026, 3, 800_000m * scale, 111m), Point(2026, 4, 850_000m * scale, 111m), Point(2026, 5, 900_000m * scale, 111m),
+                    Point(2026, 6, 900_000m * scale, 111m), Point(2026, 7, 950_000m * scale, 111m), Point(2026, 8, 900_000m * scale, 111m),
+                    Point(2026, 9, 1_000_000m * scale, 111m)
                 };
                 _reports.Setup(r => r.GetEvolutionAsync(UserId, assetId, It.IsAny<int>())).ReturnsAsync(points);
-                _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, assetId, new DateTime(2026, 9, 1), 30)).ReturnsAsync(
-                    ToDate(30, Cat(1, "Supermercado", 500_000m * scale, 450_000m * scale, 440_000m * scale, "Comida"), Cat(2, "Delivery", 300_000m * scale, 250_000m * scale, 243_333m * scale)));
                 _reports.Setup(r => r.GetIncomeCompositionAsync(UserId, new DateTime(2026, 9, 1), assetId)).ReturnsAsync(new IncomeCompositionDTO
                 {
                     Categories = new List<IncomeCategoryAmountDTO>
@@ -292,18 +318,19 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task BuildAsync_ForAMonthClose_SendsTotalsCategoriesAndIncomeInBothCurrencies()
+        public async Task BuildAsync_ForAMonthClose_TheSpendingIsByPurchaseDateAndTheIncomeIsTheOneThatEnteredTheAccounts()
         {
             SetUpMonthClose();
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
 
             var data = (IncomeExpenseContextSource.MonthCloseData)(await _sut.BuildAsync(request))!;
 
-            data.Totals.Ars.Expense.Current.Should().Be(800_000m);
+            data.Totals.Ars.Expense.Current.Should().Be(800_000m);   // del servicio por fecha de compra, no de la evolución (111)
             data.Totals.Ars.Expense.Previous.Should().Be(700_000m);
             data.Totals.Ars.Expense.PctVsPrevious.Should().Be(14.3m);
             data.Totals.Usd.Expense.Current.Should().Be(800m);
             data.Totals.Usd.Expense.DeltaVsPrevious.Should().Be(100m);
+            data.Totals.Ars.Income.Current.Should().Be(1_000_000m);  // de la evolución, como siempre
             data.ExpensesByCategory.Categories.Select(c => c.Name).Should().Equal("Supermercado", "Delivery");
             data.ExpensesByCategory.Categories[0].Rubro.Should().Be("Comida");
             data.ExpensesByCategory.Categories[0].Ars.Current.Should().Be(500_000m);
@@ -313,45 +340,50 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task BuildAsync_ForAMonthClose_AsksForTheFullMonthAndEnoughEvolutionToAverageTheSixBefore()
+        public async Task BuildAsync_ForAMonthClose_TheResultAndTheSavingsRateComeFromTheSameMeasureAsTheSpending()
+        {
+            SetUpMonthClose();
+            var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
+
+            var data = (IncomeExpenseContextSource.MonthCloseData)(await _sut.BuildAsync(request))!;
+
+            data.Totals.Ars.Result.Current.Should().Be(200_000m);   // 1.000.000 de ingresos menos 800.000 de gasto por compra
+            data.Totals.Ars.Result.Previous.Should().Be(200_000m);  // 900.000 menos 700.000
+            data.Totals.Ars.SavingsRate.Current.Should().Be(20.0m);
+        }
+
+        [Fact]
+        public async Task BuildAsync_ForAMonthClose_AsksForTheFullMonthsInASingleCallAndNeverReadsTheAccountSpendingOrTheCalendar()
         {
             SetUpMonthClose();
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MonthClose, new DateTime(2026, 9, 1), new DateTime(2026, 9, 30));
 
             await _sut.BuildAsync(request);
 
-            _reports.Verify(r => r.GetSpendingToDateByCategoryAsync(UserId, ArsId, new DateTime(2026, 9, 1), 30), Times.Once);
-            // El mes cerrado más los 6 anteriores: al menos 7 puntos de la serie.
+            // Un cierre compara meses completos: corte en 31 (se acota solo a los días de cada mes) y una sola consulta para las dos monedas.
+            _spending.Verify(s => s.GetWindowsAsync(UserId, It.IsAny<IReadOnlyList<int>>(), new DateTime(2026, 9, 1), 31, It.IsAny<int>()), Times.Once);
+            // Los ingresos: el mes cerrado más los 6 anteriores, al menos 7 puntos de la serie.
             _reports.Verify(r => r.GetEvolutionAsync(UserId, ArsId, It.Is<int>(m => m >= 7)), Times.Once);
+            // El gasto de las cuentas y su calendario ya no se usan.
+            _reports.Verify(r => r.GetSpendingToDateByCategoryAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<DateTime>(), It.IsAny<int>()), Times.Never);
             _reports.Verify(r => r.GetCalendarAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
         }
 
         [Fact]
-        public async Task BuildAsync_ForAMidMonth_SendsTheSameStretchAndTheThermometerProjection()
+        public async Task BuildAsync_ForAMidMonth_SendsTheSameStretchAndTheProjectionFromTheDailySeriesByPurchaseDate()
         {
             var cutoff = new DateTime(2026, 9, 16);
             var request = new AssistantContextRequest(UserId, AssistantReviewKind.MidMonth, new DateTime(2026, 9, 1), cutoff);
 
-            foreach (var (assetId, scale, isPesos) in new[] { (ArsId, 1m, true), (UsdId, 0.001m, false) })
-            {
-                _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, assetId, new DateTime(2026, 9, 1), 16)).ReturnsAsync(
-                    ToDate(16, Cat(1, "Supermercado", 2000m * scale, 1500m * scale, 1800m * scale), Cat(2, "Delivery", 1200m * scale, 1000m * scale, 1000m * scale)));
-                _reports.Setup(r => r.GetEvolutionAsync(UserId, assetId, It.IsAny<int>())).ReturnsAsync(new[]
-                {
-                    Point(2026, 3, 0m, 4000m * scale), Point(2026, 4, 0m, 5000m * scale), Point(2026, 5, 0m, 6000m * scale),
-                    Point(2026, 6, 0m, 4500m * scale), Point(2026, 7, 0m, 5500m * scale), Point(2026, 8, 0m, 5000m * scale)
-                });
-                _reports.Setup(r => r.GetCalendarAsync(UserId, assetId, 2026)).ReturnsAsync(new SpendingCalendarDTO
-                {
-                    Year = 2026,
-                    Days = new List<DaySpendingDTO>
-                    {
-                        new() { Date = new DateTime(2026, 9, 5), Amount = 1600m * scale },
-                        new() { Date = new DateTime(2026, 9, 10), Amount = 1600m * scale },
-                        new() { Date = new DateTime(2026, 8, 20), Amount = 9999m * scale } // otro mes: no entra en el acumulado
-                    }
-                });
-            }
+            PurchaseSpendingWindowDTO For(decimal scale) => Window(
+                ToDate(16, Cat(1, "Supermercado", 2000m * scale, 1500m * scale, 1800m * scale), Cat(2, "Delivery", 1200m * scale, 1000m * scale, 1000m * scale)),
+                Totals(0m, 5000m * scale, 5000m * scale), // meses completos: el mes anterior fue 5.000 y el promedio 5.000
+                new DaySpendingDTO { Date = new DateTime(2026, 9, 5), Amount = 1600m * scale },
+                new DaySpendingDTO { Date = new DateTime(2026, 9, 10), Amount = 1600m * scale },
+                new DaySpendingDTO { Date = new DateTime(2026, 8, 20), Amount = 9999m * scale }); // otro mes: no entra en el acumulado
+            SetUpWindows(new DateTime(2026, 9, 1), 16, For(1m), For(0.001m));
+            foreach (var assetId in new[] { ArsId, UsdId })
+                _reports.Setup(r => r.GetEvolutionAsync(UserId, assetId, It.IsAny<int>())).ReturnsAsync(Array.Empty<IncExpEvolutionPointDTO>());
 
             var data = (IncomeExpenseContextSource.MidMonthData)(await _sut.BuildAsync(request))!;
 
@@ -366,7 +398,7 @@ namespace JazFinanzasApp.Tests.Services
             data.ExpenseToDate.Ars.PctVsAverage.Should().Be(14.3m);
             data.ExpenseToDate.Usd.Current.Should().Be(3.20m);
 
-            // 3.200 en 16 días, al ritmo actual cierra en 6.000; el mes anterior fue 5.000 y el promedio 5.000.
+            // 3.200 en 16 días, al ritmo actual cierra en 6.000; el mes anterior completo fue 5.000 y el promedio 5.000.
             data.Projection.Ars.ProjectedMonthEnd.Should().Be(6000m);
             data.Projection.Ars.PreviousMonthTotal.Should().Be(5000m);
             data.Projection.Ars.AverageMonthTotal.Should().Be(5000m);
@@ -376,43 +408,60 @@ namespace JazFinanzasApp.Tests.Services
         }
 
         [Fact]
-        public async Task BuildAsync_ForAMidMonth_TheProjectionIsTheSameOneTheDashboardThermometerShows()
+        public async Task BuildAsync_ForAMidMonth_TheProjectionIsTheSameOneTheThermometerGivesForThatSeries()
         {
             var cutoff = new DateTime(2026, 9, 16);
-            var days = new List<DaySpendingDTO>
+            var days = new[]
             {
-                new() { Date = new DateTime(2026, 9, 2), Amount = 123.45m },
-                new() { Date = new DateTime(2026, 9, 9), Amount = 777.77m },
-                new() { Date = new DateTime(2026, 9, 20), Amount = 5000m }   // posterior al corte
+                new DaySpendingDTO { Date = new DateTime(2026, 9, 2), Amount = 123.45m },
+                new DaySpendingDTO { Date = new DateTime(2026, 9, 9), Amount = 777.77m },
+                new DaySpendingDTO { Date = new DateTime(2026, 9, 20), Amount = 5000m }   // posterior al corte
             };
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, It.IsAny<int>(), It.IsAny<DateTime>(), 16)).ReturnsAsync(ToDate(16));
+            var window = Window(ToDate(16), Totals(0m, 0m, 0m), days);
+            SetUpWindows(new DateTime(2026, 9, 1), 16, window, window);
             _reports.Setup(r => r.GetEvolutionAsync(UserId, It.IsAny<int>(), It.IsAny<int>())).ReturnsAsync(Array.Empty<IncExpEvolutionPointDTO>());
-            _reports.Setup(r => r.GetCalendarAsync(UserId, It.IsAny<int>(), 2026)).ReturnsAsync(new SpendingCalendarDTO { Days = days });
 
             var data = (IncomeExpenseContextSource.MidMonthData)(await _sut.BuildAsync(
                 new AssistantContextRequest(UserId, AssistantReviewKind.MidMonth, new DateTime(2026, 9, 1), cutoff)))!;
 
-            var thermometer = DashboardService.BuildThermometer(days, cutoff);
+            var thermometer = DashboardService.BuildThermometer(days.ToList(), cutoff);
             data.Projection.Ars.ProjectedMonthEnd.Should().Be(AssistantFigures.RoundMoney(thermometer.ProjectedMonthEndAmount, isPesos: true));
         }
 
         [Fact]
-        public async Task BuildAsync_ForAMidMonthInJanuary_AlsoLoadsThePreviousYearForTheThermometer()
+        public async Task BuildAsync_ForAMidMonthInJanuary_NeedsNoSpecialHandlingOfThePreviousYearAndAsksOnce()
         {
-            _reports.Setup(r => r.GetSpendingToDateByCategoryAsync(UserId, It.IsAny<int>(), It.IsAny<DateTime>(), 10)).ReturnsAsync(ToDate(10));
+            var window = Window(ToDate(10), Totals(0m, 0m, 0m));
+            SetUpWindows(new DateTime(2027, 1, 1), 10, window, window);
             _reports.Setup(r => r.GetEvolutionAsync(UserId, It.IsAny<int>(), It.IsAny<int>())).ReturnsAsync(Array.Empty<IncExpEvolutionPointDTO>());
-            _reports.Setup(r => r.GetCalendarAsync(UserId, It.IsAny<int>(), It.IsAny<int>())).ReturnsAsync(new SpendingCalendarDTO());
 
             await _sut.BuildAsync(new AssistantContextRequest(UserId, AssistantReviewKind.MidMonth, new DateTime(2027, 1, 1), new DateTime(2027, 1, 10)));
 
-            _reports.Verify(r => r.GetCalendarAsync(UserId, ArsId, 2027), Times.Once);
-            _reports.Verify(r => r.GetCalendarAsync(UserId, ArsId, 2026), Times.Once);
+            _spending.Verify(s => s.GetWindowsAsync(UserId, It.IsAny<IReadOnlyList<int>>(), new DateTime(2027, 1, 1), 10, It.IsAny<int>()), Times.Once);
+            _reports.Verify(r => r.GetCalendarAsync(It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()), Times.Never);
         }
 
         [Fact]
-        public void Measures_SaysThatCardSpendCountsWhenTheInstallmentIsPaid_AndNotToAddItToTheCardsSource()
+        public void CombineExpense_TakesTheIncomeFromTheWindowAndTheExpenseFromTheFullMonthsSpending()
         {
-            _sut.Measures.Should().Contain("cuota").And.Contain("no se suma con la fuente de tarjetas");
+            var income = new IncomeExpenseContextSource.MonthWindow(
+                new IncomeExpenseContextSource.MonthTotals(1_000m, 999m),
+                new IncomeExpenseContextSource.MonthTotals(900m, 999m),
+                new IncomeExpenseContextSource.MonthTotals(850m, 999m));
+
+            var combined = IncomeExpenseContextSource.CombineExpense(income, Totals(700m, 600m, 650m));
+
+            combined.Current.Should().Be(new IncomeExpenseContextSource.MonthTotals(1_000m, 700m));
+            combined.Previous.Should().Be(new IncomeExpenseContextSource.MonthTotals(900m, 600m));
+            combined.Average.Should().Be(new IncomeExpenseContextSource.MonthTotals(850m, 650m));
+            combined.Current.Result.Should().Be(300m);
+        }
+
+        [Fact]
+        public void Measures_SaysThatSpendingIsByPurchaseDate_ThatThePaidStatementDoesNotCount_AndNotToAddItToTheCardsSource()
+        {
+            _sut.Measures.Should().Contain("fecha de compra").And.Contain("NO suman").And.Contain("cards");
+            _sut.Measures.Should().NotContain("cuando se paga la cuota");
             _sut.PrimaryCurrency.Should().Be("ARS");
             _sut.Key.Should().Be("income-expense");
         }

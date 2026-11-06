@@ -529,7 +529,7 @@ namespace JazFinanzasApp.Tests.Services
             dto.Kind.Should().Be(AssistantReviewKind.WeeklyScan);
             dto.PeriodStart.Should().Be(new DateTime(2026, 10, 12), "el lunes de la semana");
             dto.CutoffDate.Should().Be(new DateTime(2026, 10, 13), "los datos llegan hasta ayer");
-            dto.PromptVersion.Should().Be("weekly-scan.v1");
+            dto.PromptVersion.Should().Be("weekly-scan.v2");
             dto.Headline.Should().BeNull();
             dto.Body.Should().BeNull();
             dto.Highlights.Should().BeEmpty();
@@ -675,7 +675,7 @@ namespace JazFinanzasApp.Tests.Services
             AssistantPrompts.Load(AssistantPrompts.MidMonthCurrent).Should().Contain("# Hallazgos").And.Contain("`findings`");
             var weekly = AssistantPrompts.Load(AssistantPrompts.WeeklyScanCurrent);
             weekly.Should().Contain("REVISIÓN SEMANAL").And.Contain("Nunca calcules").And.Contain("lista vacía");
-            AssistantPrompts.CurrentVersion(AssistantReviewKind.WeeklyScan).Should().Be("weekly-scan.v1");
+            AssistantPrompts.CurrentVersion(AssistantReviewKind.WeeklyScan).Should().Be("weekly-scan.v2");
         }
 
         [Fact]

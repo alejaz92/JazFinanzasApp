@@ -12,6 +12,9 @@ namespace JazFinanzasApp.API.Business.Assistant
     {
         Task<AssistantStatusDTO> GetStatusAsync(int userId);
         Task<AssistantLatestDTO> GetLatestAsync(int userId);
+        // Las pasadas que tocan preparar hoy, en orden (cierre, mitad de mes y, si no falta ninguna, la revisión semanal). Es lo que
+        // recorre la preparación de madrugada; no tiene en cuenta si el mes está listo para el cierre.
+        Task<List<AssistantDuePass>> GetDuePassesAsync(int userId);
         Task<List<AssistantReviewSummaryDTO>> GetHistoryAsync(int userId, string? kind);
         Task<AssistantReviewDTO> GetByIdAsync(int userId, int id);
         Task<AssistantReviewDTO> GenerateAsync(int userId, GenerateAssistantReviewDTO request, CancellationToken cancellationToken = default);
@@ -48,6 +51,11 @@ namespace JazFinanzasApp.API.Business.Assistant
         private readonly IAssistantFindingService _findings;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<AssistantReviewService> _logger;
+        private readonly IAssistantMonthReadinessService? _readiness;
+        private readonly IAssistantSchedulerRunRepository? _runs;
+
+        // Lo último que sigue "reciente" para la preparación de madrugada: dos corridas por día, con holgura.
+        public static readonly TimeSpan SchedulerStaleAfter = TimeSpan.FromHours(36);
 
         public AssistantReviewService(
             IAssistantReviewRepository repository,
@@ -55,7 +63,9 @@ namespace JazFinanzasApp.API.Business.Assistant
             AssistantContextBuilder contextBuilder,
             IAssistantFindingService findings,
             TimeProvider timeProvider,
-            ILogger<AssistantReviewService> logger)
+            ILogger<AssistantReviewService> logger,
+            IAssistantMonthReadinessService? readiness = null,
+            IAssistantSchedulerRunRepository? runs = null)
         {
             _repository = repository;
             _usage = usage;
@@ -63,6 +73,8 @@ namespace JazFinanzasApp.API.Business.Assistant
             _findings = findings;
             _timeProvider = timeProvider;
             _logger = logger;
+            _readiness = readiness;
+            _runs = runs;
         }
 
         private DateTime Today => _timeProvider.GetLocalNow().DateTime.Date;
@@ -93,18 +105,51 @@ namespace JazFinanzasApp.API.Business.Assistant
             var currentMonth = FirstOfMonth(Today);
             var previousMonth = currentMonth.AddMonths(-1);
 
+            var preparing = await IsPreparingAsync(userId, previousMonth, currentMonth);
+
             if (!await IsCoveredAsync(userId, AssistantReviewKind.MonthClose, previousMonth))
-                return NotGenerated(AssistantReviewKind.MonthClose, previousMonth);
+                return await NotGeneratedAsync(userId, AssistantReviewKind.MonthClose, previousMonth, preparing);
 
             if (Today.Day >= MidMonthFromDay && !await IsCoveredAsync(userId, AssistantReviewKind.MidMonth, currentMonth))
-                return NotGenerated(AssistantReviewKind.MidMonth, currentMonth);
+                return await NotGeneratedAsync(userId, AssistantReviewKind.MidMonth, currentMonth, preparing);
 
             var weeklyScanDue = await IsWeeklyScanDueAsync(userId);
             var latest = await _repository.GetLatestReadyAsync(userId);
             if (latest == null)
-                return new AssistantLatestDTO { State = AssistantLatestState.Empty, WeeklyScanDue = weeklyScanDue };
+                return new AssistantLatestDTO { State = AssistantLatestState.Empty, WeeklyScanDue = weeklyScanDue, Preparing = preparing };
 
-            return new AssistantLatestDTO { State = AssistantLatestState.Ready, Review = await ToDtoAsync(latest), WeeklyScanDue = weeklyScanDue };
+            return new AssistantLatestDTO { State = AssistantLatestState.Ready, Review = await ToDtoAsync(latest), WeeklyScanDue = weeklyScanDue, Preparing = preparing };
+        }
+
+        public async Task<List<AssistantDuePass>> GetDuePassesAsync(int userId)
+        {
+            await _usage.EnsureEnabledAsync(userId);
+
+            var currentMonth = FirstOfMonth(Today);
+            var previousMonth = currentMonth.AddMonths(-1);
+            var due = new List<AssistantDuePass>();
+
+            if (!await IsCoveredAsync(userId, AssistantReviewKind.MonthClose, previousMonth))
+                due.Add(new AssistantDuePass(AssistantReviewKind.MonthClose, previousMonth));
+
+            if (Today.Day >= MidMonthFromDay && !await IsCoveredAsync(userId, AssistantReviewKind.MidMonth, currentMonth))
+                due.Add(new AssistantDuePass(AssistantReviewKind.MidMonth, currentMonth));
+
+            // Igual que en reviews/latest: la revisión semanal solo toca si no falta ninguna devolución.
+            if (due.Count == 0 && await IsWeeklyScanDueAsync(userId))
+                due.Add(new AssistantDuePass(AssistantReviewKind.WeeklyScan, MondayOf(Today)));
+
+            return due;
+        }
+
+        // Hay una pasada en curso (no vencida) de las devoluciones que importan ahora, a pedido o de la preparación de madrugada.
+        private async Task<bool> IsPreparingAsync(int userId, DateTime previousMonth, DateTime currentMonth)
+        {
+            var now = UtcNow;
+            var close = await _repository.GetForPeriodAsync(userId, AssistantReviewKind.MonthClose, previousMonth, AssistantReviewPurpose.User);
+            if (close.Any(r => r.Status == AssistantReviewStatus.Pending && now - r.CreatedAt < PendingTimeout)) return true;
+            var mid = await _repository.GetForPeriodAsync(userId, AssistantReviewKind.MidMonth, currentMonth, AssistantReviewPurpose.User);
+            return mid.Any(r => r.Status == AssistantReviewStatus.Pending && now - r.CreatedAt < PendingTimeout);
         }
 
         // D6, paso 3: la revisión semanal corre cuando se cumplen las tres condiciones. Se evalúa solo si no falta
@@ -203,6 +248,7 @@ namespace JazFinanzasApp.API.Business.Assistant
             {
                 var context = await _contextBuilder.BuildAsync(new AssistantContextRequest(userId, request.Kind, periodStart, cutoff));
                 contextJson = AssistantContextBuilder.Serialize(context);
+                review.DataNotesJson = context.DataNotes is { Count: > 0 } ? JsonSerializer.Serialize(context.DataNotes) : null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -238,6 +284,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
             var review = NewReview(userId, source.Kind, source.PeriodStart, source.CutoffDate, AssistantReviewPurpose.Eval, AssistantReviewStatus.Pending);
             review.ContextJson = source.ContextJson;
+            review.DataNotesJson = source.DataNotesJson;
             await AddPendingAsync(review);
 
             await ExecuteAsync(review, source.ContextJson, version, AssistantApiCallPurpose.Eval, cancellationToken);
@@ -540,12 +587,44 @@ namespace JazFinanzasApp.API.Business.Assistant
             UpdatedAt = UtcNow
         };
 
-        private static AssistantLatestDTO NotGenerated(string kind, DateTime periodStart) => new()
+        // Falta una devolución: además de cuál, dice por qué todavía no está (plan-devoluciones-llm-v2.md, D7). El estado y la devolución
+        // que falta se mantienen igual que antes; el frontend nuevo usa Outlook para no disparar la generación solo.
+        private async Task<AssistantLatestDTO> NotGeneratedAsync(int userId, string kind, DateTime periodStart, bool preparing)
         {
-            State = AssistantLatestState.NotGenerated,
-            MissingKind = kind,
-            MissingPeriodStart = periodStart
-        };
+            var dto = new AssistantLatestDTO
+            {
+                State = AssistantLatestState.NotGenerated,
+                MissingKind = kind,
+                MissingPeriodStart = periodStart,
+                Preparing = preparing,
+                Outlook = AssistantLatestOutlook.Scheduled
+            };
+
+            // Mientras la devolución que falta se prepara, la tarjeta sigue mostrando la última que hay.
+            var lastReady = await _repository.GetLatestReadyAsync(userId);
+            if (lastReady != null) dto.Review = await ToDtoAsync(lastReady);
+
+            if (kind == AssistantReviewKind.MonthClose && _readiness != null)
+            {
+                var readiness = await _readiness.CheckAsync(userId, periodStart, Today);
+                if (!readiness.ShouldPrepare)
+                {
+                    dto.Outlook = AssistantLatestOutlook.WaitingForData;
+                    dto.OutlookNotes = readiness.Missing.ToList();
+                    return dto;
+                }
+            }
+
+            if (_runs != null)
+            {
+                var last = await _runs.GetLastAsync();
+                if (last == null || UtcNow - last.StartedAt > SchedulerStaleAfter)
+                    dto.Outlook = AssistantLatestOutlook.SchedulerNotRun;
+                else if (last.Status == AssistantSchedulerRunStatus.Failed)
+                    dto.Outlook = AssistantLatestOutlook.LastRunFailed;
+            }
+            return dto;
+        }
 
         private async Task<AssistantReviewDTO> ToDtoAsync(AssistantReview review)
         {
@@ -563,6 +642,7 @@ namespace JazFinanzasApp.API.Business.Assistant
                 Highlights = ReadList(review.HighlightsJson),
                 Body = review.Body,
                 UnverifiedFigures = ReadList(review.UnverifiedFiguresJson),
+                DataNotes = ReadList(review.DataNotesJson),
                 ErrorMessage = review.ErrorMessage,
                 PromptVersion = review.PromptVersion,
                 Model = review.Model,

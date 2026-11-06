@@ -1,5 +1,7 @@
 using JazFinanzasApp.API.Business.DTO.Dashboard;
+using JazFinanzasApp.API.Business.Interfaces;
 using JazFinanzasApp.API.Domain;
+using JazFinanzasApp.API.Infrastructure.Data.QueryResults;
 using JazFinanzasApp.API.Infrastructure.Interfaces;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -10,7 +12,9 @@ namespace JazFinanzasApp.API.Business.Assistant
     {
         // Los avisos que el asistente le suma a la bandeja de pendientes (plan-devoluciones-llm.md, D8, D8b y D9):
         //  - las tres alertas por reglas, para todos los usuarios (no cuestan nada ni mandan datos a ningún lado);
-        //  - los hallazgos activos y el aviso de revisión de calidad, solo para quien tiene el asistente habilitado.
+        //  - el aviso de revisión de calidad, solo para quien tiene el asistente habilitado.
+        // Los hallazgos ya no pasan por la bandeja (plan-devoluciones-llm-v2.md, D9): los muestra la tarjeta del asistente, que los
+        // pide a IAssistantFindingService.
         // Nunca lanza: Inicio tiene que seguir funcionando aunque algo de esto falle.
         Task<List<DashboardPendingItemDTO>> BuildAsync(int userId, DateTime today);
     }
@@ -50,6 +54,7 @@ namespace JazFinanzasApp.API.Business.Assistant
         private const string PesoAssetName = "Peso Argentino";
 
         private readonly ITransactionRepository _transactionRepository;
+        private readonly IPurchaseSpendingService _spending;
         private readonly IAssetRepository _assetRepository;
         private readonly IAssistantUsageService _usage;
         private readonly IAssistantFindingService _findings;
@@ -60,6 +65,7 @@ namespace JazFinanzasApp.API.Business.Assistant
 
         public AssistantAlertService(
             ITransactionRepository transactionRepository,
+            IPurchaseSpendingService spending,
             IAssetRepository assetRepository,
             IAssistantUsageService usage,
             IAssistantFindingService findings,
@@ -69,6 +75,7 @@ namespace JazFinanzasApp.API.Business.Assistant
             ILogger<AssistantAlertService> logger)
         {
             _transactionRepository = transactionRepository;
+            _spending = spending;
             _assetRepository = assetRepository;
             _usage = usage;
             _findings = findings;
@@ -96,7 +103,6 @@ namespace JazFinanzasApp.API.Business.Assistant
                 var status = await _usage.GetStatusAsync(userId);
                 if (status.Enabled)
                 {
-                    items.AddRange(await BuildFindingItemsAsync(userId));
                     var due = await BuildQualityReviewDueAsync(userId);
                     if (due != null) items.Add(due);
                 }
@@ -115,25 +121,22 @@ namespace JazFinanzasApp.API.Business.Assistant
             if (pesos == null) return new List<DashboardPendingItemDTO>();
 
             var from = new DateTime(today.Year, today.Month, 1).AddMonths(-_options.RequiredHistoryMonths);
-            var movements = (await _transactionRepository.GetAlertMovementsAsync(userId, pesos, from)).ToList();
-            return AssistantAlertRules.Evaluate(movements, today, _options);
-        }
 
-        // D8b: título y detalle son los del hallazgo; el link es la categoría, si la tiene. Desde la bandeja se puede
-        // descartar y calificar, para lo cual el frontend necesita el id del hallazgo.
-        private async Task<List<DashboardPendingItemDTO>> BuildFindingItemsAsync(int userId)
-        {
-            var findings = await _findings.GetAsync(userId, includeAll: false);
-            return findings.Select(f => new DashboardPendingItemDTO
+            // Los ingresos, como entran a las cuentas; el gasto, por fecha de compra (plan-devoluciones-llm-v2.md, D2): una compra con
+            // tarjeta cuenta el día en que se hizo, no cuando se paga el resumen.
+            var movements = (await _transactionRepository.GetAlertIncomesAsync(userId, pesos, from)).ToList();
+            var expenses = await _spending.GetExpenseRowsAsync(userId, pesos.Id, from, today.Date.AddDays(1));
+            movements.AddRange(expenses.Select(e => new AlertMovementResult
             {
-                Kind = FindingKind,
-                Title = f.Title,
-                Detail = f.Detail,
-                Severity = "info",
-                LinkId = f.TransactionClassId,
-                FindingId = f.Id,
-                Date = f.CreatedAt
-            }).ToList();
+                Date = e.Date,
+                MovementType = "E",
+                CategoryId = e.CategoryId,
+                CategoryName = e.CategoryName,
+                Detail = e.Detail,
+                AmountInPesos = e.AmountByAssetId[pesos.Id],
+                IsRecurring = e.Kind == PurchaseSpendingKind.CardRecurring
+            }));
+            return AssistantAlertRules.Evaluate(movements, today, _options);
         }
 
         private async Task<DashboardPendingItemDTO?> BuildQualityReviewDueAsync(int userId)
