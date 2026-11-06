@@ -216,7 +216,7 @@ namespace JazFinanzasApp.Tests.Services
             dto.Headline.Should().Be("El mes cerró con un gasto de $85.000");
             dto.Highlights.Should().Equal("Primero", "Segundo", "Tercero");
             dto.Body.Should().Be("El ahorro fue de 18 %.");
-            dto.PromptVersion.Should().Be("month-close.v1");
+            dto.PromptVersion.Should().Be("month-close.v2");
             dto.Model.Should().Be(Model);
             dto.UnverifiedFigures.Should().BeEmpty();
 
@@ -225,7 +225,7 @@ namespace JazFinanzasApp.Tests.Services
             var call = f.Context.AssistantApiCalls.Single();
             call.ReviewId.Should().Be(row.Id);
             call.Purpose.Should().Be(AssistantApiCallPurpose.Review);
-            call.PromptVersion.Should().Be("month-close.v1");
+            call.PromptVersion.Should().Be("month-close.v2");
             call.CostUsd.Should().Be(0.116m);
 
             f.Client.Requests.Should().ContainSingle();
@@ -242,7 +242,7 @@ namespace JazFinanzasApp.Tests.Services
 
             var dto = await f.Service.GenerateAsync(UserId, Mid());
 
-            dto.PromptVersion.Should().Be("mid-month.v1");
+            dto.PromptVersion.Should().Be("mid-month.v2");
             dto.PeriodStart.Should().Be(new DateTime(2026, 10, 1));
             dto.CutoffDate.Should().Be(new DateTime(2026, 10, 16));
             f.Client.Requests[0].SystemPrompt.Should().Contain("MITAD DE MES");
@@ -769,8 +769,8 @@ namespace JazFinanzasApp.Tests.Services
         // --- instrucciones ---
 
         [Theory]
-        [InlineData(AssistantReviewKind.MonthClose, "month-close.v1")]
-        [InlineData(AssistantReviewKind.MidMonth, "mid-month.v1")]
+        [InlineData(AssistantReviewKind.MonthClose, "month-close.v2")]
+        [InlineData(AssistantReviewKind.MidMonth, "mid-month.v2")]
         public void EveryCurrentPromptVersionExistsAndHasContent(string kind, string version)
         {
             AssistantPrompts.CurrentVersion(kind).Should().Be(version);

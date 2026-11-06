@@ -16,12 +16,12 @@ namespace JazFinanzasApp.Tests.Services
 
         [Theory]
         [MemberData(nameof(Kinds))]
-        public void EveryKindHasAV2ThatResolvesButTheCurrentVersionIsStillV1(string kind)
+        public void EveryKindHasAV2ThatResolvesAndItIsTheCurrentVersion(string kind)
         {
             AssistantPrompts.ResolveVersion(kind, "v2").Should().EndWith(".v2");
             AssistantPrompts.Exists(AssistantPrompts.ResolveVersion(kind, "v2")).Should().BeTrue();
-            // Quedan sin ser vigentes hasta la comparación del pase (Fase 12).
-            AssistantPrompts.CurrentVersion(kind).Should().EndWith(".v1");
+            // Vigentes desde la comparación del pase (plan-devoluciones-llm-v2.md, Fase 12, paso 1).
+            AssistantPrompts.CurrentVersion(kind).Should().EndWith(".v2");
         }
 
         [Theory]
