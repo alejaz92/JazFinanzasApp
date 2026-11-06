@@ -374,22 +374,91 @@ namespace JazFinanzasApp.Tests.Services
             row.Detail.Should().Be("Pedidos Ya");
         }
 
+        // La serie "BLUE" guarda "unidades del activo por 1 USD" bajo el activo (el peso: unos 1.500) y el dólar no tiene serie propia: es como
+        // está en producción. Plan v2, Fase 13: antes se buscaba una serie del dólar que no existe y un recurrente en dólares daba 0 pesos.
+        private static (Asset Ars, Asset Usd) CurrenciesWithCardQuote(ApplicationDbContext context, decimal pesosPerDollar = 1500m)
+        {
+            var ars = AddCurrency(context, "Peso Argentino", "$");
+            var usd = AddCurrency(context, "Dolar Estadounidense", "US$");
+            context.AssetQuotes.Add(new AssetQuote { Asset = ars, Date = new DateTime(2026, 9, 1), Type = "BLUE", Value = pesosPerDollar });
+            // La cotización "TARJETA" (la del reporte de Tarjetas) no interviene: si se usara, el resultado sería otro.
+            context.AssetQuotes.Add(new AssetQuote { Asset = ars, Date = new DateTime(2026, 9, 1), Type = "TARJETA", Value = 2000m });
+            return (ars, usd);
+        }
+
         [Fact]
-        public async Task ACardPurchaseInAnotherCurrencyIsConvertedWithTheCardQuoteLikeTheTagReport()
+        public async Task ACardPurchaseInDollarsIsConvertedToPesosWithTheBlueQuoteAndKeepsItsDollars()
+        {
+            using var context = CreateContext();
+            var (ars, usd) = CurrenciesWithCardQuote(context);
+            AddCard(context, usd, AddClass(context, "Software"), new DateTime(2026, 9, 12), 10m);
+            await context.SaveChangesAsync();
+
+            var row = (await new TransactionRepository(context).GetPurchaseSpendingRowsAsync(UserId, new[] { ars, usd }, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single();
+
+            row.AmountByAssetId[ars.Id].Should().Be(15000m); // 10 USD x 1500 de BLUE, no x 2000 de TARJETA
+            row.AmountByAssetId[usd.Id].Should().Be(10m);
+        }
+
+        [Fact]
+        public async Task ACardPurchaseInPesosIsConvertedToDollarsWithTheBlueQuote()
+        {
+            using var context = CreateContext();
+            var (ars, usd) = CurrenciesWithCardQuote(context);
+            AddCard(context, ars, AddClass(context, "Ropa"), new DateTime(2026, 9, 12), 45000m);
+            await context.SaveChangesAsync();
+
+            var row = (await new TransactionRepository(context).GetPurchaseSpendingRowsAsync(UserId, new[] { ars, usd }, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single();
+
+            row.AmountByAssetId[ars.Id].Should().Be(45000m);
+            row.AmountByAssetId[usd.Id].Should().Be(30m); // 45000 / 1500
+        }
+
+        [Fact]
+        public async Task ARecurringChargeInDollarsCountsInPesosEveryActiveMonth()
+        {
+            // El caso real que apareció con demo: un Netflix de US$ 15 que figuraba en 0 pesos.
+            using var context = CreateContext();
+            var (ars, usd) = CurrenciesWithCardQuote(context);
+            AddCard(context, usd, AddClass(context, "Viajes"), new DateTime(2024, 11, 28), 15m, repeat: "YES", installmentAmount: 15m);
+            await context.SaveChangesAsync();
+
+            var row = (await new TransactionRepository(context).GetPurchaseSpendingRowsAsync(UserId, new[] { ars, usd }, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single();
+
+            row.Kind.Should().Be(PurchaseSpendingKind.CardRecurring);
+            row.AmountByAssetId[ars.Id].Should().Be(22500m); // 15 x 1500
+            row.AmountByAssetId[usd.Id].Should().Be(15m);
+        }
+
+        [Fact]
+        public async Task WithoutABlueQuoteTheOtherCurrencyIsZeroInsteadOfInventingARate()
         {
             using var context = CreateContext();
             var ars = AddCurrency(context, "Peso Argentino", "$");
             var usd = AddCurrency(context, "Dolar Estadounidense", "US$");
-            var software = AddClass(context, "Software");
-            AddCard(context, usd, software, new DateTime(2026, 9, 12), 10m);
-            // Mismo criterio que GetSpendingByTagAsync: monto / cotización TARJETA del activo de origen * cotización BLUE del peso.
-            context.AssetQuotes.Add(new AssetQuote { Asset = usd, Date = new DateTime(2026, 9, 1), Type = "TARJETA", Value = 2m });
-            context.AssetQuotes.Add(new AssetQuote { Asset = ars, Date = new DateTime(2026, 9, 1), Type = "BLUE", Value = 1000m });
+            AddCard(context, usd, AddClass(context, "Software"), new DateTime(2026, 9, 12), 10m);
             await context.SaveChangesAsync();
 
-            var row = (await Rows(context, ars, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single();
+            var row = (await new TransactionRepository(context).GetPurchaseSpendingRowsAsync(UserId, new[] { ars, usd }, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single();
 
-            row.AmountByAssetId[ars.Id].Should().Be(5000m); // 10 / 2 * 1000
+            row.AmountByAssetId[ars.Id].Should().Be(0m);
+            row.AmountByAssetId[usd.Id].Should().Be(10m);
+        }
+
+        [Fact]
+        public async Task TheInstallmentsDueInDollarsAreConvertedWithTheBlueQuoteToo()
+        {
+            using var context = CreateContext();
+            var (ars, usd) = CurrenciesWithCardQuote(context);
+            AddCard(context, usd, AddClass(context, "Viajes"), new DateTime(2024, 11, 28), 15m, repeat: "YES", installmentAmount: 15m);
+            await context.SaveChangesAsync();
+            var repo = new TransactionRepository(context);
+
+            var inPesos = (await repo.GetCardInstallmentsDueAsync(UserId, ars, new DateTime(2026, 9, 17))).Single();
+            var inDollars = (await repo.GetCardInstallmentsDueAsync(UserId, usd, new DateTime(2026, 9, 17))).Single();
+
+            inPesos.Amount.Should().Be(22500m);
+            inDollars.Amount.Should().Be(15m);
         }
 
         [Fact]
