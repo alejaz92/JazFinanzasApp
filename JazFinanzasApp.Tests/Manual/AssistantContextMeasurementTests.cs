@@ -56,6 +56,7 @@ namespace JazFinanzasApp.Tests.Manual
             services.AddDbContext<ApplicationDbContext>(o => o
                 .UseSqlServer(connectionString, s => s.CommandTimeout(120))
                 .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+            services.AddSingleton<IConfiguration>(configuration); // el host real ya lo registra
             services.AddApplicationServices(configuration);
 
             await using var provider = services.BuildServiceProvider();

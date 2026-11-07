@@ -686,6 +686,45 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             return best >= 0 ? series[best].Value : series[0].Value;
         }
 
+        // Cuánto de cada compra con tarjeta (en la moneda de la compra) no es del usuario: la parte de otras personas en un evento compartido
+        // o en un gasto compartido, y los descuentos del banco. Un gasto compartido que además es el respaldo de un movimiento de evento se
+        // cuenta una sola vez, por el evento. Un movimiento de evento en otra moneda que la compra no se resta (no hay cómo compararlos).
+        private async Task<Dictionary<int, decimal>> LoadCardPurchaseReimbursementsAsync(IReadOnlyCollection<int> cardTransactionIds)
+        {
+            var result = new Dictionary<int, decimal>();
+            if (cardTransactionIds.Count == 0) return result;
+
+            void Add(int id, decimal amount) => result[id] = result.GetValueOrDefault(id) + amount;
+
+            var eventShares = await _context.SharedEventMovementShares
+                .AsNoTracking()
+                .Where(sh => sh.PersonId != null &&
+                             sh.SharedEventMovement.CardTransactionId != null &&
+                             cardTransactionIds.Contains(sh.SharedEventMovement.CardTransactionId.Value) &&
+                             sh.SharedEventMovement.AssetId == sh.SharedEventMovement.CardTransaction!.AssetId)
+                .Select(sh => new { CardId = sh.SharedEventMovement.CardTransactionId!.Value, sh.Amount })
+                .ToListAsync();
+            foreach (var x in eventShares) Add(x.CardId, x.Amount);
+
+            var expenseSplits = await _context.SharedExpenseSplits
+                .AsNoTracking()
+                .Where(sp => sp.SharedExpense.CardTransactionId != null &&
+                             cardTransactionIds.Contains(sp.SharedExpense.CardTransactionId.Value) &&
+                             !_context.SharedEventMovements.Any(sm => sm.SharedExpenseId == sp.SharedExpenseId))
+                .Select(sp => new { CardId = sp.SharedExpense.CardTransactionId!.Value, sp.Amount })
+                .ToListAsync();
+            foreach (var x in expenseSplits) Add(x.CardId, x.Amount);
+
+            var discounts = await _context.CardTransactionDiscounts
+                .AsNoTracking()
+                .Where(d => cardTransactionIds.Contains(d.CardTransactionId))
+                .Select(d => new { CardId = d.CardTransactionId, d.Amount })
+                .ToListAsync();
+            foreach (var x in discounts) Add(x.CardId, x.Amount);
+
+            return result;
+        }
+
         private const string DollarAssetName = "Dolar Estadounidense";
 
         // Convierte un monto de tarjeta al activo destino pasando por el dólar (origen -> dólar -> destino) con la serie "BLUE", que guarda
@@ -1128,12 +1167,18 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
             Dictionary<int, decimal> CardAmounts(int assetId, string assetName, decimal amount, DateTime date) =>
                 assets.ToDictionary(a => a.Id, a => Math.Abs(ConvertCardAmount(amount, assetId, assetName, a.Id, a.Name, cardQuoteSeries, date)));
 
+            // Gasto propio (plan-devoluciones-llm-v2.md, Fase 13): una compra con tarjeta cuenta lo que es del usuario, o sea el total menos
+            // lo que reintegran otros (la parte ajena de un gasto o evento compartido) y los descuentos del banco. Es lo que el reporte de
+            // Ingresos y Egresos ya mostraba, porque el pago del resumen sale neto de esos reintegros.
+            var reimbursements = await LoadCardPurchaseReimbursementsAsync(cards.Where(x => x.Repeat != "YES" && x.Repeat != "CLOSED").Select(x => x.Id).ToList());
+
             var firstMonth = new DateTime(from.Year, from.Month, 1);
             var lastMonth = new DateTime(toExclusive.AddDays(-1).Year, toExclusive.AddDays(-1).Month, 1);
             foreach (var c in cards)
             {
                 if (c.Repeat != "YES" && c.Repeat != "CLOSED")
                 {
+                    var ownAmount = Math.Max(0m, c.TotalAmount - reimbursements.GetValueOrDefault(c.Id));
                     rows.Add(new PurchaseSpendingRowResult
                     {
                         Date = c.Date,
@@ -1144,7 +1189,7 @@ namespace JazFinanzasApp.API.Infrastructure.Repositories
                         ParentId = c.ParentId,
                         ParentName = c.ParentName,
                         Detail = c.Detail,
-                        AmountByAssetId = CardAmounts(c.AssetId, c.AssetName, c.TotalAmount, c.Date)
+                        AmountByAssetId = CardAmounts(c.AssetId, c.AssetName, ownAmount, c.Date)
                     });
                     continue;
                 }

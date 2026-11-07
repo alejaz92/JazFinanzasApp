@@ -36,7 +36,7 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
         public string Key => SourceKey;
 
         public string Measures =>
-            "Consumo de tarjeta en el mes de la compra: lo que se compró, no lo que se pagó (una compra en cuotas cuenta entera en el mes de la compra). " +
+            "Consumo de tarjeta en el mes de la compra: lo que se compró, no lo que se pagó (una compra en cuotas cuenta entera en el mes de la compra). Es el total BRUTO de lo comprado, sin restar lo que otros reintegran, por eso es mayor que la parte de tarjeta del gasto de income-expense, que es el gasto propio. " +
             "Un recurrente cuenta en cada mes que estuvo vigente. Es el desglose por tarjeta de la parte de tarjeta del gasto de income-expense, que ya la incluye: " +
             "no se suma. 'installmentsDueThisMonth' es OTRA lectura, lo que toca pagar este mes en cuotas (cuotas de compras de este mes y de meses anteriores, " +
             "más los recurrentes): no es lo comprado en el mes y no hay que compararlo ni sumarlo con el consumo. El cierre de mes compara cada tarjeta contra el mes anterior y el " +
