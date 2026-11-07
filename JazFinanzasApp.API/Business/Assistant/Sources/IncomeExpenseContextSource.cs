@@ -42,6 +42,7 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
         public string Measures =>
             "Ingresos y gasto. El GASTO se mide por fecha de compra: lo que se pagó directo desde las cuentas, más las compras con tarjeta en el " +
             "día en que se hicieron (una compra en cuotas cuenta entera ese día) y los cargos recurrentes de tarjeta en cada mes que estuvieron activos. " +
+            "Es el gasto PROPIO: de cada compra con tarjeta se resta lo que reintegran otros (la parte ajena de un gasto o evento compartido) y los descuentos del banco. " +
             "El pago del resumen de la tarjeta y sus cuotas NO suman, porque ya contaron en la compra: por eso el gasto de un mes no depende de cuándo se " +
             "cargó ese pago. Los ingresos se miden como entraron a las cuentas. El resultado es ingresos menos gasto y la tasa de ahorro sale de ese resultado. " +
             "El gasto ya incluye lo de la tarjeta: la fuente cards es solo el desglose de esa parte por tarjeta y no se suma. " +

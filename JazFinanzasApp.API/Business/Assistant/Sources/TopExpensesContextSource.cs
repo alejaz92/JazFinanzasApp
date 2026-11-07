@@ -36,7 +36,7 @@ namespace JazFinanzasApp.API.Business.Assistant.Sources
             "Los egresos individuales más grandes del período, con el detalle tal como lo cargó el usuario, y los movimientos principales " +
             "de las 3 categorías que más subieron contra su promedio. Se miden por fecha de compra, igual que income-expense: una compra con tarjeta " +
             "aparece como la compra, en su fecha y por su total (una compra en cuotas, entera), no como la cuota que se pagó; 'origin' dice si salió " +
-            "de una cuenta (account) o fue una compra con tarjeta (card). Los cargos recurrentes de tarjeta no figuran: no son un movimiento puntual. " +
+            "de una cuenta (account) o fue una compra con tarjeta (card); una compra con tarjeta figura por su parte propia, sin lo que reintegran otros ni los descuentos. Los cargos recurrentes de tarjeta no figuran: no son un movimiento puntual. " +
             "Cada monto va en pesos y en dólares. Sirve para explicar por qué subió una categoría, no para sumar: los totales están en income-expense.";
 
         public string PrimaryCurrency => "ARS";

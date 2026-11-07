@@ -461,6 +461,147 @@ namespace JazFinanzasApp.Tests.Services
             inDollars.Amount.Should().Be(15m);
         }
 
+        // ── Gasto propio: la compra menos lo que reintegran otros o el banco (plan v2, Fase 13) ───────────────────────
+
+        private static (Asset Ars, CardTransaction Purchase) PurchaseOf(ApplicationDbContext context, decimal total, int installments = 1)
+        {
+            var ars = AddCurrency(context, "Peso Argentino", "$");
+            var purchase = AddCard(context, ars, AddClass(context, "Salidas"), new DateTime(2026, 9, 12), total, installments: installments);
+            return (ars, purchase);
+        }
+
+        private static SharedEventMovement AddEventMovement(ApplicationDbContext context, CardTransaction purchase, Asset asset, decimal total, decimal own, params decimal[] others)
+        {
+            var ev = new SharedEvent { Name = "Cena", UserId = UserId };
+            var movement = new SharedEventMovement
+            {
+                SharedEvent = ev, Date = purchase.Date, Description = "Cena", TransactionClass = purchase.TransactionClass, Asset = asset, TotalAmount = total,
+                CardTransaction = purchase, UserId = UserId, Shares = new List<SharedEventMovementShare> { new() { PersonId = null, Amount = own } }
+            };
+            var person = new Person { Name = "Franco", UserId = UserId };
+            foreach (var amount in others)
+                movement.Shares.Add(new SharedEventMovementShare { Person = person, Amount = amount });
+            context.SharedEvents.Add(ev);
+            context.SharedEventMovements.Add(movement);
+            return movement;
+        }
+
+        private static async Task<decimal> OwnAmount(ApplicationDbContext context, Asset asset) =>
+            (await Rows(context, asset, new DateTime(2026, 9, 1), new DateTime(2026, 10, 1))).Single().AmountByAssetId[asset.Id];
+
+        [Fact]
+        public async Task APurchaseSharedInAnEventCountsOnlyTheUsersShare()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 90000m);
+            AddEventMovement(context, purchase, ars, 90000m, own: 30000m, others: new[] { 30000m, 30000m });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(30000m);
+        }
+
+        [Fact]
+        public async Task APurchaseSharedAsAnExpenseWithPeopleCountsOnlyTheUsersPart()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 152000m);
+            var person = new Person { Name = "Compañero", UserId = UserId };
+            context.SharedExpenses.Add(new SharedExpense
+            {
+                CardTransaction = purchase, UserId = UserId,
+                Splits = new List<SharedExpenseSplit> { new() { Person = person, Amount = 38000m }, new() { Person = new Person { Name = "Otro", UserId = UserId }, Amount = 38000m } }
+            });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(76000m);
+        }
+
+        [Fact]
+        public async Task AnExpenseThatBacksAnEventMovementIsNotSubtractedTwice()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 60000m);
+            var movement = AddEventMovement(context, purchase, ars, 60000m, own: 20000m, others: new[] { 40000m });
+            var expense = new SharedExpense
+            {
+                CardTransaction = purchase, UserId = UserId,
+                Splits = new List<SharedExpenseSplit> { new() { Person = new Person { Name = "Franco", UserId = UserId }, Amount = 40000m } }
+            };
+            movement.SharedExpense = expense;
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(20000m); // 60.000 - 40.000, no 60.000 - 80.000
+        }
+
+        [Fact]
+        public async Task TheBankDiscountsAreSubtractedToo()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 100000m);
+            context.CardTransactionDiscounts.Add(new CardTransactionDiscount { CardTransaction = purchase, Amount = 15000m, UserId = UserId });
+            context.CardTransactionDiscounts.Add(new CardTransactionDiscount { CardTransaction = purchase, Amount = 5000m, UserId = UserId });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(80000m);
+        }
+
+        [Fact]
+        public async Task EventSharesAndDiscountsAddUp_AndTheOwnAmountNeverGoesBelowZero()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 10000m);
+            AddEventMovement(context, purchase, ars, 10000m, own: 0m, others: new[] { 8000m });
+            context.CardTransactionDiscounts.Add(new CardTransactionDiscount { CardTransaction = purchase, Amount = 5000m, UserId = UserId });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(0m);
+        }
+
+        [Fact]
+        public async Task AnInstallmentPurchaseSubtractsTheWholeReimbursementFromTheWholePurchase()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 90000m, installments: 3);
+            AddEventMovement(context, purchase, ars, 90000m, own: 45000m, others: new[] { 45000m });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(45000m);
+        }
+
+        [Fact]
+        public async Task AnEventMovementInAnotherCurrencyThanThePurchaseIsNotSubtracted()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 60000m);
+            var usd = AddCurrency(context, "Dolar Estadounidense", "US$");
+            AddEventMovement(context, purchase, usd, 40m, own: 20m, others: new[] { 20m });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(60000m);
+        }
+
+        [Fact]
+        public async Task ARecurringChargeIsNotNetted()
+        {
+            using var context = CreateContext();
+            var ars = AddCurrency(context, "Peso Argentino", "$");
+            var recurring = AddCard(context, ars, AddClass(context, "Suscripcion"), new DateTime(2026, 1, 10), 0m, repeat: "YES", installmentAmount: 7000m);
+            context.CardTransactionDiscounts.Add(new CardTransactionDiscount { CardTransaction = recurring, Amount = 1000m, UserId = UserId });
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(7000m);
+        }
+
+        [Fact]
+        public async Task APurchaseWithoutReimbursementsCountsInFull()
+        {
+            using var context = CreateContext();
+            var (ars, purchase) = PurchaseOf(context, 50000m);
+            await context.SaveChangesAsync();
+
+            (await OwnAmount(context, ars)).Should().Be(50000m); // sin reintegros, la compra entera
+        }
+
         [Fact]
         public async Task EachRowCarriesItsAmountInEveryRequestedCurrency()
         {
