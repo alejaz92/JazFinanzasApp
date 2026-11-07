@@ -94,6 +94,13 @@ Las filas que se agregan a mano al pagar (gastos que nunca se cargaron como cons
 
 `NetBreakdown` sigue siendo solo la fuente (1) — los gastos propios no pertenecen a ningún evento — así que `Total` puede ser mayor que la suma de sus filas.
 
+### Gasto por fecha de compra y gasto propio (asistente, termómetro, "Resultado del mes")
+
+`IPurchaseSpendingService` mide el gasto de un mes **por fecha de compra**, en consultas nuevas y sin tocar las de los reportes: egresos directos de cuenta (sin las cuotas de tarjeta pagadas, que ya contaron en la compra), compras con tarjeta en su fecha por su total (una compra en cuotas cuenta entera ese día) y recurrentes de tarjeta en cada mes activo (`CardTransactionRecurrence`). Lo usan las fuentes del asistente, el termómetro y los indicadores de Inicio y Panorama y las alertas por reglas; **los reportes de Ingresos y Egresos no lo usan** y siguen contando lo que salió de las cuentas (por eso pueden diferir, sobre todo en el mes en curso, cuando el resumen de la tarjeta todavía no está cargado).
+
+- **Es gasto propio:** de cada compra con tarjeta no recurrente se resta lo que reintegran otros —la parte ajena de un movimiento de evento compartido (`SharedEventMovementShares` con `PersonId` no nulo) o de un gasto compartido de personas (`SharedExpenseSplits`) y los `CardTransactionDiscounts`—. Un gasto compartido que además respalda un movimiento de evento se resta una vez, por el evento. Es lo mismo que el reporte ya mostraba, porque el pago del resumen sale neto de esos reintegros. Limitación: un reintegro cobrado *después* de pagar el resumen figura además como ingreso (la clase "Reintegro" cuenta), así que ese tramo se compensa dos veces.
+- **Conversión de moneda:** una compra de tarjeta en otra moneda se convierte pasando por el dólar con la serie **BLUE** (la del peso: unidades de peso por dólar; el dólar vale 1 y no tiene serie propia), la misma con la que el resto de la app convierte un gasto. **No** con la serie `TARJETA`, que usa el reporte de Tarjetas: sus cifras en otra moneda pueden no coincidir (decisión del usuario, 2026-11-06; a revisar, ver `docs/ideas.md`).
+
 ### Reintegros de tarjeta: la consolidación siempre gana
 
 **Dos modalidades, una sola puerta.** Un `CardTransactionDiscount` tiene `CreditTarget`: `ACCOUNT` (el banco acreditó en una cuenta) o `CARD` (quedó como saldo a favor de la tarjeta). La diferencia es *cuándo* la plata entra a una cuenta, no cómo se consume después.
